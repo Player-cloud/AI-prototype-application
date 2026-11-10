@@ -98,6 +98,13 @@ async fn settings_save(
     Ok(checked)
 }
 
+/// The tools, habits and rules in the data folder chosen in Settings (read-only).
+#[tauri::command]
+async fn data_overview(app: tauri::AppHandle, state: tauri::State<'_, Engine>) -> Result<serde_json::Value, String> {
+    let saved = settings::read(&settings_path(&app)?)?;
+    engine_call(&state, "data_overview", serde_json::json!({ "settings": saved }))
+}
+
 /// Tests a saved key: free for OpenAI and DeepSeek, one tiny question for Claude.
 /// The key goes from the password store straight to the engine; the screens get only the summary.
 #[tauri::command]
@@ -118,7 +125,7 @@ pub fn run() {
     let helper = EngineHelper::start(&helper_command(std::env::var("AIP_ENGINE").ok()));
     tauri::Builder::default()
         .manage(Engine(Mutex::new(helper)))
-        .invoke_handler(tauri::generate_handler![version, engine_status, key_status, key_save, key_remove, test_model, settings_get, settings_save])
+        .invoke_handler(tauri::generate_handler![version, engine_status, key_status, key_save, key_remove, test_model, settings_get, settings_save, data_overview])
         .run(tauri::generate_context!())
         .expect("error while running the app");
 }

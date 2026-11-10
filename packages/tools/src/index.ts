@@ -4,11 +4,12 @@
  * almost nothing until picked (loading every tool adds ~30k tokens per call, trial round 4).
  */
 
-export interface ToolCard { name: string; what: string; useWhen: string; dontUseWhen: string; cost: string }
+export interface ToolCard { name: string; title: string; what: string; useWhen: string; dontUseWhen: string; cost: string }
 
 export function parseCard(name: string, markdown: string): ToolCard {
   const field = (label: string) => markdown.match(new RegExp(`^${label}:\\s*(.+)$`, 'mi'))?.[1]?.trim() ?? '';
-  return { name, what: field('What'), useWhen: field('Use when'), dontUseWhen: field("Don't use when"), cost: field('Cost') };
+  const title = markdown.match(/^#\s+(.+)$/m)?.[1]?.trim() ?? name;
+  return { name, title, what: field('What'), useWhen: field('Use when'), dontUseWhen: field("Don't use when"), cost: field('Cost') };
 }
 
 /** The one-line summary the engine sees when picking tools. */

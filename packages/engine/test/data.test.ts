@@ -1,0 +1,47 @@
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { handleLine } from '../src/protocol.ts';
+
+let folder = '';
+
+beforeAll(async () => {
+  folder = await mkdtemp(join(tmpdir(), 'aip-engine-data-'));
+  await mkdir(join(folder, 'tools'));
+  await writeFile(join(folder, 'ledger.md'), '# Ledger\n\n- Only CLI (oc) | ON | web reading | fewer tokens | free | rating: -\n- EGM | TRIAL NEXT | planning | - | - | rating: -\n');
+  await writeFile(join(folder, 'habits.md'), '- Plain words.\n');
+  await writeFile(join(folder, 'rules.md'), '- One tool per job.\n- Ask first.\n');
+  await writeFile(join(folder, 'tools', 'only-cli.md'), '# Only CLI (oc)\nWhat: page to outline.\nUse when: reading docs.\n');
+});
+
+afterAll(async () => {
+  await rm(folder, { recursive: true, force: true });
+});
+
+const overview = async (settings: Record<string, unknown>) =>
+  JSON.parse(await handleLine(JSON.stringify({ id: 1, method: 'data_overview', params: { settings } })));
+
+describe('data_overview', () => {
+  it('says when no data folder is set', async () => {
+    expect((await overview({})).result).toEqual({ configured: false });
+  });
+
+  it('lists the tools with their cards, habits and the first-read size', async () => {
+    const r = (await overview({ dataFolder: folder })).result;
+    expect(r.configured).toBe(true);
+    expect(r.tools.map((t: { name: string; state: string }) => [t.name, t.state])).toEqual([
+      ['Only CLI (oc)', 'on'],
+      ['EGM', 'trial'],
+    ]);
+    expect(r.tools[0].what).toBe('page to outline.');
+    expect(r.habits).toEqual(['Plain words.']);
+    expect(r.ruleCount).toBe(2);
+    expect(r.firstReadTokens).toBeGreaterThan(0);
+    expect(r.firstReadTokens).toBeLessThan(r.allTokens);
+  });
+
+  it('explains a wrong folder in plain words', async () => {
+    expect((await overview({ dataFolder: join(folder, 'tools') })).error).toContain('No ledger.md in');
+  });
+});

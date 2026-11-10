@@ -62,13 +62,20 @@ importers:
 
   packages/engine:
     dependencies:
+      '@aip/memory':
+        specifier: workspace:*
+        version: link:../memory
       '@aip/models':
         specifier: workspace:*
         version: link:../models
 
   packages/gatekeeper: {}
 
-  packages/memory: {}
+  packages/memory:
+    dependencies:
+      '@aip/tools':
+        specifier: workspace:*
+        version: link:../tools
 
   packages/models:
     dependencies:

@@ -50,3 +50,11 @@ the £ per $ rate, the strong and everyday models for OpenAI and DeepSeek, and t
 Claude's models follow the fixed per-job rule. These are saved in `settings.json` in the app's config folder on
 each computer (no keys in it). The engine checks every value, so a bad number gets a plain message instead of being
 saved. The budget is only stored for now; stopping before going over it needs spending records (build step 5).
+
+## Tools page and data folder
+
+Clone your private `ai-prototype-data` repo, then put its folder in Settings → Budget and models → **Data folder**.
+The Tools page then lists every tool from `ledger.md`, joined with its card from `tools/`, with tools in use first.
+Click a tool to see when to use it, the trial evidence, the cost and your rating. The page also shows how many tokens
+the engine reads first (one line per tool in use, plus habits) compared with reading every file. This step only reads
+the folder; writing ledger lines and syncing to GitHub come in build step 5c.

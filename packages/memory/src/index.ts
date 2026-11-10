@@ -26,3 +26,17 @@ export function related(notes: Note[], start: string, depth = 1): Note[] {
   }
   return [...seen].map((n) => byName.get(n)).filter((n): n is Note => !!n);
 }
+
+export {
+  bullets,
+  firstRead,
+  joinTools,
+  loadDataRepo,
+  parseLedger,
+  roughTokens,
+  toolState,
+  type DataRepo,
+  type LedgerEntry,
+  type ToolState,
+  type ToolView,
+} from './data-repo.js';

@@ -95,3 +95,20 @@ body { margin: 0; min-height: 100vh; background: radial-gradient(circle at 20% 1
   .brand { width: 100%; padding-bottom: 4px; }
   .panel { padding: 16px; }
 }
+
+.tools .muted { margin: 0 0 8px; color: var(--muted); }
+.tool-list { list-style: none; margin: 12px 0 0; padding: 0; }
+.tool-row { padding: 10px 0; border-top: 1px solid var(--glass-border); }
+.tool-head {
+  display: flex; justify-content: space-between; align-items: center; gap: 8px; width: 100%;
+  background: none; border: 0; padding: 0; color: var(--text); font: inherit; cursor: pointer; text-align: left;
+}
+.tool-head:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tool-name { font-weight: 600; }
+.tool-state { font-size: 0.8rem; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--glass-border); color: var(--muted); }
+.tool-state.on { color: #8fd9a8; border-color: rgba(143, 217, 168, 0.4); }
+.tool-state.trial { color: #f0d27e; border-color: rgba(240, 210, 126, 0.4); }
+.tool-what { margin: 4px 0 0; font-size: 0.9rem; color: var(--muted); }
+.tool-detail { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 8px 0 0; font-size: 0.9rem; }
+.tool-detail dt { color: var(--muted); }
+.tool-detail dd { margin: 0; }
