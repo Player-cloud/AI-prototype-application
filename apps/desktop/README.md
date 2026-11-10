@@ -33,3 +33,11 @@ Settings → Claude → **Test connection** asks Haiku one tiny question with yo
 in £ and $. The key goes from the password store to the engine for that one call. The engine runs Claude through the
 Claude Agent SDK with no tools, no PC Claude settings, and its own config folder, and passes only a short list of safe
 environment variables, so it can never use another Claude login on the PC.
+
+## OpenAI and DeepSeek
+
+Both use the same "chat completions" web API, so one adapter in `packages/models` serves both (plain `fetch`, no
+extra packages). **Test connection** for these two only asks for the provider's model list, which is free; it does
+not run a model. Model names per job (`gpt-5` / `gpt-5-mini`, `deepseek-reasoner` / `deepseek-chat`) are starting
+defaults, not checked against the providers' docs, and become changeable in build step 4c. Until prices are set
+there, their costs show as "cost unknown".

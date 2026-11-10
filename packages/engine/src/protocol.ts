@@ -6,9 +6,10 @@
  * Methods:
  *  - ping: is the engine up?
  *  - ask:  {provider, apiKey, job, prompt} -> {text, model, modelName, inputTokens, outputTokens, costUsd, costText}
+ *  - check: {provider, apiKey} -> {ok, summary}. Claude: a one-word ask. OpenAI/DeepSeek: the free "list models" call.
  *    The key comes from the window's password store for this one call and is never echoed back.
  */
-import type { Job, ModelAdapter } from '@aip/models';
+import type { Job, ModelAdapter, Provider } from '@aip/models';
 import { formatCost } from './money.ts';
 
 export const ENGINE_VERSION = '0.0.1';
@@ -26,8 +27,8 @@ export type Reply = { id: number | null; result: unknown } | { id: number | null
 
 /** What `ask` needs from the models package. Swapped for fakes in tests. */
 export interface Deps {
-  makeAdapter(provider: string, apiKey: string): Promise<ModelAdapter>;
-  pickModel(job: Job): Promise<string>;
+  makeAdapter(provider: Provider, apiKey: string): Promise<ModelAdapter>;
+  pickModel(provider: Provider, job: Job): Promise<string>;
   modelName(id: string): Promise<string>;
 }
 
@@ -35,21 +36,27 @@ export interface Deps {
 export const realDeps: Deps = {
   async makeAdapter(provider, apiKey) {
     const m = await import('@aip/models');
-    if (provider !== 'claude') throw new Error(`provider not available yet: ${provider}`);
-    return m.createClaudeAdapter({ apiKey, maxBudgetUsd: 0.5 });
+    if (provider === 'claude') return m.createClaudeAdapter({ apiKey, maxBudgetUsd: 0.5 });
+    return m.createOpenAICompatibleAdapter({ provider, apiKey });
   },
-  async pickModel(job) {
-    return (await import('@aip/models')).pickClaudeModel(job);
+  async pickModel(provider, job) {
+    return (await import('@aip/models')).pickModel(provider, job);
   },
   async modelName(id) {
     return (await import('@aip/models')).modelName(id);
   },
 };
 
+const PROVIDERS: readonly Provider[] = ['claude', 'openai', 'deepseek'];
+const PROVIDER_NAME: Record<Provider, string> = { claude: 'Claude', openai: 'OpenAI', deepseek: 'DeepSeek' };
+
 const JOBS: readonly Job[] = ['plan', 'final-review', 'security-review', 'build', 'read', 'summarise', 'small-code', 'code-review', 'write-tests', 'plan-review'];
 
-/** "under £0.01 (under $0.01)" for tiny amounts, otherwise "£0.79 ($1.00)". */
-export function costText(usd: number, gbpPerUsd = GBP_PER_USD): string {
+export const COST_UNKNOWN = 'cost unknown (prices are set in Settings, step 4c)';
+
+/** "under £0.01 (under $0.01)" for tiny amounts, otherwise "£0.79 ($1.00)". Null means the price isn't known yet. */
+export function costText(usd: number | null, gbpPerUsd = GBP_PER_USD): string {
+  if (usd === null) return COST_UNKNOWN;
   return usd * gbpPerUsd < 0.005 ? 'under £0.01 (under $0.01)' : formatCost(usd, gbpPerUsd);
 }
 
@@ -59,16 +66,25 @@ function str(params: Record<string, unknown>, key: string): string {
   return v;
 }
 
-async function ask(params: unknown, deps: Deps): Promise<unknown> {
+function obj(params: unknown): Record<string, unknown> {
   if (typeof params !== 'object' || params === null) throw new Error('params must be an object');
-  const p = params as Record<string, unknown>;
-  const provider = str(p, 'provider');
+  return params as Record<string, unknown>;
+}
+
+function provider(p: Record<string, unknown>): Provider {
+  const v = str(p, 'provider') as Provider;
+  if (!PROVIDERS.includes(v)) throw new Error(`unknown provider: ${v}`);
+  return v;
+}
+
+async function runAsk(p: Record<string, unknown>, deps: Deps) {
+  const prov = provider(p);
   const apiKey = str(p, 'apiKey');
   const prompt = str(p, 'prompt');
   const job = str(p, 'job') as Job;
   if (!JOBS.includes(job)) throw new Error(`unknown job: ${job}`);
-  const model = await deps.pickModel(job);
-  const adapter = await deps.makeAdapter(provider, apiKey);
+  const model = await deps.pickModel(prov, job);
+  const adapter = await deps.makeAdapter(prov, apiKey);
   const out = await adapter.run({ job, prompt, model });
   return {
     text: out.text,
@@ -81,11 +97,28 @@ async function ask(params: unknown, deps: Deps): Promise<unknown> {
   };
 }
 
+const ask = (params: unknown, deps: Deps) => runAsk(obj(params), deps);
+
+/** "Test connection" in Settings. Free where the provider allows it. */
+async function check(params: unknown, deps: Deps): Promise<{ ok: true; summary: string }> {
+  const p = obj(params);
+  const prov = provider(p);
+  const apiKey = str(p, 'apiKey');
+  const adapter = await deps.makeAdapter(prov, apiKey);
+  if (adapter.checkKey) {
+    await adapter.checkKey();
+    return { ok: true, summary: `Connected. ${PROVIDER_NAME[prov]} accepted the key. This check is free.` };
+  }
+  const r = await runAsk({ provider: prov, apiKey, job: 'read', prompt: 'Reply with the single word: ready' }, deps);
+  return { ok: true, summary: `Connected. ${r.modelName} replied “${r.text.trim()}”. Cost: ${r.costText}.` };
+}
+
 type Handler = (params: unknown, deps: Deps) => unknown;
 
 const HANDLERS: Record<string, Handler> = {
   ping: () => ({ ok: true, version: ENGINE_VERSION }),
   ask,
+  check,
 };
 
 function parseRequest(line: string): Request | string {
