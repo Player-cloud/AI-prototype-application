@@ -12,7 +12,7 @@ function fakeDeps(run: ModelAdapter['run'], seen: { provider?: string; key?: str
       seen.key = apiKey;
       return checkKey ? { provider, run, checkKey } : { provider, run };
     },
-    async pickModel(_provider, job) {
+    async pickModel(_provider, job, _settings) {
       return job === 'read' ? 'claude-haiku-5-5' : 'claude-opus-5-5';
     },
     async modelName(id) {
@@ -66,7 +66,8 @@ describe('ask', () => {
   it('shows tiny costs as under a penny', () => {
     expect(costText(0.0004)).toBe('under £0.01 (under $0.01)');
     expect(costText(1)).toBe('£0.79 ($1.00)');
-    expect(costText(null)).toBe('cost unknown (prices are set in Settings, step 4c)');
+    expect(costText(null)).toBe('cost unknown (add this model’s price in Settings)');
+    expect(costText(1, 0.8)).toBe('£0.80 ($1.00)');
   });
 });
 

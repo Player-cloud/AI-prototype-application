@@ -39,5 +39,13 @@ environment variables, so it can never use another Claude login on the PC.
 Both use the same "chat completions" web API, so one adapter in `packages/models` serves both (plain `fetch`, no
 extra packages). **Test connection** for these two only asks for the provider's model list, which is free; it does
 not run a model. Model names per job (`gpt-5` / `gpt-5-mini`, `deepseek-reasoner` / `deepseek-chat`) are starting
-defaults, not checked against the providers' docs, and become changeable in build step 4c. Until prices are set
-there, their costs show as "cost unknown".
+defaults, not checked against the providers' docs. Change them in Settings → Budget and models. Until a model's
+price is set there, its costs show as "cost unknown".
+
+## Budget and models
+
+Settings → **Budget and models** holds the provider for the app's jobs, the monthly budget in £ (shown in $ too),
+the £ per $ rate, the strong and everyday models for OpenAI and DeepSeek, and their prices in $ per million tokens.
+Claude's models follow the fixed per-job rule. These are saved in `settings.json` in the app's config folder on
+each computer (no keys in it). The engine checks every value, so a bad number gets a plain message instead of being
+saved. The budget is only stored for now; stopping before going over it needs spending records (build step 5).

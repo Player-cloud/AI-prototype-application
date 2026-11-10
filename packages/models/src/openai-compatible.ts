@@ -18,7 +18,8 @@ export const BASE_URL: Record<OtherProvider, string> = {
  */
 const STRONG: Record<OtherProvider, string> = { openai: 'gpt-5', deepseek: 'deepseek-reasoner' };
 const CHEAP: Record<OtherProvider, string> = { openai: 'gpt-5-mini', deepseek: 'deepseek-chat' };
-const STRONG_JOBS: readonly Job[] = ['plan', 'final-review', 'security-review'];
+/** Jobs that get the stronger model: planning and the reviews that guard quality and security. */
+export const STRONG_JOBS: readonly Job[] = ['plan', 'final-review', 'security-review'];
 const JOBS: readonly Job[] = ['plan', 'final-review', 'security-review', 'build', 'read', 'summarise', 'small-code', 'code-review', 'write-tests', 'plan-review'];
 
 function table(p: OtherProvider): Record<Job, string> {
