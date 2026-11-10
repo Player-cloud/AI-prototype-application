@@ -1,11 +1,26 @@
 {
   "files": [],
   "references": [
-    { "path": "packages/checks" },
-    { "path": "packages/engine" },
-    { "path": "packages/gatekeeper" },
-    { "path": "packages/memory" },
-    { "path": "packages/models" },
-    { "path": "packages/tools" }
+    {
+      "path": "apps/desktop"
+    },
+    {
+      "path": "packages/checks"
+    },
+    {
+      "path": "packages/engine"
+    },
+    {
+      "path": "packages/gatekeeper"
+    },
+    {
+      "path": "packages/memory"
+    },
+    {
+      "path": "packages/models"
+    },
+    {
+      "path": "packages/tools"
+    }
   ]
 }

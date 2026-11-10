@@ -6,7 +6,7 @@ A desktop app (Windows and Linux) where you describe a web app, it plans it with
 
 | Folder | What it is |
 | --- | --- |
-| `apps/desktop` | Tauri window + React screens (build step 3) |
+| `apps/desktop` | Tauri window + React screens (see its README to run it) |
 | `packages/engine` | Agent loop, Using line, money in £ and $ |
 | `packages/models` | Claude, OpenAI, DeepSeek adapters; model per job |
 | `packages/tools` | Tool runners and tool cards |
