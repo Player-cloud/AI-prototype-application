@@ -79,6 +79,20 @@ fn settings_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     Ok(dir.join("settings.json"))
 }
 
+/// The local spend file (cost of every model call), in the app's own data folder.
+fn spend_path(app: &tauri::AppHandle) -> Result<String, String> {
+    let dir = app.path().app_data_dir().map_err(|e| format!("no data folder: {e}"))?;
+    Ok(dir.join("history.sqlite").to_string_lossy().into_owned())
+}
+
+/// This month's spend against the budget.
+#[tauri::command]
+async fn spend_summary(app: tauri::AppHandle, state: tauri::State<'_, Engine>) -> Result<serde_json::Value, String> {
+    let saved = settings::read(&settings_path(&app)?)?;
+    let db = spend_path(&app)?;
+    engine_call(&state, "spend_summary", serde_json::json!({ "settings": saved, "dbPath": db }))
+}
+
 /// Saved settings with defaults filled in by the engine.
 #[tauri::command]
 async fn settings_get(app: tauri::AppHandle, state: tauri::State<'_, Engine>) -> Result<serde_json::Value, String> {
@@ -117,7 +131,12 @@ async fn test_model(
     let key = keys::load(&OsKeyring, &provider)?;
     // A damaged settings file shouldn't stop a key test; the defaults are used instead.
     let saved = settings_path(&app).and_then(|p| settings::read(&p)).unwrap_or_else(|_| serde_json::json!({}));
-    engine_call(&state, "check", serde_json::json!({ "provider": engine_name, "apiKey": key, "settings": saved }))
+    let db = spend_path(&app)?;
+    engine_call(
+        &state,
+        "check",
+        serde_json::json!({ "provider": engine_name, "apiKey": key, "settings": saved, "dbPath": db }),
+    )
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -125,7 +144,7 @@ pub fn run() {
     let helper = EngineHelper::start(&helper_command(std::env::var("AIP_ENGINE").ok()));
     tauri::Builder::default()
         .manage(Engine(Mutex::new(helper)))
-        .invoke_handler(tauri::generate_handler![version, engine_status, key_status, key_save, key_remove, test_model, settings_get, settings_save, data_overview])
+        .invoke_handler(tauri::generate_handler![version, engine_status, key_status, key_save, key_remove, test_model, settings_get, settings_save, data_overview, spend_summary])
         .run(tauri::generate_context!())
         .expect("error while running the app");
 }

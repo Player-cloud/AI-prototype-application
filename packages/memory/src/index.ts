@@ -40,3 +40,5 @@ export {
   type ToolState,
   type ToolView,
 } from './data-repo.js';
+
+export { SpendLog, monthKey, type MonthSpend, type SpendRecord } from './spend.js';

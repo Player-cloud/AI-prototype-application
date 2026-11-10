@@ -49,7 +49,15 @@ Settings → **Budget and models** holds the provider for the app's jobs, the mo
 the £ per $ rate, the strong and everyday models for OpenAI and DeepSeek, and their prices in $ per million tokens.
 Claude's models follow the fixed per-job rule. These are saved in `settings.json` in the app's config folder on
 each computer (no keys in it). The engine checks every value, so a bad number gets a plain message instead of being
-saved. The budget is only stored for now; stopping before going over it needs spending records (build step 5).
+saved.
+
+## Spending and the monthly budget
+
+Every model call's cost goes into `history.sqlite` in the app's data folder on this computer (Node's built-in SQLite,
+no extra package). Settings shows "Spent this month: £x ($y) of £20 · n% left". Before each call the engine checks the
+month's spend: once the budget is used up, calls are refused with a plain message, and each Claude call is capped to
+what's left (at most $0.50). OpenAI and DeepSeek calls can't be capped up front, and calls with no price set are
+counted separately. Below 30% left, the app says your preferences now win over the general rules.
 
 ## Tools page and data folder
 
