@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { SCREENS, findScreen, type ScreenId } from './screens';
 import { ScreenBody } from './screens/ScreenBody';
+import { EngineBadge } from './EngineBadge';
+import type { Invoke } from './engine';
 
-export function App() {
+export function App({ invoke = null }: { invoke?: Invoke | null }) {
   const [current, setCurrent] = useState<ScreenId>('projects');
   const screen = findScreen(current);
 
@@ -21,6 +23,7 @@ export function App() {
             {s.label}
           </button>
         ))}
+        <EngineBadge invoke={invoke} />
       </nav>
       <main className="panel">
         <h1>{screen.label}</h1>
