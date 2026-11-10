@@ -21,6 +21,7 @@ function fakeShell(initial: string[] = []) {
       saved.add(provider);
     }
     if (cmd === 'key_remove') saved.delete(provider);
+    if (cmd === 'settings_get') return SETTINGS as T;
     if (cmd === 'test_model') {
       if (!saved.has(provider)) throw 'No anthropic key saved. Add it in Settings.';
       const summary =
@@ -33,6 +34,14 @@ function fakeShell(initial: string[] = []) {
   };
   return { invoke, calls };
 }
+
+const SETTINGS = {
+  provider: 'claude',
+  monthlyBudgetGbp: 16,
+  gbpPerUsd: 0.79,
+  models: { openai: { strong: 'gpt-5', everyday: 'gpt-5-mini' }, deepseek: { strong: 'deepseek-reasoner', everyday: 'deepseek-chat' } },
+  prices: {},
+};
 
 function row(name: string) {
   return screen.getByRole('form', { name: `${name} key` });
@@ -88,7 +97,7 @@ describe('Settings: API keys', () => {
     const shell = fakeShell(['anthropic']);
     render(<Settings invoke={shell.invoke} />);
     await within(row('Claude (Anthropic)')).findByText('Key saved');
-    expect(shell.calls.every((c) => ['key_status', 'key_save', 'key_remove', 'test_model'].includes(c.cmd))).toBe(true);
+    expect(shell.calls.every((c) => ['key_status', 'key_save', 'key_remove', 'test_model', 'settings_get'].includes(c.cmd))).toBe(true);
   });
 
   it('tests the Claude connection and shows the reply and cost', async () => {
@@ -120,5 +129,6 @@ describe('Settings: API keys', () => {
   it('explains that keys need the desktop app in a browser preview', () => {
     render(<Settings invoke={null} />);
     expect(screen.getByText(/only be saved in the desktop app/)).toBeTruthy();
+    expect(screen.getByText(/Budget and models can be changed in the desktop app only/)).toBeTruthy();
   });
 });

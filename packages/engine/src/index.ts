@@ -22,3 +22,4 @@ export function rulesWin(percentLeft: number): boolean {
 }
 
 export { ENGINE_VERSION, GBP_PER_USD, costText, handleLine, type Deps } from './protocol.ts';
+export { DEFAULT_SETTINGS, checkSettings, type AppSettings } from './settings.ts';

@@ -82,6 +82,13 @@ describe('pickModel', () => {
     expect(pickModel('claude', 'code-review', { sensitive: true })).toBe('claude-sonnet-5-5');
   });
 
+  it('uses the Settings choice for OpenAI and DeepSeek, but never for Claude', () => {
+    const choice = { strong: 'big', everyday: 'small' };
+    expect(pickModel('openai', 'plan', {}, choice)).toBe('big');
+    expect(pickModel('deepseek', 'build', {}, choice)).toBe('small');
+    expect(pickModel('claude', 'plan', {}, choice)).toBe('claude-opus-5-5');
+  });
+
   it('works out cost from a price table, or null when unknown', () => {
     expect(costFromPrices('x', 1_000_000, 0, { x: { inputPerM: 2, outputPerM: 8 } })).toBe(2);
     expect(costFromPrices('y', 10, 10, {})).toBeNull();

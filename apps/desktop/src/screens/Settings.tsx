@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import type { Invoke } from '../engine';
+import { BudgetModels } from './BudgetModels';
 import { PROVIDERS, keyStatus, removeKey, saveKey, testModel, type Provider } from '../keys';
 
 function KeyRow({ invoke, id, name, hint }: { invoke: Invoke; id: Provider; name: string; hint: string }) {
@@ -58,7 +59,7 @@ function KeyRow({ invoke, id, name, hint }: { invoke: Invoke; id: Provider; name
 
   async function onTest() {
     setBusy(true);
-    setNote({ text: 'Asking Claude…', bad: false });
+    setNote({ text: 'Checking…', bad: false });
     try {
       setNote({ text: (await testModel(invoke, id)).summary, bad: false });
     } catch (err) {
@@ -132,7 +133,8 @@ export function Settings({ invoke }: { invoke: Invoke | null }) {
         <p className="key-note bad">Keys can only be saved in the desktop app, not in a browser preview.</p>
       )}
       <h2>Budget and models</h2>
-      <p className="muted">Monthly budget and model choices arrive in build step 4c.</p>
+      <p className="muted">Saved on this computer. No keys are kept here.</p>
+      {invoke ? <BudgetModels invoke={invoke} /> : <p className="key-note bad">Budget and models can be changed in the desktop app only.</p>}
     </section>
   );
 }

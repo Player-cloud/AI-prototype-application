@@ -53,11 +53,12 @@ export function modelName(id: string): string {
   return m[3] ? `${family} ${m[2]}.${m[3]}` : `${family} ${m[2]}`;
 }
 
-import { DEFAULT_MODEL_BY_JOB } from './openai-compatible.js';
+import { DEFAULT_MODEL_BY_JOB, STRONG_JOBS } from './openai-compatible.js';
 
 export {
   BASE_URL,
   DEFAULT_MODEL_BY_JOB,
+  STRONG_JOBS,
   createOpenAICompatibleAdapter,
   costFromPrices,
   type FetchFn,
@@ -65,8 +66,20 @@ export {
   type Price,
 } from './openai-compatible.js';
 
-/** The default model for a job on any provider. Claude uses the per-job table; the others use their defaults. */
-export function pickModel(provider: Provider, job: Job, opts: { sensitive?: boolean; multiFile?: boolean } = {}): string {
+/** A strong and an everyday model, as chosen in Settings for OpenAI or DeepSeek. */
+export interface ModelChoice { strong: string; everyday: string }
+
+/**
+ * The model for a job. Claude always follows the per-job table (Opus / Sonnet / Haiku).
+ * OpenAI and DeepSeek use the Settings choice when given, else the starting defaults.
+ */
+export function pickModel(
+  provider: Provider,
+  job: Job,
+  opts: { sensitive?: boolean; multiFile?: boolean } = {},
+  choice?: ModelChoice,
+): string {
   if (provider === 'claude') return pickClaudeModel(job, opts);
-  return DEFAULT_MODEL_BY_JOB[provider][job];
+  if (!choice) return DEFAULT_MODEL_BY_JOB[provider][job];
+  return STRONG_JOBS.includes(job) ? choice.strong : choice.everyday;
 }

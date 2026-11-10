@@ -7,15 +7,18 @@
  *  - ping: is the engine up?
  *  - ask:  {provider, apiKey, job, prompt} -> {text, model, modelName, inputTokens, outputTokens, costUsd, costText}
  *  - check: {provider, apiKey} -> {ok, summary}. Claude: a one-word ask. OpenAI/DeepSeek: the free "list models" call.
+ *  - settings_check: {settings} -> the settings with defaults filled in, or a plain-words error.
+ *    ask and check also take an optional `settings` (model choices, prices, £/$ rate).
  *    The key comes from the window's password store for this one call and is never echoed back.
  */
 import type { Job, ModelAdapter, Provider } from '@aip/models';
 import { formatCost } from './money.ts';
+import { DEFAULT_SETTINGS, checkSettings, type AppSettings } from './settings.ts';
 
 export const ENGINE_VERSION = '0.0.1';
 
-/** £ per $ used for display until the budget settings arrive (step 4c). */
-export const GBP_PER_USD = 0.79;
+/** £ per $ used when no rate has been set in Settings. */
+export const GBP_PER_USD = DEFAULT_SETTINGS.gbpPerUsd;
 
 export interface Request {
   id: number;
@@ -27,20 +30,21 @@ export type Reply = { id: number | null; result: unknown } | { id: number | null
 
 /** What `ask` needs from the models package. Swapped for fakes in tests. */
 export interface Deps {
-  makeAdapter(provider: Provider, apiKey: string): Promise<ModelAdapter>;
-  pickModel(provider: Provider, job: Job): Promise<string>;
+  makeAdapter(provider: Provider, apiKey: string, settings: AppSettings): Promise<ModelAdapter>;
+  pickModel(provider: Provider, job: Job, settings: AppSettings): Promise<string>;
   modelName(id: string): Promise<string>;
 }
 
 /** Loads the models package only when a model is first used. */
 export const realDeps: Deps = {
-  async makeAdapter(provider, apiKey) {
+  async makeAdapter(provider, apiKey, settings) {
     const m = await import('@aip/models');
     if (provider === 'claude') return m.createClaudeAdapter({ apiKey, maxBudgetUsd: 0.5 });
-    return m.createOpenAICompatibleAdapter({ provider, apiKey });
+    return m.createOpenAICompatibleAdapter({ provider, apiKey, prices: settings.prices });
   },
-  async pickModel(provider, job) {
-    return (await import('@aip/models')).pickModel(provider, job);
+  async pickModel(provider, job, settings) {
+    const choice = provider === 'claude' ? undefined : settings.models[provider];
+    return (await import('@aip/models')).pickModel(provider, job, {}, choice);
   },
   async modelName(id) {
     return (await import('@aip/models')).modelName(id);
@@ -52,7 +56,7 @@ const PROVIDER_NAME: Record<Provider, string> = { claude: 'Claude', openai: 'Ope
 
 const JOBS: readonly Job[] = ['plan', 'final-review', 'security-review', 'build', 'read', 'summarise', 'small-code', 'code-review', 'write-tests', 'plan-review'];
 
-export const COST_UNKNOWN = 'cost unknown (prices are set in Settings, step 4c)';
+export const COST_UNKNOWN = 'cost unknown (add this model’s price in Settings)';
 
 /** "under £0.01 (under $0.01)" for tiny amounts, otherwise "£0.79 ($1.00)". Null means the price isn't known yet. */
 export function costText(usd: number | null, gbpPerUsd = GBP_PER_USD): string {
@@ -78,13 +82,14 @@ function provider(p: Record<string, unknown>): Provider {
 }
 
 async function runAsk(p: Record<string, unknown>, deps: Deps) {
+  const settings = checkSettings(p.settings);
   const prov = provider(p);
   const apiKey = str(p, 'apiKey');
   const prompt = str(p, 'prompt');
   const job = str(p, 'job') as Job;
   if (!JOBS.includes(job)) throw new Error(`unknown job: ${job}`);
-  const model = await deps.pickModel(prov, job);
-  const adapter = await deps.makeAdapter(prov, apiKey);
+  const model = await deps.pickModel(prov, job, settings);
+  const adapter = await deps.makeAdapter(prov, apiKey, settings);
   const out = await adapter.run({ job, prompt, model });
   return {
     text: out.text,
@@ -93,7 +98,7 @@ async function runAsk(p: Record<string, unknown>, deps: Deps) {
     inputTokens: out.usage.inputTokens,
     outputTokens: out.usage.outputTokens,
     costUsd: out.usage.costUsd,
-    costText: costText(out.usage.costUsd),
+    costText: costText(out.usage.costUsd, settings.gbpPerUsd),
   };
 }
 
@@ -104,12 +109,13 @@ async function check(params: unknown, deps: Deps): Promise<{ ok: true; summary: 
   const p = obj(params);
   const prov = provider(p);
   const apiKey = str(p, 'apiKey');
-  const adapter = await deps.makeAdapter(prov, apiKey);
+  const settings = checkSettings(p.settings);
+  const adapter = await deps.makeAdapter(prov, apiKey, settings);
   if (adapter.checkKey) {
     await adapter.checkKey();
     return { ok: true, summary: `Connected. ${PROVIDER_NAME[prov]} accepted the key. This check is free.` };
   }
-  const r = await runAsk({ provider: prov, apiKey, job: 'read', prompt: 'Reply with the single word: ready' }, deps);
+  const r = await runAsk({ provider: prov, apiKey, settings, job: 'read', prompt: 'Reply with the single word: ready' }, deps);
   return { ok: true, summary: `Connected. ${r.modelName} replied “${r.text.trim()}”. Cost: ${r.costText}.` };
 }
 
@@ -119,6 +125,7 @@ const HANDLERS: Record<string, Handler> = {
   ping: () => ({ ok: true, version: ENGINE_VERSION }),
   ask,
   check,
+  settings_check: (params) => checkSettings(obj(params).settings),
 };
 
 function parseRequest(line: string): Request | string {
