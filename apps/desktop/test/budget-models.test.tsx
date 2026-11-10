@@ -9,7 +9,7 @@ afterEach(cleanup);
 
 const DEFAULTS: AppSettings = {
   provider: 'claude',
-  monthlyBudgetGbp: 16,
+  monthlyBudgetGbp: 20,
   gbpPerUsd: 0.79,
   models: { openai: { strong: 'gpt-5', everyday: 'gpt-5-mini' }, deepseek: { strong: 'deepseek-reasoner', everyday: 'deepseek-chat' } },
   prices: {},
@@ -38,8 +38,8 @@ const save = () => fireEvent.click(screen.getByRole('button', { name: 'Save budg
 describe('Budget and models', () => {
   it('shows the saved values with the budget in £ and $', async () => {
     render(<BudgetModels invoke={fakeShell().invoke} />);
-    expect(((await screen.findByLabelText('Monthly budget (£)')) as HTMLInputElement).value).toBe('16');
-    expect(screen.getByText('≈ $20.25')).toBeTruthy();
+    expect(((await screen.findByLabelText('Monthly budget (£)')) as HTMLInputElement).value).toBe('20');
+    expect(screen.getByText('≈ $25.32')).toBeTruthy();
     expect((screen.getByLabelText('Provider for the app’s jobs') as HTMLSelectElement).value).toBe('claude');
     expect(screen.getByText(/Opus plans and reviews, Sonnet builds, Haiku reads/)).toBeTruthy();
   });

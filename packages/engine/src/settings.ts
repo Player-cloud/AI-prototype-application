@@ -20,12 +20,12 @@ export interface AppSettings {
 }
 
 /**
- * Starting values. The budget matches joshua's $20 a month at the starting rate (£16 ≈ $20.25).
+ * Starting values. The budget is joshua's agreed £20 a month (it may rise to £40).
  * Model names and the rate are starting guesses to check, not facts.
  */
 export const DEFAULT_SETTINGS: AppSettings = {
   provider: 'claude',
-  monthlyBudgetGbp: 16,
+  monthlyBudgetGbp: 20,
   gbpPerUsd: 0.79,
   models: {
     openai: { strong: 'gpt-5', everyday: 'gpt-5-mini' },

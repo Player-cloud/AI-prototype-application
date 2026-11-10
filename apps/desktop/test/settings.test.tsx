@@ -37,7 +37,7 @@ function fakeShell(initial: string[] = []) {
 
 const SETTINGS = {
   provider: 'claude',
-  monthlyBudgetGbp: 16,
+  monthlyBudgetGbp: 20,
   gbpPerUsd: 0.79,
   models: { openai: { strong: 'gpt-5', everyday: 'gpt-5-mini' }, deepseek: { strong: 'deepseek-reasoner', everyday: 'deepseek-chat' } },
   prices: {},
