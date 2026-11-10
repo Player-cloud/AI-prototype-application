@@ -16,3 +16,6 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# API keys live in the system's own password store: Credential Manager on Windows,
+# the Secret Service keyring (GNOME Keyring / KWallet) on Linux. Never in a file.
+keyring = { version = "3.6.3", features = ["windows-native", "sync-secret-service", "crypto-rust"] }

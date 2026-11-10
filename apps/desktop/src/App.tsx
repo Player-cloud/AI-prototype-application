@@ -28,7 +28,7 @@ export function App({ invoke = null }: { invoke?: Invoke | null }) {
       <main className="panel">
         <h1>{screen.label}</h1>
         <p className="blurb">{screen.blurb}</p>
-        <ScreenBody id={current} />
+        <ScreenBody id={current} invoke={invoke} />
       </main>
     </div>
   );

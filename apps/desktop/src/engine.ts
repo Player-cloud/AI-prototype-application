@@ -1,7 +1,7 @@
 export type EngineStatus = { state: 'running'; version: string } | { state: 'stopped'; reason: string };
 
 /** Calls into the Rust shell. Injected so screens can be tested without Tauri. */
-export type Invoke = <T>(cmd: string) => Promise<T>;
+export type Invoke = <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
 
 export function inTauri(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
