@@ -37,3 +37,26 @@ export async function removeKey(invoke: Invoke, provider: Provider): Promise<Key
     throw new Error(message(err));
   }
 }
+
+/** What a test call returns. Never contains the key. */
+export interface TestResult {
+  text: string;
+  modelName: string;
+  costText: string;
+}
+
+/** Providers the engine can already call (the others arrive in step 4b). */
+export const CALLABLE: readonly Provider[] = ['anthropic'];
+
+export async function testModel(invoke: Invoke, provider: Provider): Promise<TestResult> {
+  try {
+    return await invoke<TestResult>('test_model', { provider });
+  } catch (err) {
+    throw new Error(message(err));
+  }
+}
+
+export function testSummary(r: TestResult): string {
+  const said = r.text.trim().slice(0, 80);
+  return `Connected. ${r.modelName} replied “${said}”. Cost: ${r.costText}.`;
+}

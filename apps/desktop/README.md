@@ -26,3 +26,10 @@ pnpm --filter @aip/desktop tauri build   # makes the installer (.msi/.exe on Win
 Settings saves keys in the system's own password store (`src-tauri/src/keys.rs`): Credential Manager on Windows,
 the Secret Service keyring on Linux. Keys are never written to a file or sent back to the screens. The screens can
 only save, remove, or ask whether a key is saved. Each computer keeps its own copy.
+
+## Talking to Claude
+
+Settings → Claude → **Test connection** asks Haiku one tiny question with your saved key and shows the reply and cost
+in £ and $. The key goes from the password store to the engine for that one call. The engine runs Claude through the
+Claude Agent SDK with no tools, no PC Claude settings, and its own config folder, and passes only a short list of safe
+environment variables, so it can never use another Claude login on the PC.

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import type { Invoke } from '../engine';
-import { PROVIDERS, keyStatus, removeKey, saveKey, type Provider } from '../keys';
+import { CALLABLE, PROVIDERS, keyStatus, removeKey, saveKey, testModel, testSummary, type Provider } from '../keys';
 
 function KeyRow({ invoke, id, name, hint }: { invoke: Invoke; id: Provider; name: string; hint: string }) {
   const [saved, setSaved] = useState<boolean | null>(null);
@@ -56,6 +56,18 @@ function KeyRow({ invoke, id, name, hint }: { invoke: Invoke; id: Provider; name
     }
   }
 
+  async function onTest() {
+    setBusy(true);
+    setNote({ text: 'Asking Claude…', bad: false });
+    try {
+      setNote({ text: testSummary(await testModel(invoke, id)), bad: false });
+    } catch (err) {
+      setNote({ text: (err as Error).message, bad: true });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function refresh() {
     try {
       setSaved((await keyStatus(invoke, id)).saved);
@@ -86,6 +98,11 @@ function KeyRow({ invoke, id, name, hint }: { invoke: Invoke; id: Provider; name
         <button type="submit" disabled={busy || draft.trim() === ''}>
           Save
         </button>
+        {saved && CALLABLE.includes(id) && (
+          <button type="button" onClick={onTest} disabled={busy}>
+            Test connection
+          </button>
+        )}
         {saved && (
           <button type="button" onClick={onRemove} disabled={busy}>
             Remove
@@ -115,7 +132,7 @@ export function Settings({ invoke }: { invoke: Invoke | null }) {
         <p className="key-note bad">Keys can only be saved in the desktop app, not in a browser preview.</p>
       )}
       <h2>Budget and models</h2>
-      <p className="muted">Monthly budget and model choices arrive in build step 4.</p>
+      <p className="muted">Monthly budget and model choices arrive in build step 4c.</p>
     </section>
   );
 }

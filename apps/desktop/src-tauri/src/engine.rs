@@ -67,9 +67,19 @@ impl EngineHelper {
 
     /// Sends one request and waits for its reply line.
     pub fn request(&mut self, method: &str) -> Result<Value, String> {
+        self.request_with(method, Value::Null)
+    }
+
+    /// Sends one request with parameters and waits for its reply line.
+    pub fn request_with(&mut self, method: &str, params: Value) -> Result<Value, String> {
         let id = self.next_id;
         self.next_id += 1;
-        let line = json!({ "id": id, "method": method }).to_string();
+        let line = if params.is_null() {
+            json!({ "id": id, "method": method })
+        } else {
+            json!({ "id": id, "method": method, "params": params })
+        }
+        .to_string();
         writeln!(self.stdin, "{line}").map_err(|e| format!("engine write failed: {e}"))?;
         self.stdin.flush().map_err(|e| format!("engine write failed: {e}"))?;
         let mut reply = String::new();
@@ -135,6 +145,15 @@ mod tests {
         let d = helper_command(None);
         assert!(d.args[0].ends_with("helper.js"));
         assert!(d.args[0].contains("engine"));
+    }
+
+    #[test]
+    fn sends_params_and_reads_the_reply() {
+        let script = r#"require('readline').createInterface({input:process.stdin}).on('line',l=>{const r=JSON.parse(l);process.stdout.write(JSON.stringify({id:r.id,result:{got:r.params}})+'\n')})"#;
+        let cmd = HelperCommand { program: "node".into(), args: vec!["-e".into(), script.into()] };
+        let mut h = EngineHelper::start(&cmd).expect("node should start");
+        let v = h.request_with("ask", json!({ "prompt": "hi" })).unwrap();
+        assert_eq!(v["got"]["prompt"], "hi");
     }
 
     #[test]

@@ -5,5 +5,8 @@
   "type": "module",
   "description": "Agent loop: reads summaries, picks model and tools, shows the Using line, builds one feature per run in a git worktree.",
   "main": "dist/index.js",
-  "types": "dist/index.d.ts"
+  "types": "dist/index.d.ts",
+  "dependencies": {
+    "@aip/models": "workspace:*"
+  }
 }
