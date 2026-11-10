@@ -1,0 +1,9 @@
+{
+  "name": "@aip/tools",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Tool runners. Each tool has a card in the data repo and starts only when the engine picks it.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts"
+}

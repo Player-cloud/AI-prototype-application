@@ -1,0 +1,9 @@
+{
+  "name": "@aip/models",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Model adapter: one setting switches Claude (Agent SDK), OpenAI and DeepSeek.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts"
+}

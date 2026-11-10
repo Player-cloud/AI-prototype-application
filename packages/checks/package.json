@@ -1,0 +1,9 @@
+{
+  "name": "@aip/checks",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Tests, free checks (axe, phone overflow, secretlint, npm audit), screenshots, enterprise checklist rules.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts"
+}

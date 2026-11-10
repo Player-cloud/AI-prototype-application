@@ -1,0 +1,9 @@
+{
+  "name": "@aip/gatekeeper",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Ask-first rules checked before every agent action. The agent can never edit this package.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts"
+}
