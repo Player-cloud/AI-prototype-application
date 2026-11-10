@@ -17,6 +17,8 @@ export interface AppSettings {
   models: { openai: ModelChoice; deepseek: ModelChoice };
   /** USD per million tokens, by model id. Claude reports its own cost, so only OpenAI/DeepSeek need these. */
   prices: Record<string, Price>;
+  /** Folder where the private data repo (ai-prototype-data) is cloned on this computer. '' = not set. */
+  dataFolder: string;
 }
 
 /**
@@ -32,6 +34,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     deepseek: { strong: 'deepseek-reasoner', everyday: 'deepseek-chat' },
   },
   prices: {},
+  dataFolder: '',
 };
 
 const PROVIDERS: readonly Provider[] = ['claude', 'openai', 'deepseek'];
@@ -92,8 +95,17 @@ export function checkSettings(raw: unknown): AppSettings {
     };
   }
 
+  let dataFolder = d.dataFolder;
+  if (raw.dataFolder !== undefined) {
+    if (typeof raw.dataFolder !== 'string' || raw.dataFolder.length > 500 || /[\r\n\0]/.test(raw.dataFolder)) {
+      throw new Error('Data folder must be a folder path');
+    }
+    dataFolder = raw.dataFolder.trim();
+  }
+
   return {
     provider,
+    dataFolder,
     monthlyBudgetGbp: raw.monthlyBudgetGbp === undefined ? d.monthlyBudgetGbp : num(raw.monthlyBudgetGbp, 'Monthly budget (£)', 0, 10000),
     gbpPerUsd: raw.gbpPerUsd === undefined ? d.gbpPerUsd : num(raw.gbpPerUsd, '£ per $ rate', 0.1, 5),
     models: {

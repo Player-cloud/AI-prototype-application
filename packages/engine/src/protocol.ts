@@ -8,12 +8,14 @@
  *  - ask:  {provider, apiKey, job, prompt} -> {text, model, modelName, inputTokens, outputTokens, costUsd, costText}
  *  - check: {provider, apiKey} -> {ok, summary}. Claude: a one-word ask. OpenAI/DeepSeek: the free "list models" call.
  *  - settings_check: {settings} -> the settings with defaults filled in, or a plain-words error.
+ *  - data_overview: {settings} -> the tools, habits and rules in the data folder, and what the engine reads first.
  *    ask and check also take an optional `settings` (model choices, prices, £/$ rate).
  *    The key comes from the window's password store for this one call and is never echoed back.
  */
 import type { Job, ModelAdapter, Provider } from '@aip/models';
 import { formatCost } from './money.ts';
 import { DEFAULT_SETTINGS, checkSettings, type AppSettings } from './settings.ts';
+import { dataOverview } from './data.ts';
 
 export const ENGINE_VERSION = '0.0.1';
 
@@ -126,6 +128,7 @@ const HANDLERS: Record<string, Handler> = {
   ask,
   check,
   settings_check: (params) => checkSettings(obj(params).settings),
+  data_overview: (params) => dataOverview(checkSettings(obj(params).settings)),
 };
 
 function parseRequest(line: string): Request | string {

@@ -13,6 +13,8 @@ describe('tool cards', () => {
     expect(c.what).toMatch(/numbered outline/);
     expect(c.dontUseWhen).toMatch(/Stack Overflow/);
     expect(c.cost).toMatch(/free/);
+    expect(c.title).toBe('Only CLI (oc)');
+    expect(parseCard('x', 'What: y').title).toBe('x');
   });
   it('makes a one-line summary', () => {
     expect(summaryLine(parseCard('only-cli', md))).toBe('only-cli: turns a web page into a short numbered outline.');

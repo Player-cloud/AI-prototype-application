@@ -89,3 +89,15 @@ describe('settings in the engine', () => {
     expect(await realDeps.pickModel('deepseek', 'plan', DEFAULT_SETTINGS)).toBe('deepseek-reasoner');
   });
 });
+
+describe('data folder setting', () => {
+  it('is blank by default and trimmed when set', () => {
+    expect(DEFAULT_SETTINGS.dataFolder).toBe('');
+    expect(checkSettings({ dataFolder: '  C:\\Users\\me\\ai-prototype-data ' }).dataFolder).toBe('C:\\Users\\me\\ai-prototype-data');
+  });
+
+  it('refuses things that are not a folder path', () => {
+    expect(() => checkSettings({ dataFolder: 5 })).toThrow('Data folder must be a folder path');
+    expect(() => checkSettings({ dataFolder: 'a\nb' })).toThrow('Data folder must be a folder path');
+  });
+});

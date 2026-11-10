@@ -41,6 +41,7 @@ const SETTINGS = {
   gbpPerUsd: 0.79,
   models: { openai: { strong: 'gpt-5', everyday: 'gpt-5-mini' }, deepseek: { strong: 'deepseek-reasoner', everyday: 'deepseek-chat' } },
   prices: {},
+  dataFolder: '',
 };
 
 function row(name: string) {

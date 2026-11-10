@@ -13,6 +13,8 @@ export interface AppSettings {
   gbpPerUsd: number;
   models: { openai: ModelChoice; deepseek: ModelChoice };
   prices: Record<string, Price>;
+  /** Folder where ai-prototype-data is cloned on this computer. '' = not set. */
+  dataFolder: string;
 }
 
 function message(err: unknown): string {

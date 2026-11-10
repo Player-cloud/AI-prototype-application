@@ -21,6 +21,7 @@ interface Draft {
   rate: string;
   models: Record<Other, { strong: string; everyday: string }>;
   prices: Record<string, { input: string; output: string }>;
+  dataFolder: string;
 }
 
 function toDraft(s: AppSettings): Draft {
@@ -28,6 +29,7 @@ function toDraft(s: AppSettings): Draft {
     provider: s.provider,
     budget: String(s.monthlyBudgetGbp),
     rate: String(s.gbpPerUsd),
+    dataFolder: s.dataFolder,
     models: { openai: { ...s.models.openai }, deepseek: { ...s.models.deepseek } },
     prices: Object.fromEntries(
       Object.entries(s.prices).map(([m, p]) => [m, { input: String(p.inputPerM), output: String(p.outputPerM) }]),
@@ -45,6 +47,7 @@ function fromDraft(d: Draft): AppSettings {
     provider: d.provider,
     monthlyBudgetGbp: toNumber(d.budget),
     gbpPerUsd: toNumber(d.rate),
+    dataFolder: d.dataFolder.trim(),
     models: {
       openai: { strong: d.models.openai.strong.trim(), everyday: d.models.openai.everyday.trim() },
       deepseek: { strong: d.models.deepseek.strong.trim(), everyday: d.models.deepseek.everyday.trim() },
@@ -131,6 +134,18 @@ export function BudgetModels({ invoke }: { invoke: Invoke }) {
         <input id="rate" inputMode="decimal" value={draft.rate} onChange={(e) => set({ rate: e.target.value })} />
       </div>
       <p className="hint">Used to show every cost in £ and $. 0.79 is a starting guess; set today’s rate.</p>
+
+      <div className="field">
+        <label htmlFor="data-folder">Data folder</label>
+        <input
+          id="data-folder"
+          spellCheck={false}
+          placeholder="e.g. C:\Users\you\ai-prototype-data"
+          value={draft.dataFolder}
+          onChange={(e) => set({ dataFolder: e.target.value })}
+        />
+      </div>
+      <p className="hint">Where your private ai-prototype-data repo is cloned. The Tools page reads it.</p>
 
       <h3>Models</h3>
       <p className="hint">Claude follows the fixed rule: Opus plans and reviews, Sonnet builds, Haiku reads and tests.</p>

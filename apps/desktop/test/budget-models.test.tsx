@@ -13,6 +13,7 @@ const DEFAULTS: AppSettings = {
   gbpPerUsd: 0.79,
   models: { openai: { strong: 'gpt-5', everyday: 'gpt-5-mini' }, deepseek: { strong: 'deepseek-reasoner', everyday: 'deepseek-chat' } },
   prices: {},
+  dataFolder: '',
 };
 
 /** Stand-in for the Rust shell + engine: refuses a bad rate the way the engine does, saves anything else. */
@@ -63,6 +64,15 @@ describe('Budget and models', () => {
       models: { ...DEFAULTS.models, deepseek: { strong: 'deepseek-reasoner', everyday: 'my-model' } },
       prices: { 'my-model': { inputPerM: 0.3, outputPerM: 1.2 } },
     });
+  });
+
+  it('saves the data folder', async () => {
+    const shell = fakeShell();
+    render(<BudgetModels invoke={shell.invoke} />);
+    fireEvent.change(await screen.findByLabelText('Data folder'), { target: { value: ' D:\\data ' } });
+    save();
+    await waitFor(() => expect(shell.saves).toHaveLength(1));
+    expect(shell.saves[0]!.dataFolder).toBe('D:\\data');
   });
 
   it('shows the plain reason when a value is refused, and keeps what was typed', async () => {

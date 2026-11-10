@@ -5,5 +5,8 @@
   "type": "module",
   "description": "Reads ledger, habits and rules summaries first, follows memory-graph links, syncs the data repo after each task.",
   "main": "dist/index.js",
-  "types": "dist/index.d.ts"
+  "types": "dist/index.d.ts",
+  "dependencies": {
+    "@aip/tools": "workspace:*"
+  }
 }
