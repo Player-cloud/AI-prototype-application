@@ -15,6 +15,11 @@ describe('ratings in the ledger', () => {
     expect(setRating(LEDGER, 'EGM', 2)).toContain('- EGM | TRIAL NEXT | planning | - | - | rating: 2');
   });
 
+  it('keeps Windows line endings', () => {
+    const crlf = LEDGER.replace(/\n/g, '\r\n');
+    expect(setRating(crlf, 'Only CLI (oc)', 5)).toBe(setRating(LEDGER, 'Only CLI (oc)', 5).replace(/\n/g, '\r\n'));
+  });
+
   it('refuses bad ratings and unknown tools', () => {
     expect(() => setRating(LEDGER, 'EGM', 6)).toThrow('Rating must be a whole number from 1 to 5');
     expect(() => setRating(LEDGER, 'EGM', 2.5)).toThrow('Rating must be');
@@ -81,7 +86,8 @@ describe('sync with a real git repo', () => {
     git(other, 'push', '-q');
     await rateTool(clone, 'EGM', 5);
     await syncDataRepo(clone, 'Rate EGM 5/5');
-    expect(await readFile(join(clone, 'habits.md'), 'utf8')).toBe('- New habit.\n');
+    // git on Windows may check text out with \r\n line endings.
+    expect((await readFile(join(clone, 'habits.md'), 'utf8')).replace(/\r\n/g, '\n')).toBe('- New habit.\n');
   });
 
   it('stops without losing anything when both computers changed the same line', async () => {

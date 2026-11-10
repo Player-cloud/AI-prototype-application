@@ -91,14 +91,17 @@ export async function syncDataRepo(folder: string, message: string, git: Git = r
 export function setRating(ledgerMd: string, tool: string, rating: number): string {
   if (!Number.isInteger(rating) || rating < 1 || rating > 5) throw new Error('Rating must be a whole number from 1 to 5');
   let found = false;
-  const lines = ledgerMd.split('\n').map((line) => {
+  const lines = ledgerMd.split('\n').map((raw) => {
+    // Keep Windows line endings as they are (git may check files out with \r\n).
+    const cr = raw.endsWith('\r') ? '\r' : '';
+    const line = cr ? raw.slice(0, -1) : raw;
     const parts = line.startsWith('- ') ? line.slice(2).split(' | ') : [];
-    if (found || parts.length < 3 || parts[0]!.trim() !== tool) return line;
+    if (found || parts.length < 3 || parts[0]!.trim() !== tool) return raw;
     found = true;
     const last = parts.length - 1;
     if (/^\s*rating:/i.test(parts[last]!)) parts[last] = `rating: ${rating}`;
     else parts.push(`rating: ${rating}`);
-    return `- ${parts.join(' | ')}`;
+    return `- ${parts.join(' | ')}${cr}`;
   });
   if (!found) throw new Error(`${tool} isn't in the ledger`);
   return lines.join('\n');
