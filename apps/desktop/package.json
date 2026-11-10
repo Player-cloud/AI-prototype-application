@@ -5,8 +5,8 @@
   "type": "module",
   "description": "The desktop app: a small Tauri (Rust) window around React screens.",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
+    "dev": "tsc -b ../../packages/engine && vite",
+    "build": "tsc -b ../../packages/engine && vite build",
     "tauri": "tauri"
   },
   "dependencies": {
