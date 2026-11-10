@@ -23,7 +23,11 @@ function fakeShell(initial: string[] = []) {
     if (cmd === 'key_remove') saved.delete(provider);
     if (cmd === 'test_model') {
       if (!saved.has(provider)) throw 'No anthropic key saved. Add it in Settings.';
-      return { text: 'ready', modelName: 'Haiku 5.5', costText: 'under £0.01 (under $0.01)' } as T;
+      const summary =
+        provider === 'anthropic'
+          ? 'Connected. Haiku 5.5 replied “ready”. Cost: under £0.01 (under $0.01).'
+          : 'Connected. OpenAI accepted the key. This check is free.';
+      return { ok: true, summary } as T;
     }
     return { provider, saved: saved.has(provider) } as T;
   };
@@ -98,10 +102,19 @@ describe('Settings: API keys', () => {
     expect(shell.calls).toContainEqual({ cmd: 'test_model', args: { provider: 'anthropic' } });
   });
 
-  it('only offers Test connection for providers the engine can call', async () => {
+  it('tests OpenAI with the free check', async () => {
+    const shell = fakeShell(['openai']);
+    render(<Settings invoke={shell.invoke} />);
+    const r = row('OpenAI');
+    fireEvent.click(await within(r).findByRole('button', { name: 'Test connection' }));
+    expect(await within(r).findByText('Connected. OpenAI accepted the key. This check is free.')).toBeTruthy();
+    expect(shell.calls).toContainEqual({ cmd: 'test_model', args: { provider: 'openai' } });
+  });
+
+  it('only offers Test connection once a key is saved', async () => {
     render(<Settings invoke={fakeShell(['openai']).invoke} />);
     await within(row('OpenAI')).findByText('Key saved');
-    expect(within(row('OpenAI')).queryByRole('button', { name: 'Test connection' })).toBeNull();
+    expect(within(row('DeepSeek')).queryByRole('button', { name: 'Test connection' })).toBeNull();
   });
 
   it('explains that keys need the desktop app in a browser preview', () => {

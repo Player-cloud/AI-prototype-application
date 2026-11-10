@@ -5,14 +5,14 @@ import { costText, handleLine, type Deps } from '../src/protocol.ts';
 // Obviously fake test value, not a real key.
 const FAKE_KEY = 'sk-ant-test-0000000000000000';
 
-function fakeDeps(run: ModelAdapter['run'], seen: { provider?: string; key?: string } = {}): Deps {
+function fakeDeps(run: ModelAdapter['run'], seen: { provider?: string; key?: string } = {}, checkKey?: ModelAdapter['checkKey']): Deps {
   return {
     async makeAdapter(provider, apiKey) {
       seen.provider = provider;
       seen.key = apiKey;
-      return { provider: 'claude', run };
+      return checkKey ? { provider, run, checkKey } : { provider, run };
     },
-    async pickModel(job) {
+    async pickModel(_provider, job) {
       return job === 'read' ? 'claude-haiku-5-5' : 'claude-opus-5-5';
     },
     async modelName(id) {
@@ -48,6 +48,7 @@ describe('ask', () => {
     const deps = fakeDeps(async () => ({ text: '', usage: { inputTokens: 0, outputTokens: 0, costUsd: 0 } }));
     const err = async (params: Record<string, unknown>) => JSON.parse(await handleLine(askLine(params), deps)).error;
     expect(await err({ provider: 'claude', job: 'read', prompt: 'hi' })).toBe('apiKey is required');
+    expect(await err({ provider: 'gemini', apiKey: FAKE_KEY, job: 'read', prompt: 'hi' })).toBe('unknown provider: gemini');
     expect(await err({ provider: 'claude', apiKey: FAKE_KEY, job: 'dance', prompt: 'hi' })).toBe('unknown job: dance');
     expect(await err({ provider: 'claude', apiKey: FAKE_KEY, job: 'read', prompt: '' })).toBe('prompt is required');
     expect(JSON.parse(await handleLine('{"id":1,"method":"ask"}', deps)).error).toBe('params must be an object');
@@ -65,5 +66,47 @@ describe('ask', () => {
   it('shows tiny costs as under a penny', () => {
     expect(costText(0.0004)).toBe('under £0.01 (under $0.01)');
     expect(costText(1)).toBe('£0.79 ($1.00)');
+    expect(costText(null)).toBe('cost unknown (prices are set in Settings, step 4c)');
+  });
+});
+
+const checkLine = (params: Record<string, unknown>) => JSON.stringify({ id: 6, method: 'check', params });
+
+describe('check', () => {
+  it('uses the free key check when the provider has one, and runs no model', async () => {
+    let ran = false;
+    let checked = false;
+    const seen: { provider?: string } = {};
+    const deps = fakeDeps(
+      async () => {
+        ran = true;
+        return { text: '', usage: { inputTokens: 0, outputTokens: 0, costUsd: 0 } };
+      },
+      seen,
+      async () => {
+        checked = true;
+      },
+    );
+    const reply = JSON.parse(await handleLine(checkLine({ provider: 'deepseek', apiKey: FAKE_KEY }), deps));
+    expect(reply.result).toEqual({ ok: true, summary: 'Connected. DeepSeek accepted the key. This check is free.' });
+    expect({ ran, checked, provider: seen.provider }).toEqual({ ran: false, checked: true, provider: 'deepseek' });
+  });
+
+  it('asks Claude for one word when there is no free check', async () => {
+    const deps = fakeDeps(async () => ({ text: ' ready\n', usage: { inputTokens: 9, outputTokens: 1, costUsd: 0.0004 } }));
+    const reply = JSON.parse(await handleLine(checkLine({ provider: 'claude', apiKey: FAKE_KEY }), deps));
+    expect(reply.result.summary).toBe('Connected. Haiku 5.5 replied “ready”. Cost: under £0.01 (under $0.01).');
+  });
+
+  it('passes on a rejected key without the key in it', async () => {
+    const deps = fakeDeps(
+      async () => ({ text: '', usage: { inputTokens: 0, outputTokens: 0, costUsd: 0 } }),
+      {},
+      async () => {
+        throw new Error(`OpenAI did not accept ${FAKE_KEY}`);
+      },
+    );
+    const line = await handleLine(checkLine({ provider: 'openai', apiKey: FAKE_KEY }), deps);
+    expect(JSON.parse(line).error).toBe('OpenAI did not accept [key hidden]');
   });
 });

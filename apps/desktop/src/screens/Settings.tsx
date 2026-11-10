@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import type { Invoke } from '../engine';
-import { CALLABLE, PROVIDERS, keyStatus, removeKey, saveKey, testModel, testSummary, type Provider } from '../keys';
+import { PROVIDERS, keyStatus, removeKey, saveKey, testModel, type Provider } from '../keys';
 
 function KeyRow({ invoke, id, name, hint }: { invoke: Invoke; id: Provider; name: string; hint: string }) {
   const [saved, setSaved] = useState<boolean | null>(null);
@@ -60,7 +60,7 @@ function KeyRow({ invoke, id, name, hint }: { invoke: Invoke; id: Provider; name
     setBusy(true);
     setNote({ text: 'Asking Claude…', bad: false });
     try {
-      setNote({ text: testSummary(await testModel(invoke, id)), bad: false });
+      setNote({ text: (await testModel(invoke, id)).summary, bad: false });
     } catch (err) {
       setNote({ text: (err as Error).message, bad: true });
     } finally {
@@ -98,7 +98,7 @@ function KeyRow({ invoke, id, name, hint }: { invoke: Invoke; id: Provider; name
         <button type="submit" disabled={busy || draft.trim() === ''}>
           Save
         </button>
-        {saved && CALLABLE.includes(id) && (
+        {saved && (
           <button type="button" onClick={onTest} disabled={busy}>
             Test connection
           </button>

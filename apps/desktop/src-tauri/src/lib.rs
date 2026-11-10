@@ -71,15 +71,7 @@ async fn test_model(provider: String, state: tauri::State<'_, Engine>) -> Result
         Err(poisoned) => poisoned.into_inner(),
     };
     let helper = guard.as_mut().map_err(|reason| format!("engine not running: {reason}"))?;
-    helper.request_with(
-        "ask",
-        serde_json::json!({
-            "provider": engine_name,
-            "apiKey": key,
-            "job": "read",
-            "prompt": "Reply with the single word: ready",
-        }),
-    )
+    helper.request_with("check", serde_json::json!({ "provider": engine_name, "apiKey": key }))
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
