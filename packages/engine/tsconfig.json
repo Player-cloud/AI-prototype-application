@@ -1,5 +1,10 @@
 {
   "extends": "../../tsconfig.base.json",
-  "compilerOptions": { "rootDir": "src", "outDir": "dist" },
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    // helper.ts imports './protocol.ts' so Node can run it directly in tests; tsc rewrites it to .js in dist.
+    "rewriteRelativeImportExtensions": true
+  },
   "include": ["src"]
 }

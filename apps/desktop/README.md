@@ -9,6 +9,7 @@ On Linux, first install: `libwebkit2gtk-4.1-dev libsoup-3.0-dev librsvg2-dev lib
 
 ```
 pnpm install
+pnpm typecheck                           # also builds the engine helper
 pnpm --filter @aip/desktop tauri dev     # opens the window, reloads on change
 pnpm --filter @aip/desktop tauri build   # makes the installer (.msi/.exe on Windows, .deb/.AppImage on Linux)
 ```
@@ -16,5 +17,6 @@ pnpm --filter @aip/desktop tauri build   # makes the installer (.msi/.exe on Win
 ## Layout
 
 - `src/` React screens. `screens.ts` lists the screens in rail order; Projects is the main screen.
-- `src-tauri/` the Rust shell. Kept tiny: it opens the window and (from step 3b) starts the engine helper.
+- `src-tauri/` the Rust shell. Kept tiny: it opens the window and starts the engine helper.
+- The engine helper is `packages/engine/dist/helper.js`, run with Node. It talks to the window with one JSON line per message over stdin/stdout, and stops when the window closes. Set `AIP_ENGINE` to a different helper.js path to override. The rail shows `Engine: running (vX)` when it is up.
 - `src-tauri/capabilities/default.json` what the window may do. Only core features for now.

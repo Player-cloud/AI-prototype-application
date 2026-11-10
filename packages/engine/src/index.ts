@@ -29,3 +29,5 @@ export function budgetLeftPercent(spentUsd: number, budgetGbp: number, gbpPerUsd
 export function rulesWin(percentLeft: number): boolean {
   return percentLeft > 30;
 }
+
+export { ENGINE_VERSION, handleLine } from './protocol.js';

@@ -40,6 +40,9 @@ body { margin: 0; min-height: 100vh; background: radial-gradient(circle at 20% 1
 .rail-item[aria-current='page'] { background: var(--glass); color: var(--accent); }
 .rail-item:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
+.engine-badge { margin-top: auto; padding: 8px 12px; font-size: 0.85rem; color: #8fd9a8; }
+.engine-stopped { color: #f0b37e; }
+
 .panel { flex: 1; padding: 32px; min-width: 0; }
 .panel h1 { margin: 0 0 4px; font-size: 1.6rem; }
 .blurb { margin: 0 0 24px; color: var(--muted); }
