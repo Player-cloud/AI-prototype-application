@@ -4,7 +4,7 @@ The desktop app: a small Tauri (Rust) window around React screens. Runs on Windo
 
 ## Run it
 
-You need Node 22+, pnpm 10 and Rust (stable). On Windows, WebView2 is already part of Windows 10/11.
+You need Node 22+, pnpm 10 and Rust (stable). On Windows, WebView2 is already part of Windows 10/11. If the build fails with "An Application Control policy has blocked this file (os error 4551)", Windows Smart App Control is blocking Rust's build steps; it has to be off to build on that PC.
 On Linux, first install: `libwebkit2gtk-4.1-dev libsoup-3.0-dev librsvg2-dev libgtk-3-dev libdbus-1-dev build-essential`, and have a keyring running (GNOME Keyring or KWallet) for saving API keys.
 
 ```
