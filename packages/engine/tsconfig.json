@@ -6,5 +6,6 @@
     // helper.ts imports './protocol.ts' so Node can run it directly in tests; tsc rewrites it to .js in dist.
     "rewriteRelativeImportExtensions": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  "references": [{ "path": "../models" }]
 }

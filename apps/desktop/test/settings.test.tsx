@@ -21,6 +21,10 @@ function fakeShell(initial: string[] = []) {
       saved.add(provider);
     }
     if (cmd === 'key_remove') saved.delete(provider);
+    if (cmd === 'test_model') {
+      if (!saved.has(provider)) throw 'No anthropic key saved. Add it in Settings.';
+      return { text: 'ready', modelName: 'Haiku 5.5', costText: 'under £0.01 (under $0.01)' } as T;
+    }
     return { provider, saved: saved.has(provider) } as T;
   };
   return { invoke, calls };
@@ -80,7 +84,24 @@ describe('Settings: API keys', () => {
     const shell = fakeShell(['anthropic']);
     render(<Settings invoke={shell.invoke} />);
     await within(row('Claude (Anthropic)')).findByText('Key saved');
-    expect(shell.calls.every((c) => ['key_status', 'key_save', 'key_remove'].includes(c.cmd))).toBe(true);
+    expect(shell.calls.every((c) => ['key_status', 'key_save', 'key_remove', 'test_model'].includes(c.cmd))).toBe(true);
+  });
+
+  it('tests the Claude connection and shows the reply and cost', async () => {
+    const shell = fakeShell(['anthropic']);
+    render(<Settings invoke={shell.invoke} />);
+    const r = row('Claude (Anthropic)');
+    fireEvent.click(await within(r).findByRole('button', { name: 'Test connection' }));
+    expect(
+      await within(r).findByText('Connected. Haiku 5.5 replied “ready”. Cost: under £0.01 (under $0.01).'),
+    ).toBeTruthy();
+    expect(shell.calls).toContainEqual({ cmd: 'test_model', args: { provider: 'anthropic' } });
+  });
+
+  it('only offers Test connection for providers the engine can call', async () => {
+    render(<Settings invoke={fakeShell(['openai']).invoke} />);
+    await within(row('OpenAI')).findByText('Key saved');
+    expect(within(row('OpenAI')).queryByRole('button', { name: 'Test connection' })).toBeNull();
   });
 
   it('explains that keys need the desktop app in a browser preview', () => {

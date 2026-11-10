@@ -39,3 +39,13 @@ export function pickClaudeModel(job: Job, opts: { sensitive?: boolean; multiFile
   if ((opts.sensitive || opts.multiFile) && ESCALATE[job]) return ESCALATE[job]!;
   return CLAUDE_MODEL_BY_JOB[job];
 }
+
+export { claudeEnv, createClaudeAdapter, friendlyError, redact, type ClaudeAdapterOptions, type QueryFn, type SdkMessage } from './claude.js';
+
+/** Plain name for a model id, e.g. "claude-haiku-5-5" -> "Haiku 5.5". */
+export function modelName(id: string): string {
+  const m = /^claude-([a-z]+)-(\d+)(?:-(\d+))?$/.exec(id);
+  if (!m) return id;
+  const family = m[1]!.charAt(0).toUpperCase() + m[1]!.slice(1);
+  return m[3] ? `${family} ${m[2]}.${m[3]}` : `${family} ${m[2]}`;
+}

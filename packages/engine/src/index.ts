@@ -1,20 +1,11 @@
 /** Engine helpers: the "Using:" line and money shown in pounds and dollars. */
 
+export { formatCost } from './money.ts';
+
 export function usingLine(model: string, tools: string[]): string {
   const short = model.replace(/^claude-/, '').replace(/-(\d+)-(\d+)$/, ' $1.$2');
   const name = short.charAt(0).toUpperCase() + short.slice(1);
   return `Using: ${[name, ...tools].join(', ')}`;
-}
-
-function round2(n: number): number {
-  return Math.round((n + Number.EPSILON) * 100) / 100;
-}
-
-/** "£0.79 ($1.00)". gbpPerUsd is the day's conversion rate. */
-export function formatCost(usd: number, gbpPerUsd: number): string {
-  if (!Number.isFinite(usd) || usd < 0) throw new Error('usd must be a finite number >= 0');
-  if (!Number.isFinite(gbpPerUsd) || gbpPerUsd <= 0) throw new Error('gbpPerUsd must be a finite number > 0');
-  return `£${round2(usd * gbpPerUsd).toFixed(2)} ($${round2(usd).toFixed(2)})`;
 }
 
 /** Percentage of the monthly £ budget still left, 0-100, one decimal place. */
@@ -30,4 +21,4 @@ export function rulesWin(percentLeft: number): boolean {
   return percentLeft > 30;
 }
 
-export { ENGINE_VERSION, handleLine } from './protocol.js';
+export { ENGINE_VERSION, GBP_PER_USD, costText, handleLine, type Deps } from './protocol.ts';

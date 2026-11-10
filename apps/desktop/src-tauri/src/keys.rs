@@ -91,6 +91,12 @@ pub fn save(store: &dyn SecretStore, provider: &str, key: &str) -> Result<KeySta
     status(store, provider)
 }
 
+/// Reads a saved key for the engine. Only Rust calls this; the screens never see the key.
+pub fn load(store: &dyn SecretStore, provider: &str) -> Result<String, String> {
+    check_provider(provider)?;
+    store.get(provider)?.ok_or_else(|| format!("No {provider} key saved. Add it in Settings."))
+}
+
 pub fn remove(store: &dyn SecretStore, provider: &str) -> Result<KeyStatus, String> {
     check_provider(provider)?;
     store.delete(provider)?;
@@ -133,6 +139,15 @@ pub mod tests {
         assert!(!remove(&store, "anthropic").unwrap().saved);
         // Removing again is fine.
         assert!(!remove(&store, "anthropic").unwrap().saved);
+    }
+
+    #[test]
+    fn load_returns_the_key_or_a_plain_error() {
+        let store = MemoryStore::default();
+        assert_eq!(load(&store, "anthropic").unwrap_err(), "No anthropic key saved. Add it in Settings.");
+        save(&store, "anthropic", FAKE_ANTHROPIC).unwrap();
+        assert_eq!(load(&store, "anthropic").unwrap(), FAKE_ANTHROPIC);
+        assert!(load(&store, "nobody").is_err());
     }
 
     #[test]
