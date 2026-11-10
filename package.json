@@ -6,7 +6,7 @@
   "packageManager": "pnpm@10.34.9",
   "engines": { "node": ">=22" },
   "scripts": {
-    "typecheck": "tsc -b packages/*/tsconfig.json",
+    "typecheck": "tsc -b",
     "test": "vitest run",
     "secrets": "secretlint \"**/*\"",
     "audit": "pnpm audit --audit-level high",
