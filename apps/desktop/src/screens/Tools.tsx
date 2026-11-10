@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { Invoke } from '../engine';
-import { STATE_LABEL, getDataOverview, savedPercent, type DataOverview, type ToolState } from '../data';
+import { STATE_LABEL, getDataOverview, rateTool, savedPercent, syncData, type DataOverview, type ToolState } from '../data';
 
 const ORDER: ToolState[] = ['on', 'trial', 'untested', 'off', 'unknown'];
 
@@ -8,6 +8,8 @@ export function Tools({ invoke }: { invoke: Invoke | null }) {
   const [data, setData] = useState<DataOverview | null>(null);
   const [error, setError] = useState('');
   const [open, setOpen] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<{ text: string; bad: boolean } | null>(null);
 
   useEffect(() => {
     if (!invoke) return;
@@ -39,6 +41,27 @@ export function Tools({ invoke }: { invoke: Invoke | null }) {
     );
   }
 
+  async function work(label: string, job: () => Promise<{ summary: string }>, after?: () => void) {
+    setBusy(true);
+    setNote({ text: label, bad: false });
+    try {
+      const r = await job();
+      after?.();
+      setNote({ text: r.summary, bad: false });
+    } catch (err) {
+      setNote({ text: (err as Error).message, bad: true });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function rate(tool: string, rating: number) {
+    if (!invoke || !data?.configured) return;
+    void work(`Saving ${rating}/5 and syncing…`, () => rateTool(invoke, tool, rating), () =>
+      setData({ ...data, tools: data.tools.map((t) => (t.name === tool ? { ...t, rating: String(rating) } : t)) }),
+    );
+  }
+
   const tools = [...data.tools].sort((a, b) => ORDER.indexOf(a.state) - ORDER.indexOf(b.state));
   const onCount = data.tools.filter((t) => t.state === 'on').length;
   return (
@@ -50,6 +73,16 @@ export function Tools({ invoke }: { invoke: Invoke | null }) {
         The engine reads a short summary first: about {data.firstReadTokens.toLocaleString('en-GB')} tokens instead of{' '}
         {data.allTokens.toLocaleString('en-GB')} for everything ({savedPercent(data.firstReadTokens, data.allTokens)} fewer).
       </p>
+      <div className="key-controls">
+        <button type="button" disabled={busy} onClick={() => invoke && void work('Syncing with GitHub…', () => syncData(invoke))}>
+          Sync with GitHub
+        </button>
+      </div>
+      {note && (
+        <p className={note.bad ? 'key-note bad' : 'key-note'} role={note.bad ? 'alert' : 'status'}>
+          {note.text}
+        </p>
+      )}
       <ul className="tool-list">
         {tools.map((t) => (
           <li key={t.name} className="tool-row">
@@ -72,7 +105,22 @@ export function Tools({ invoke }: { invoke: Invoke | null }) {
                 {t.evidence && (<><dt>Evidence</dt><dd>{t.evidence}</dd></>)}
                 {t.cost && (<><dt>Cost</dt><dd>{t.cost}</dd></>)}
                 <dt>Your rating</dt>
-                <dd>{t.rating && t.rating !== '-' ? `${t.rating} / 5` : 'not rated yet'}</dd>
+                <dd>
+                  <span className="rating" role="group" aria-label={`Rate ${t.name}`}>
+                    {[1, 2, 3, 4, 5].map((n) => (
+                      <button
+                        key={n}
+                        type="button"
+                        disabled={busy || t.status === 'not in the ledger yet'}
+                        aria-pressed={t.rating === String(n)}
+                        onClick={() => rate(t.name, n)}
+                      >
+                        {n}
+                      </button>
+                    ))}
+                  </span>{' '}
+                  {t.rating && t.rating !== '-' ? `${t.rating} / 5` : 'not rated yet'}
+                </dd>
               </dl>
             )}
           </li>

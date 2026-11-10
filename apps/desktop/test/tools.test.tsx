@@ -36,8 +36,13 @@ const OVERVIEW: DataOverview = {
   allTokens: 10000,
 };
 
-const shell = (answer: DataOverview | string): Invoke =>
-  (async <T,>(cmd: string) => {
+const shell = (answer: DataOverview | string, calls: { cmd: string; args?: Record<string, unknown> }[] = [], syncError = ''): Invoke =>
+  (async <T,>(cmd: string, args?: Record<string, unknown>) => {
+    calls.push({ cmd, args });
+    if (cmd === 'tool_rate' || cmd === 'data_sync') {
+      if (syncError) throw syncError;
+      return { committed: cmd === 'tool_rate', pushed: true, summary: 'Saved 1 file. Data repo is up to date on GitHub.' } as T;
+    }
     if (cmd !== 'data_overview') throw `unexpected ${cmd}`;
     if (typeof answer === 'string') throw answer;
     return answer as T;
@@ -48,7 +53,10 @@ describe('Tools page', () => {
     render(<Tools invoke={shell(OVERVIEW)} />);
     expect(await screen.findByText('1 of 3 tools on · 1 habits · 12 rules')).toBeTruthy();
     expect(screen.getByText(/about 700 tokens instead of 10,000 for everything \(93% fewer\)/)).toBeTruthy();
-    const names = screen.getAllByRole('button').map((b) => b.querySelector('.tool-name')?.textContent);
+    const names = screen
+      .getAllByRole('button')
+      .map((b) => b.querySelector('.tool-name')?.textContent)
+      .filter(Boolean);
     expect(names).toEqual(['Only CLI (oc)', 'EGM', 'Old thing']);
   });
 
@@ -58,6 +66,22 @@ describe('Tools page', () => {
     expect(screen.getByText('reading docs')).toBeTruthy();
     expect(screen.getByText('4 / 5')).toBeTruthy();
     expect(screen.getByText('41% fewer tokens')).toBeTruthy();
+  });
+
+  it('saves a rating and syncs it', async () => {
+    const calls: { cmd: string; args?: Record<string, unknown> }[] = [];
+    render(<Tools invoke={shell(OVERVIEW, calls)} />);
+    fireEvent.click(await screen.findByRole('button', { name: /EGM/ }));
+    fireEvent.click(screen.getByRole('button', { name: '3' }));
+    expect(await screen.findByText('Saved 1 file. Data repo is up to date on GitHub.')).toBeTruthy();
+    expect(calls).toContainEqual({ cmd: 'tool_rate', args: { tool: 'EGM', rating: 3 } });
+    expect(screen.getByText('3 / 5')).toBeTruthy();
+  });
+
+  it('shows why a sync stopped', async () => {
+    render(<Tools invoke={shell(OVERVIEW, [], 'Sync stopped: GitHub has changes that clash.')} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Sync with GitHub' }));
+    expect((await screen.findByRole('alert')).textContent).toBe('Sync stopped: GitHub has changes that clash.');
   });
 
   it('asks for the data folder when none is set', async () => {

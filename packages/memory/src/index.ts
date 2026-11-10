@@ -42,3 +42,5 @@ export {
 } from './data-repo.js';
 
 export { SpendLog, monthKey, type MonthSpend, type SpendRecord } from './spend.js';
+
+export { changedFiles, looksLikeKey, rateTool, realGit, setRating, syncDataRepo, type Git, type SyncResult } from './sync.js';

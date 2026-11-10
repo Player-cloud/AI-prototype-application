@@ -36,6 +36,28 @@ export async function getDataOverview(invoke: Invoke): Promise<DataOverview> {
   }
 }
 
+export interface SyncResult { committed: boolean; pushed: boolean; summary: string }
+
+function plain(err: unknown): Error {
+  return new Error(err instanceof Error ? err.message : String(err));
+}
+
+export async function rateTool(invoke: Invoke, tool: string, rating: number): Promise<SyncResult> {
+  try {
+    return await invoke<SyncResult>('tool_rate', { tool, rating });
+  } catch (err) {
+    throw plain(err);
+  }
+}
+
+export async function syncData(invoke: Invoke): Promise<SyncResult> {
+  try {
+    return await invoke<SyncResult>('data_sync');
+  } catch (err) {
+    throw plain(err);
+  }
+}
+
 export const STATE_LABEL: Record<ToolState, string> = {
   on: 'On',
   trial: 'Trial next',

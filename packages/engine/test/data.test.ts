@@ -45,3 +45,27 @@ describe('data_overview', () => {
     expect((await overview({ dataFolder: join(folder, 'tools') })).error).toContain('No ledger.md in');
   });
 });
+
+describe('tool_rate and data_sync', () => {
+  const call = async (method: string, params: Record<string, unknown>) =>
+    JSON.parse(await handleLine(JSON.stringify({ id: 2, method, params })));
+
+  it('need a data folder', async () => {
+    expect((await call('data_sync', { settings: {} })).error).toBe('Set your data folder in Settings first.');
+    expect((await call('tool_rate', { settings: {}, tool: 'EGM', rating: 3 })).error).toBe('Set your data folder in Settings first.');
+  });
+
+  it('check the rating before touching anything', async () => {
+    expect((await call('tool_rate', { settings: { dataFolder: folder }, tool: 'EGM', rating: '3' })).error).toBe(
+      'Rating must be a whole number from 1 to 5',
+    );
+    expect((await call('tool_rate', { settings: { dataFolder: folder }, tool: 'EGM', rating: 9 })).error).toBe(
+      'Rating must be a whole number from 1 to 5',
+    );
+  });
+
+  it('refuse to sync a folder that is not a git clone', async () => {
+    // The rating is saved locally first; the sync then explains why it can't push.
+    expect((await call('tool_rate', { settings: { dataFolder: folder }, tool: 'EGM', rating: 3 })).error).toContain('is not a git clone');
+  });
+});
