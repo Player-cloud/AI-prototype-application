@@ -1,0 +1,26 @@
+{
+  "name": "@aip/desktop",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "The desktop app: a small Tauri (Rust) window around React screens.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "tauri": "tauri"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "2.12.4",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.12.4",
+    "@testing-library/react": "16.3.3",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.3.0",
+    "jsdom": "31.0.0",
+    "vite": "8.3.7"
+  }
+}
