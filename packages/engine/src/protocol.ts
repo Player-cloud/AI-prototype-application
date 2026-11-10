@@ -8,6 +8,9 @@
  *  - ask:  {provider, apiKey, job, prompt} -> {text, model, modelName, inputTokens, outputTokens, costUsd, costText}
  *  - check: {provider, apiKey} -> {ok, summary}. Claude: a one-word ask. OpenAI/DeepSeek: the free "list models" call.
  *  - settings_check: {settings} -> the settings with defaults filled in, or a plain-words error.
+ *  - spend_summary: {settings, dbPath} -> this month's spend against the budget.
+ *    ask and check take an optional dbPath: the call is refused once the month's budget is used up,
+ *    and its cost is recorded there afterwards.
  *  - data_overview: {settings} -> the tools, habits and rules in the data folder, and what the engine reads first.
  *    ask and check also take an optional `settings` (model choices, prices, £/$ rate).
  *    The key comes from the window's password store for this one call and is never echoed back.
@@ -16,6 +19,7 @@ import type { Job, ModelAdapter, Provider } from '@aip/models';
 import { formatCost } from './money.ts';
 import { DEFAULT_SETTINGS, checkSettings, type AppSettings } from './settings.ts';
 import { dataOverview } from './data.ts';
+import { readBudget, recordSpend } from './budget.ts';
 
 export const ENGINE_VERSION = '0.0.1';
 
@@ -32,16 +36,22 @@ export type Reply = { id: number | null; result: unknown } | { id: number | null
 
 /** What `ask` needs from the models package. Swapped for fakes in tests. */
 export interface Deps {
-  makeAdapter(provider: Provider, apiKey: string, settings: AppSettings): Promise<ModelAdapter>;
+  /** maxUsd caps a single call (Claude enforces it; others can't be capped up front). */
+  makeAdapter(provider: Provider, apiKey: string, settings: AppSettings, maxUsd: number): Promise<ModelAdapter>;
   pickModel(provider: Provider, job: Job, settings: AppSettings): Promise<string>;
   modelName(id: string): Promise<string>;
+  /** The time now; swapped in tests. */
+  now?(): Date;
 }
+
+/** Most a single call may cost, even with plenty of budget left. */
+const MAX_CALL_USD = 0.5;
 
 /** Loads the models package only when a model is first used. */
 export const realDeps: Deps = {
-  async makeAdapter(provider, apiKey, settings) {
+  async makeAdapter(provider, apiKey, settings, maxUsd) {
     const m = await import('@aip/models');
-    if (provider === 'claude') return m.createClaudeAdapter({ apiKey, maxBudgetUsd: 0.5 });
+    if (provider === 'claude') return m.createClaudeAdapter({ apiKey, maxBudgetUsd: maxUsd });
     return m.createOpenAICompatibleAdapter({ provider, apiKey, prices: settings.prices });
   },
   async pickModel(provider, job, settings) {
@@ -72,6 +82,13 @@ function str(params: Record<string, unknown>, key: string): string {
   return v;
 }
 
+function optionalPath(p: Record<string, unknown>, key: string): string | null {
+  const v = p[key];
+  if (v === undefined || v === null || v === '') return null;
+  if (typeof v !== 'string') throw new Error(`${key} must be a path`);
+  return v;
+}
+
 function obj(params: unknown): Record<string, unknown> {
   if (typeof params !== 'object' || params === null) throw new Error('params must be an object');
   return params as Record<string, unknown>;
@@ -90,9 +107,24 @@ async function runAsk(p: Record<string, unknown>, deps: Deps) {
   const prompt = str(p, 'prompt');
   const job = str(p, 'job') as Job;
   if (!JOBS.includes(job)) throw new Error(`unknown job: ${job}`);
+  const dbPath = optionalPath(p, 'dbPath');
+  const now = deps.now?.() ?? new Date();
+  let maxUsd = MAX_CALL_USD;
+  if (dbPath) {
+    const b = await readBudget(dbPath, settings, now);
+    if (b.leftUsd <= 0) {
+      throw new Error(
+        `This month’s budget is used up (${costText(b.spentUsd, settings.gbpPerUsd)} of £${b.budgetGbp}). Raise it in Settings → Budget and models, or wait until next month.`,
+      );
+    }
+    maxUsd = Math.min(MAX_CALL_USD, b.leftUsd);
+  }
   const model = await deps.pickModel(prov, job, settings);
-  const adapter = await deps.makeAdapter(prov, apiKey, settings);
+  const adapter = await deps.makeAdapter(prov, apiKey, settings, maxUsd);
   const out = await adapter.run({ job, prompt, model });
+  if (dbPath) {
+    await recordSpend(dbPath, { at: now, provider: prov, model, job, ...out.usage });
+  }
   return {
     text: out.text,
     model,
@@ -112,12 +144,15 @@ async function check(params: unknown, deps: Deps): Promise<{ ok: true; summary: 
   const prov = provider(p);
   const apiKey = str(p, 'apiKey');
   const settings = checkSettings(p.settings);
-  const adapter = await deps.makeAdapter(prov, apiKey, settings);
+  const adapter = await deps.makeAdapter(prov, apiKey, settings, MAX_CALL_USD);
   if (adapter.checkKey) {
     await adapter.checkKey();
     return { ok: true, summary: `Connected. ${PROVIDER_NAME[prov]} accepted the key. This check is free.` };
   }
-  const r = await runAsk({ provider: prov, apiKey, settings, job: 'read', prompt: 'Reply with the single word: ready' }, deps);
+  const r = await runAsk(
+    { provider: prov, apiKey, settings, dbPath: p.dbPath, job: 'read', prompt: 'Reply with the single word: ready' },
+    deps,
+  );
   return { ok: true, summary: `Connected. ${r.modelName} replied “${r.text.trim()}”. Cost: ${r.costText}.` };
 }
 
@@ -128,6 +163,15 @@ const HANDLERS: Record<string, Handler> = {
   ask,
   check,
   settings_check: (params) => checkSettings(obj(params).settings),
+  spend_summary: async (params, deps) => {
+    const p = obj(params);
+    const settings = checkSettings(p.settings);
+    const dbPath = optionalPath(p, 'dbPath');
+    if (!dbPath) throw new Error('dbPath is required');
+    const b = await readBudget(dbPath, settings, deps.now?.() ?? new Date());
+    const spentText = b.spentUsd === 0 ? formatCost(0, settings.gbpPerUsd) : costText(b.spentUsd, settings.gbpPerUsd);
+    return { ...b, spentText };
+  },
   data_overview: (params) => dataOverview(checkSettings(obj(params).settings)),
 };
 

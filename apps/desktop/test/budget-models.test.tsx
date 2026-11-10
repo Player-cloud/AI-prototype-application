@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { BudgetModels } from '../src/screens/BudgetModels';
-import { dollarsFor, toNumber, type AppSettings } from '../src/settings';
+import { dollarsFor, spendLine, toNumber, type AppSettings } from '../src/settings';
 import type { Invoke } from '../src/engine';
 
 afterEach(cleanup);
@@ -22,6 +22,7 @@ function fakeShell(start: AppSettings = DEFAULTS) {
   const saves: AppSettings[] = [];
   const invoke: Invoke = async <T,>(cmd: string, args?: Record<string, unknown>) => {
     if (cmd === 'settings_get') return stored as T;
+    if (cmd === 'spend_summary') return spend(stored) as T;
     if (cmd === 'settings_save') {
       const s = args?.settings as AppSettings;
       saves.push(s);
@@ -33,6 +34,16 @@ function fakeShell(start: AppSettings = DEFAULTS) {
   };
   return { invoke, saves };
 }
+
+const spend = (s: AppSettings) => ({
+  month: '2026-11',
+  spentText: '£1.20 ($1.52)',
+  budgetGbp: s.monthlyBudgetGbp,
+  percentLeft: s.monthlyBudgetGbp === 40 ? 97 : 94,
+  calls: 3,
+  unknownCalls: 0,
+  rulesWin: true,
+});
 
 const save = () => fireEvent.click(screen.getByRole('button', { name: 'Save budget and models' }));
 
@@ -100,6 +111,23 @@ describe('Budget and models', () => {
     };
     render(<BudgetModels invoke={invoke} />);
     expect(await screen.findByRole('alert')).toHaveProperty('textContent', 'settings file is damaged; save Settings again to replace it');
+  });
+});
+
+describe('spend this month', () => {
+  it('shows what has been spent against the budget, and updates after a budget change', async () => {
+    render(<BudgetModels invoke={fakeShell().invoke} />);
+    expect(await screen.findByText('Spent this month: £1.20 ($1.52) of £20 · 94% left')).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Monthly budget (£)'), { target: { value: '40' } });
+    save();
+    expect(await screen.findByText('Spent this month: £1.20 ($1.52) of £40 · 97% left')).toBeTruthy();
+  });
+
+  it('mentions unpriced calls and when preferences win', () => {
+    const s = { ...spend(DEFAULTS), unknownCalls: 2, rulesWin: false, percentLeft: 20 };
+    expect(spendLine(s)).toBe(
+      'Spent this month: £1.20 ($1.52) of £20 · 20% left · 2 calls with no price set · under 30% left, so your preferences now win over the general rules',
+    );
   });
 });
 

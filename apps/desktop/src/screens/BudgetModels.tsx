@@ -1,6 +1,17 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import type { Invoke } from '../engine';
-import { dollarsFor, getSettings, saveSettings, toNumber, type AppSettings, type EngineProvider, type Price } from '../settings';
+import {
+  dollarsFor,
+  getSettings,
+  getSpend,
+  saveSettings,
+  spendLine,
+  toNumber,
+  type AppSettings,
+  type EngineProvider,
+  type Price,
+  type SpendSummary,
+} from '../settings';
 
 const PROVIDER_CHOICES: readonly { id: EngineProvider; name: string }[] = [
   { id: 'claude', name: 'Claude' },
@@ -66,9 +77,11 @@ export function BudgetModels({ invoke }: { invoke: Invoke }) {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [note, setNote] = useState<{ text: string; bad: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [spend, setSpend] = useState<SpendSummary | null>(null);
 
   useEffect(() => {
     let live = true;
+    getSpend(invoke).then((s) => live && setSpend(s));
     getSettings(invoke)
       .then((s) => live && setDraft(toDraft(s)))
       .catch((err: unknown) => live && setNote({ text: (err as Error).message, bad: true }));
@@ -101,6 +114,7 @@ export function BudgetModels({ invoke }: { invoke: Invoke }) {
       const saved = await saveSettings(invoke, fromDraft(draft));
       setDraft(toDraft(saved));
       setNote({ text: 'Saved on this computer.', bad: false });
+      setSpend(await getSpend(invoke)); // the budget may have changed
     } catch (err) {
       setNote({ text: (err as Error).message, bad: true });
     } finally {
@@ -127,7 +141,8 @@ export function BudgetModels({ invoke }: { invoke: Invoke }) {
         <input id="budget" inputMode="decimal" value={draft.budget} onChange={(e) => set({ budget: e.target.value })} />
         <span className="muted-inline">{dollarsFor(toNumber(draft.budget), rate)}</span>
       </div>
-      <p className="hint">The app will stop before going over this once spending is recorded (build step 5).</p>
+      {spend && <p className="spend-line" role="status">{spendLine(spend)}</p>}
+      <p className="hint">Every model call’s cost is recorded on this computer. Calls stop once the month’s budget is used.</p>
 
       <div className="field">
         <label htmlFor="rate">£ per $1</label>

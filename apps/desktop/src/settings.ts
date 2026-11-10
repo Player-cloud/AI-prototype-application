@@ -38,6 +38,34 @@ export async function saveSettings(invoke: Invoke, settings: AppSettings): Promi
   }
 }
 
+/** This month's spend against the budget, from the local spend file. */
+export interface SpendSummary {
+  month: string;
+  spentText: string;
+  budgetGbp: number;
+  percentLeft: number;
+  calls: number;
+  unknownCalls: number;
+  rulesWin: boolean;
+}
+
+export async function getSpend(invoke: Invoke): Promise<SpendSummary | null> {
+  try {
+    const s = await invoke<SpendSummary>('spend_summary');
+    return s && typeof s.spentText === 'string' ? s : null;
+  } catch {
+    return null; // the budget form still works without it
+  }
+}
+
+/** "Spent this month: £1.20 ($1.52) of £20 · 94% left". */
+export function spendLine(s: SpendSummary): string {
+  const base = `Spent this month: ${s.spentText} of £${s.budgetGbp} · ${s.percentLeft}% left`;
+  const unknown = s.unknownCalls > 0 ? ` · ${s.unknownCalls} call${s.unknownCalls === 1 ? '' : 's'} with no price set` : '';
+  const prefs = s.rulesWin ? '' : ' · under 30% left, so your preferences now win over the general rules';
+  return base + unknown + prefs;
+}
+
 /** "≈ $20.25" for a £ amount at the given rate, or '' when either isn't a usable number. */
 export function dollarsFor(gbp: number, gbpPerUsd: number): string {
   if (!Number.isFinite(gbp) || !Number.isFinite(gbpPerUsd) || gbpPerUsd <= 0 || gbp < 0) return '';

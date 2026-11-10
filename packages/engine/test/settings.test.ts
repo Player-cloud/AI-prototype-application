@@ -63,7 +63,7 @@ describe('settings in the engine', () => {
   it('ask uses the chosen model, the prices and the rate', async () => {
     const seen: { model?: string; prices?: unknown } = {};
     const deps: Deps = {
-      async makeAdapter(provider, _key, settings) {
+      async makeAdapter(provider, _key, settings, _maxUsd) {
         seen.prices = settings.prices;
         const run: ModelAdapter['run'] = async (t) => {
           seen.model = t.model;
