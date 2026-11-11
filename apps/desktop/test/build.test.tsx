@@ -39,6 +39,10 @@ function fakeShell(opts: { fail?: string; runs?: (typeof WAITING)[] } = {}) {
     calls.push({ cmd, args });
     if (cmd === 'settings_get') return { gbpPerUsd: 0.79, runCapGbp: 0.8 } as T;
     if (cmd === 'run_list') return runs as T;
+    if (cmd === 'work_poll') {
+      runs = runs.map((r) => ({ ...r, rating: 5 as unknown as null }));
+      return { done: ['From your phone (issue #12): Rated F-02 5/5.'], changed: true } as T;
+    }
     if (cmd === 'work_list') {
       return runs.filter((r) => r.status === 'built').map((r, i) => ({ id: i + 1, at: '', kind: 'build', runId: r.id, title: `club-hr ${r.feature}: built, waiting for Keep or Undo`, issue: 12, issueUrl: 'https://github.com/o/r/issues/12' })) as T;
     }
@@ -181,9 +185,13 @@ describe('Build screen', () => {
     render(<Build invoke={shell.invoke} makeChannel={shell.makeChannel} />);
     const builds = await screen.findByRole('region', { name: 'Builds' });
     expect(within(builds).getByText(/F-02 · .* · tests and checks pass · waiting for Keep or Undo/)).toBeTruthy();
+    // It needs joshua, and it's on his phone, where he can reply.
+    const needs = await screen.findByRole('region', { name: 'Needs you' });
+    expect(within(needs).getByText('club-hr F-02: built, waiting for Keep or Undo')).toBeTruthy();
+    fireEvent.click(within(needs).getByRole('button', { name: 'Check phone replies now' }));
+    expect((await screen.findByText('From your phone (issue #12): Rated F-02 5/5.')).getAttribute('role')).toBe('status');
+    expect(within(builds).getByRole('button', { name: '5' }).getAttribute('aria-pressed')).toBe('true');
     fireEvent.click(within(builds).getByRole('button', { name: 'Keep F-02' }));
-    // It needs joshua, and it's on his phone.
-    expect(within(screen.getByRole('region', { name: 'Needs you' })).getByText('club-hr F-02: built, waiting for Keep or Undo')).toBeTruthy();
     expect((await screen.findByRole('status')).textContent).toBe('Kept F-02 in your copy on main. Nothing was pushed. Closed issue #12 on your phone.');
     expect(screen.queryByRole('region', { name: 'Needs you' })).toBeNull();
     expect(shell.calls).toContainEqual({ cmd: 'run_decide', args: { id: 7, keep: true } });

@@ -134,3 +134,12 @@ export async function listWork(invoke: Invoke): Promise<WorkItem[]> {
     throw plain(err);
   }
 }
+
+/** Reads replies from joshua's phone now and acts on keep, undo or a rating (step 10c). */
+export async function pollPhone(invoke: Invoke): Promise<{ done: string[]; changed: boolean }> {
+  try {
+    return await invoke<{ done: string[]; changed: boolean }>('work_poll');
+  } catch (err) {
+    throw plain(err);
+  }
+}

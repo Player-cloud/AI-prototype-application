@@ -44,6 +44,9 @@
  *    plain note on the phone message. A finished build becomes a work item (and, with a token, an
  *    issue on the data repo); Keep or Undo closes both (step 10b).
  *  - work_list: {dbPath} -> open work items for the "Needs you" panel, oldest first.
+ *  - work_poll: {settings, dbPath, githubToken} -> reads new replies from joshua's phone on open
+ *    items' issues and acts on keep, undo or a 1–5 rating, answering on the issue (step 10c).
+ *    Returns {done: plain notes, changed}. Nothing happens without a token.
  *  - github_check: {token, settings} -> {ok, summary}. Free: reads the data repo's issues with the
  *    GitHub token from the password store (step 10a). The token is never put in a reply.
  *  - tool_switch_on: {settings, tool} -> switches a switched-off tool back on (retested on next use)
@@ -67,6 +70,7 @@ import { keepRun, listRuns, rateRun, undoRun } from './keep.ts';
 import { learnNow } from './learn.ts';
 import { githubCheck } from './github.ts';
 import { closeBuild, listWork, postBuild } from './notify.ts';
+import { pollReplies } from './replies.ts';
 import { dataOverview, rateAndSync, switchToolOn, syncAfterUndo, syncNow } from './data.ts';
 import { historyList, settingsSaved, undoStart } from './history.ts';
 import { parseSuggestions, suggestPrompt } from './suggest.ts';
@@ -408,6 +412,15 @@ const HANDLERS: Record<string, Handler> = {
     return { run, learned: await learnNow(settings, str(p, 'dbPath'), (id) => deps.modelName(id), deps.now?.() ?? new Date()) };
   },
   work_list: (params) => listWork(str(obj(params), 'dbPath')),
+  work_poll: (params, deps) => {
+    const p = obj(params);
+    const settings = checkSettings(p.settings);
+    const dbPath = str(p, 'dbPath');
+    const t = token(p);
+    if (!t) return { done: [], changed: false };
+    const now = () => deps.now?.() ?? new Date();
+    return pollReplies(settings, dbPath, t, now, () => learnNow(settings, dbPath, (id) => deps.modelName(id), now()), deps.fetch);
+  },
   github_check: (params, deps) => {
     const p = obj(params);
     return githubCheck(str(p, 'token'), checkSettings(p.settings), deps.fetch);

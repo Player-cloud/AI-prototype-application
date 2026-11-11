@@ -81,6 +81,8 @@ To set it up, make a **fine-grained** token on GitHub (Settings → Developer se
 
 When a build finishes it needs you (Keep or Undo), so it shows under **Needs you** at the top of the Build screen and, with a token saved, is posted as an issue with the tests, checks, cost in £ and $, and the build's summary. When you Keep or Undo it on the PC, the issue gets a short reply and is closed. A GitHub problem never stops a build or a Keep; the app just says the message didn't go.
 
+You can answer from your phone: reply on the issue with **keep**, **undo**, or a rating from **1** to **5** (only the first line counts). While the app is open it reads replies about once a minute (or press **Check phone replies now**), does the same as the buttons on the PC, and answers on the issue. Keep from the phone has the same rules: it's refused if the tests or a blocking check failed, or your copy has changes not committed yet, and the reply says why. Only people with access to the private data repo count, and the app never reads its own posts as yours.
+
 ## Tool health
 
 Each tool has a small health record in the data repo, `tool-health/<tool>.json`: the version in use, the version its test evidence is for, and its recent failures. When a tool updates, its old evidence is marked stale and it gets a quick retest the next time it's used. A good run clears the mark. The Tools page shows this under each tool, for example "2 failures in a row." Each build model run counts as a use of that model (for example "Sonnet 5.5"); a Stop doesn't count. After 3 failures in a row the model is switched off, you're told, and builds refuse it until you press **Switch … back on** on the Tools page (it's then retested on its next use). Switching a tool off never uninstalls it.

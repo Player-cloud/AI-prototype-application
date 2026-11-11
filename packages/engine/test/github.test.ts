@@ -84,14 +84,14 @@ describe('issues', () => {
       if (s.method === 'POST' && s.url.endsWith('/issues')) return { status: 201, json: { number: 7, title: 'F-01 built', state: 'open', html_url: 'https://github.com/o/r/issues/7', labels: [{ name: 'aip' }] } };
       if (s.method === 'POST') return { status: 201, json: { id: 1, body: 'ok', user: { login: 'aip' }, created_at: '2026-11-11T20:00:00Z' } };
       if (s.method === 'PATCH') return { status: 200, json: {} };
-      if (s.url.includes('/comments')) return { status: 200, json: [{ id: 2, body: 'keep', user: { login: 'joshua' }, created_at: '2026-11-11T20:01:00Z' }] };
+      if (s.url.includes('/comments')) return { status: 200, json: [{ id: 2, body: 'keep', user: { login: 'joshua' }, author_association: 'OWNER', created_at: '2026-11-11T20:01:00Z' }] };
       return { status: 200, json: [{ number: 7, title: 'F-01 built', state: 'open', html_url: 'u', labels: ['aip'] }, { number: 8, title: 'a PR', state: 'open', html_url: 'u', labels: [], pull_request: {} }] };
     });
     const gh = new GitHub(TOKEN, 'o/r', f);
     expect(await gh.createIssue('F-01 built', 'Keep or Undo?', ['aip'])).toEqual({ number: 7, title: 'F-01 built', state: 'open', url: 'https://github.com/o/r/issues/7', labels: ['aip'] });
     expect(seen[0]!.body).toEqual({ title: 'F-01 built', body: 'Keep or Undo?', labels: ['aip'] });
     await gh.comment(7, 'ok');
-    expect(await gh.comments(7, '2026-11-11T20:00:00Z')).toEqual([{ id: 2, body: 'keep', author: 'joshua', at: '2026-11-11T20:01:00Z' }]);
+    expect(await gh.comments(7, '2026-11-11T20:00:00Z')).toEqual([{ id: 2, body: 'keep', author: 'joshua', role: 'OWNER', at: '2026-11-11T20:01:00Z' }]);
     expect(seen[2]!.url).toBe('https://api.github.com/repos/o/r/issues/7/comments?per_page=100&since=2026-11-11T20%3A00%3A00Z');
     expect((await gh.openIssues('aip')).map((i) => i.number)).toEqual([7]);
     await gh.close(7);

@@ -33,10 +33,12 @@ export async function messagesRepo(settings: AppSettings): Promise<string> {
 }
 
 export interface Issue { number: number; title: string; state: 'open' | 'closed'; url: string; labels: string[] }
-export interface Comment { id: number; body: string; author: string; at: string }
+/** `role` is GitHub's author_association: OWNER, COLLABORATOR, MEMBER, NONE… */
+export interface Comment { id: number; body: string; author: string; role: string; at: string }
 
 interface RawIssue { number: number; title: string; state: 'open' | 'closed'; html_url: string; labels: ({ name: string } | string)[]; pull_request?: unknown }
-interface RawComment { id: number; body: string | null; user: { login: string } | null; created_at: string }
+interface RawComment { id: number; body: string | null; user: { login: string } | null; author_association?: string; created_at: string }
+const toComment = (c: RawComment): Comment => ({ id: c.id, body: c.body ?? '', author: c.user?.login ?? '', role: c.author_association ?? 'NONE', at: c.created_at });
 
 const toIssue = (r: RawIssue): Issue => ({
   number: r.number,
@@ -102,14 +104,14 @@ export class GitHub {
 
   async comment(issue: number, body: string): Promise<Comment> {
     const c = await this.call<RawComment>('POST', `/issues/${issue}/comments`, 'post a reply', { body });
-    return { id: c.id, body: c.body ?? '', author: c.user?.login ?? '', at: c.created_at };
+    return toComment(c);
   }
 
   /** Comments after `since` (an ISO time), oldest first. */
   async comments(issue: number, since?: string): Promise<Comment[]> {
     const q = since ? `?per_page=100&since=${encodeURIComponent(since)}` : '?per_page=100';
     const list = await this.call<RawComment[]>('GET', `/issues/${issue}/comments${q}`, 'read replies');
-    return list.map((c) => ({ id: c.id, body: c.body ?? '', author: c.user?.login ?? '', at: c.created_at }));
+    return list.map(toComment);
   }
 
   /** Open issues with a label (pull requests left out). */
