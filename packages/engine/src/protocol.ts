@@ -33,6 +33,11 @@
  *    attempts inside the limit. Returns the run, the Using line, steps, tests, sync note and cost.
  *    While it runs, event lines {"id", "event"} come first: {type:"using"}, then {type:"step"} each.
  *    A model that fails 3 runs in a row is switched off (D-2) and refused until switched back on.
+ *  - run_list: {dbPath, slug?} -> saved feature builds, newest first (waiting, kept or undone, rating).
+ *  - run_keep: {settings, dbPath, id} -> merges a build whose tests pass into joshua's own copy (never
+ *    pushes), then removes the build's copy. Refused when his copy has uncommitted changes.
+ *  - run_undo: {settings, dbPath, id} -> removes a waiting build's copy and branch.
+ *  - run_rate: {dbPath, id, rating} -> joshua's 1–5 rating for a build.
  *  - tool_switch_on: {settings, tool} -> switches a switched-off tool back on (retested on next use)
  *    and syncs the data repo.
  *  - cancel: {id} -> stops that running request (answered at once, not queued).
@@ -50,6 +55,7 @@ import type { CheckResult } from '@aip/checks';
 import type { Job, ModelAdapter, Provider } from '@aip/models';
 import { formatCost } from './money.ts';
 import { DEFAULT_SETTINGS, checkSettings, type AppSettings } from './settings.ts';
+import { keepRun, listRuns, rateRun, undoRun } from './keep.ts';
 import { dataOverview, rateAndSync, switchToolOn, syncAfterUndo, syncNow } from './data.ts';
 import { historyList, settingsSaved, undoStart } from './history.ts';
 import { parseSuggestions, suggestPrompt } from './suggest.ts';
@@ -332,11 +338,33 @@ const HANDLERS: Record<string, Handler> = {
     return r;
   },
   data_sync: (params) => syncNow(checkSettings(obj(params).settings)),
+  run_list: (params) => {
+    const p = obj(params);
+    return listRuns(str(p, 'dbPath'), typeof p.slug === 'string' && p.slug ? p.slug : undefined);
+  },
+  run_keep: (params, deps) => {
+    const p = obj(params);
+    return keepRun(checkSettings(p.settings), str(p, 'dbPath'), runId(p), deps.now?.() ?? new Date());
+  },
+  run_undo: (params, deps) => {
+    const p = obj(params);
+    return undoRun(checkSettings(p.settings), str(p, 'dbPath'), runId(p), deps.now?.() ?? new Date());
+  },
+  run_rate: (params) => {
+    const p = obj(params);
+    if (typeof p.rating !== 'number') throw new Error('Rating must be a whole number from 1 to 5');
+    return rateRun(str(p, 'dbPath'), runId(p), p.rating);
+  },
   tool_switch_on: (params) => {
     const p = obj(params);
     return switchToolOn(checkSettings(p.settings), str(p, 'tool'));
   },
 };
+
+function runId(p: Record<string, unknown>): number {
+  if (typeof p.id !== 'number' || !Number.isInteger(p.id) || p.id < 1) throw new Error('id must be a build number');
+  return p.id;
+}
 
 function parseRequest(line: string): Request | string {
   let value: unknown;

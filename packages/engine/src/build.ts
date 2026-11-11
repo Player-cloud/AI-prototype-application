@@ -48,6 +48,8 @@ export interface BuildResult {
   tests: { passed: boolean; output: string; fixAttempts: number };
   /** How the data folder sync went ('' with no data folder). */
   synced: string;
+  /** The saved run that Keep, Undo and the rating act on (null without a history file). */
+  runId: number | null;
 }
 
 /** The run's limit in dollars: the Settings limit (in £) or what's left this month, whichever is less. */
@@ -230,7 +232,30 @@ export async function buildFeature(
   if (stopped(signal)) throw new Error('Stopped.');
   add({ text: tests.passed ? 'Tests pass' : 'Tests still fail' });
   const synced = await syncAfter(settings, `Build ${p.slug} ${p.feature}`);
+  let runId: number | null = null;
+  if (p.dbPath) {
+    const m = await import('@aip/memory');
+    const log = m.RunLog.open(p.dbPath);
+    try {
+      runId = log.add({
+        at: now,
+        slug: p.slug,
+        feature: p.feature,
+        path: run.path,
+        branch: run.branch,
+        base: run.base,
+        model,
+        costUsd: spentUsd,
+        testsPassed: tests.passed,
+        fixAttempts: fixes,
+        summary: summary.slice(0, 2000),
+      });
+    } finally {
+      log.close();
+    }
+  }
   return {
+    runId,
     run,
     using,
     steps,

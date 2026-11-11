@@ -175,6 +175,12 @@ describe('build_feature', () => {
 
     // The cost counts against the month's budget.
     expect((await call('spend_summary', { settings, dbPath })).result.calls).toBe(1);
+
+    // The build is saved, waiting for Keep or Undo (step 9a).
+    expect(out.runId).toBe(1);
+    expect((await call('run_list', { dbPath, slug: 'club-hr' })).result).toMatchObject([
+      { id: 1, feature: 'F-01', branch: out.run.branch, path: out.run.path, testsPassed: true, status: 'built', costUsd: 0.42 },
+    ]);
   });
 
   it('does nothing when stopped before it starts', async () => {
@@ -232,6 +238,7 @@ describe('build_feature', () => {
     const call = await plan(deps(seen, true, { tests: [false, true] }), settings);
     const out = (await call('build_feature', { settings, slug: 'club-hr', feature: 'F-01', provider: 'claude', apiKey: FAKE_KEY, dbPath: null })).result;
     expect(out.tests).toMatchObject({ passed: true, fixAttempts: 1 });
+    expect(out.runId).toBeNull(); // no history file, nothing saved
     expect(out.steps.at(-1).text).toBe('Tests pass');
   });
 

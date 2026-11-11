@@ -2,9 +2,11 @@ import { useEffect, useState } from 'react';
 import type { Invoke } from '../engine';
 import { listProjects, openProject, type Feature, type ProjectRow } from '../projects';
 import { getSettings } from '../settings';
-import { startBuild, stopBuild, type BuildResult, type BuildStep, type MakeChannel } from '../build';
+import { decideRun, listRuns, rateRun, startBuild, stopBuild, type BuildResult, type BuildRun, type BuildStep, type MakeChannel } from '../build';
 
 type Note = { text: string; bad: boolean } | null;
+
+const STATUS: Record<BuildRun['status'], string> = { built: 'waiting for Keep or Undo', kept: 'kept', undone: 'undone' };
 
 /** "£0.80 ($1.01)" */
 export function limitText(gbp: number, gbpPerUsd: number): string {
@@ -23,6 +25,8 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<BuildResult | null>(null);
   const [note, setNote] = useState<Note>(null);
+  const [runs, setRuns] = useState<BuildRun[]>([]);
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     if (!invoke) return;
@@ -51,6 +55,9 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
         setFeature(v.interview.features[0]?.id ?? '');
       })
       .catch((err: Error) => live && setNote({ text: err.message, bad: true }));
+    listRuns(invoke, slug)
+      .then((r) => live && setRuns(r))
+      .catch((err: Error) => live && setNote({ text: err.message, bad: true }));
     return () => {
       live = false;
     };
@@ -77,12 +84,13 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
         else setSteps((s) => [...s, e.refused ? { text: e.text, refused: e.refused } : { text: e.text }]);
       });
       setResult(r);
+      setRuns(await listRuns(invoke, slug));
       setUsing(r.using);
       setSteps(r.steps);
       setNote(
         r.tests.passed
-          ? { text: `Done and the tests pass. Cost: ${r.costText}. Keep or Undo comes in the next step of the plan.`, bad: false }
-          : { text: `Built, but the tests still fail${r.tests.fixAttempts ? ` after ${r.tests.fixAttempts} fix attempt${r.tests.fixAttempts === 1 ? '' : 's'}` : ''}. Cost: ${r.costText}. It can’t be kept until they pass.`, bad: true },
+          ? { text: `Done and the tests pass. Cost: ${r.costText}. Check it, then press Keep or Undo below.`, bad: false }
+          : { text: `Built, but the tests still fail${r.tests.fixAttempts ? ` after ${r.tests.fixAttempts} fix attempt${r.tests.fixAttempts === 1 ? '' : 's'}` : ''}. Cost: ${r.costText}. It can’t be kept, so Undo it below.`, bad: true },
       );
     } catch (err) {
       setNote({ text: (err as Error).message, bad: true });
@@ -90,6 +98,25 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
       setRunning(false);
     }
   }
+
+  async function act(label: string, job: () => Promise<string>) {
+    if (!invoke) return;
+    setBusy(true);
+    setNote({ text: label, bad: false });
+    try {
+      const text = await job();
+      setRuns(await listRuns(invoke, slug));
+      setNote({ text, bad: false });
+    } catch (err) {
+      setNote({ text: (err as Error).message, bad: true });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const decide = (r: BuildRun, keep: boolean) =>
+    act(keep ? `Keeping ${r.feature}…` : `Undoing ${r.feature}…`, async () => (await decideRun(invoke!, r.id, keep)).note);
+  const rate = (r: BuildRun, n: number) => act(`Saving ${n}/5…`, async () => (await rateRun(invoke!, r.id, n), `Rated ${r.feature} ${n}/5.`));
 
   async function onStop() {
     if (!invoke) return;
@@ -170,6 +197,42 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
             </details>
           )}
           {result.synced && <p className="muted">Data folder: {result.synced}</p>}
+        </div>
+      )}
+      {runs.length > 0 && (
+        <div className="runs" role="region" aria-label="Builds">
+          <h3>Builds</h3>
+          <ul className="run-list">
+            {runs.map((r) => (
+              <li key={r.id} className={`run-row ${r.status}`}>
+                <span className="run-name">
+                  {r.feature} · {new Date(r.at).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })} ·{' '}
+                  {r.testsPassed ? 'tests pass' : 'tests fail'} · {STATUS[r.status]}
+                  {r.status === 'kept' && r.keptInto ? ` into ${r.keptInto}` : ''}
+                </span>
+                {r.status === 'built' && (
+                  <span className="run-actions">
+                    <button type="button" disabled={busy || running || !r.testsPassed} onClick={() => void decide(r, true)} aria-label={`Keep ${r.feature}`}>
+                      Keep
+                    </button>
+                    <button type="button" disabled={busy || running} onClick={() => void decide(r, false)} aria-label={`Undo ${r.feature}`}>
+                      Undo
+                    </button>
+                  </span>
+                )}
+                {r.status !== 'undone' && (
+                  <span className="rating" role="group" aria-label={`Rate ${r.feature} build ${r.id}`}>
+                    {[1, 2, 3, 4, 5].map((n) => (
+                      <button key={n} type="button" disabled={busy} aria-pressed={r.rating === n} onClick={() => void rate(r, n)}>
+                        {n}
+                      </button>
+                    ))}
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+          <p className="muted">Keep merges the build into your copy on this computer (it never pushes). Undo removes the build’s copy.</p>
         </div>
       )}
       {note && (

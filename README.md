@@ -37,6 +37,14 @@ The **Build** screen lists finished plans and their features. Press **Build F-01
 
 After the model finishes, the project's own tests run in the copy (`pnpm test`, or the package manager its lock file shows; packages are installed first if the copy has none). If they fail, the model gets up to 2 fix attempts with the end of the test output, inside what's left of the run's limit. It's told never to skip, delete or weaken tests. The result shows whether the tests pass and the end of their output; a build whose tests fail can't be kept. The data folder syncs after each build.
 
+## Keep or Undo (step 9)
+
+Every build is saved on this computer (in history.sqlite, next to the spend records) and listed under **Builds** on the Build screen, so a build can be decided later, even after the app restarts.
+
+- **Keep** merges the build's branch into your copy, on the branch you have checked out, as one merge commit. It never pushes. It's refused when the build's tests fail or your copy has changes not committed yet, and if the build clashes with your newer work nothing is changed. The build's copy and branch are then removed.
+- **Undo** removes the build's copy and branch. Your copy isn't touched.
+- Each build can be rated 1–5. Ratings are the evidence the app learns from later in step 9.
+
 ## Tool health
 
 Each tool has a small health record in the data repo, `tool-health/<tool>.json`: the version in use, the version its test evidence is for, and its recent failures. When a tool updates, its old evidence is marked stale and it gets a quick retest the next time it's used. A good run clears the mark. The Tools page shows this under each tool, for example "2 failures in a row." Each build model run counts as a use of that model (for example "Sonnet 5.5"); a Stop doesn't count. After 3 failures in a row the model is switched off, you're told, and builds refuse it until you press **Switch … back on** on the Tools page (it's then retested on its next use). Switching a tool off never uninstalls it.
