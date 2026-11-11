@@ -10,6 +10,7 @@ permissions:
 
 jobs:
   check:
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -30,6 +31,8 @@ jobs:
 
   shell:
     # The Rust window shell: builds and runs its tests on both systems.
+    # A stuck job now fails after 25 minutes instead of hanging for hours.
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
@@ -39,9 +42,17 @@ jobs:
       - uses: actions/checkout@v4
       - name: Linux libraries for the window
         if: runner.os == 'Linux'
+        # This step hung on ubuntu-latest. Rebuilding the man-page index after install is a known
+        # cause on these runners, so it is switched off; apt also retries downloads and never waits
+        # for an answer. If it still sticks, the step fails after 10 minutes and can be re-run.
+        timeout-minutes: 10
+        env:
+          DEBIAN_FRONTEND: noninteractive
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libsoup-3.0-dev librsvg2-dev libgtk-3-dev libdbus-1-dev build-essential
+          echo 'set man-db/auto-update false' | sudo debconf-communicate >/dev/null
+          sudo rm -f /var/lib/man-db/auto-update
+          sudo apt-get update -o Acquire::Retries=3
+          sudo apt-get install -y -o Acquire::Retries=3 libwebkit2gtk-4.1-dev libsoup-3.0-dev librsvg2-dev libgtk-3-dev libdbus-1-dev build-essential
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
