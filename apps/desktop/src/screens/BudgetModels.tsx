@@ -29,6 +29,7 @@ const OTHERS: readonly { id: Other; name: string }[] = [
 interface Draft {
   provider: EngineProvider;
   budget: string;
+  runCap: string;
   rate: string;
   models: Record<Other, { strong: string; everyday: string }>;
   prices: Record<string, { input: string; output: string }>;
@@ -39,6 +40,7 @@ function toDraft(s: AppSettings): Draft {
   return {
     provider: s.provider,
     budget: String(s.monthlyBudgetGbp),
+    runCap: String(s.runCapGbp ?? 0.8),
     rate: String(s.gbpPerUsd),
     dataFolder: s.dataFolder,
     models: { openai: { ...s.models.openai }, deepseek: { ...s.models.deepseek } },
@@ -57,6 +59,7 @@ function fromDraft(d: Draft): Omit<AppSettings, 'extraRules' | 'codeFolders'> {
   return {
     provider: d.provider,
     monthlyBudgetGbp: toNumber(d.budget),
+    runCapGbp: toNumber(d.runCap),
     gbpPerUsd: toNumber(d.rate),
     dataFolder: d.dataFolder.trim(),
     models: {
@@ -143,8 +146,13 @@ export function BudgetModels({ invoke, onSaved, reload = 0 }: { invoke: Invoke; 
         <input id="budget" inputMode="decimal" value={draft.budget} onChange={(e) => set({ budget: e.target.value })} />
         <span className="muted-inline">{dollarsFor(toNumber(draft.budget), rate)}</span>
       </div>
+      <div className="field">
+        <label htmlFor="run-cap">Cost limit per build run (£)</label>
+        <input id="run-cap" inputMode="decimal" value={draft.runCap} onChange={(e) => set({ runCap: e.target.value })} />
+        <span className="muted-inline">{dollarsFor(toNumber(draft.runCap), rate)}</span>
+      </div>
       {spend && <p className="spend-line" role="status">{spendLine(spend)}</p>}
-      <p className="hint">Every model call’s cost is recorded on this computer. Calls stop once the month’s budget is used.</p>
+      <p className="hint">Every model call’s cost is recorded on this computer. Calls stop once the month’s budget is used, and a feature build stops at its own limit.</p>
 
       <div className="field">
         <label htmlFor="rate">£ per $1</label>

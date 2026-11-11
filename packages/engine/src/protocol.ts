@@ -27,6 +27,9 @@
  *    plan review, or 3 fresh-eyes reviewers for a big build. Saves review.md and syncs.
  *  - code_folder_check: {settings, slug} -> checks the project's code folder on this computer (a git
  *    repo with a commit) and lists its feature runs (worktrees on aip/ branches).
+ *  - build_feature: {settings, slug, feature, provider, apiKey, dbPath} -> builds one feature in its own
+ *    copy of the code (Sonnet for Claude). Every tool call stays in the copy and goes through the
+ *    gatekeeper. Stops at the run's cost limit. Returns the run, the Using line, steps and cost.
  *  - interview_confirm: {settings, slug, stage} -> confirms a stage; the last one writes spec.md and
  *    the done files, then syncs the data repo.
  *  - settings_saved: {dbPath, before, after, undoes?} -> keeps a settings change in the history (id, or null if nothing changed).
@@ -51,6 +54,7 @@ import { confirm, getInterview, interviewStages, listProjects, saveAnswers, star
 import { MAX_CALL_USD, readBudget, recordSpend } from './budget.ts';
 import { gate, listRules } from './gate.ts';
 import { checkCodeFolder, codeFolderOf } from './runs.ts';
+import { buildFeature } from './build.ts';
 
 export const ENGINE_VERSION = '0.0.1';
 
@@ -282,6 +286,16 @@ const HANDLERS: Record<string, Handler> = {
   interview_confirm: (params, deps) => {
     const p = obj(params);
     return confirm(checkSettings(p.settings), str(p, 'slug'), str(p, 'stage'), deps.now?.() ?? new Date());
+  },
+  build_feature: async (params, deps) => {
+    const p = obj(params);
+    const settings = checkSettings(p.settings);
+    const r = await buildFeature(
+      settings,
+      { slug: str(p, 'slug'), feature: str(p, 'feature'), provider: provider(p), apiKey: str(p, 'apiKey'), dbPath: optionalPath(p, 'dbPath') },
+      deps,
+    );
+    return { ...r, modelName: await deps.modelName(r.model), costText: costText(r.costUsd, settings.gbpPerUsd) };
   },
   code_folder_check: (params) => {
     const p = obj(params);

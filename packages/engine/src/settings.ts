@@ -21,6 +21,8 @@ export interface AppSettings {
   dataFolder: string;
   /** joshua's own ask-first rules, added in Settings: any action mentioning `match` waits for his OK. */
   extraRules: ExtraRule[];
+  /** The most one feature build run may cost, in pounds (joshua chose £0.80). */
+  runCapGbp: number;
   /** Where each project's code is cloned on this computer, by project folder name (slug). */
   codeFolders: Record<string, string>;
 }
@@ -43,6 +45,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   dataFolder: '',
   extraRules: [],
   codeFolders: {},
+  runCapGbp: 0.8,
 };
 
 const PROVIDERS: readonly Provider[] = ['claude', 'openai', 'deepseek'];
@@ -150,6 +153,7 @@ export function checkSettings(raw: unknown): AppSettings {
     dataFolder,
     extraRules: extraRules(raw.extraRules),
     codeFolders: codeFolders(raw.codeFolders),
+    runCapGbp: raw.runCapGbp === undefined ? d.runCapGbp : num(raw.runCapGbp, 'Cost limit per build run (£)', 0.05, 50),
     monthlyBudgetGbp: raw.monthlyBudgetGbp === undefined ? d.monthlyBudgetGbp : num(raw.monthlyBudgetGbp, 'Monthly budget (£)', 0, 10000),
     gbpPerUsd: raw.gbpPerUsd === undefined ? d.gbpPerUsd : num(raw.gbpPerUsd, '£ per $ rate', 0.1, 5),
     models: {

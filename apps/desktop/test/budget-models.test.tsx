@@ -16,6 +16,7 @@ const DEFAULTS: AppSettings = {
   dataFolder: '',
   extraRules: [],
   codeFolders: {},
+  runCapGbp: 0.8,
 };
 
 /** Stand-in for the Rust shell + engine: refuses a bad rate the way the engine does, saves anything else. */
@@ -63,6 +64,8 @@ describe('Budget and models', () => {
     render(<BudgetModels invoke={shell.invoke} />);
     fireEvent.change(await screen.findByLabelText('Provider for the app’s jobs'), { target: { value: 'deepseek' } });
     fireEvent.change(screen.getByLabelText('Monthly budget (£)'), { target: { value: '25' } });
+    expect((screen.getByLabelText('Cost limit per build run (£)') as HTMLInputElement).value).toBe('0.8');
+    fireEvent.change(screen.getByLabelText('Cost limit per build run (£)'), { target: { value: '1.6' } });
     fireEvent.change(screen.getByLabelText('Everyday model (everything else)', { selector: '#deepseek-everyday' }), {
       target: { value: 'my-model' },
     });
@@ -74,6 +77,7 @@ describe('Budget and models', () => {
       ...DEFAULTS,
       provider: 'deepseek',
       monthlyBudgetGbp: 25,
+      runCapGbp: 1.6,
       models: { ...DEFAULTS.models, deepseek: { strong: 'deepseek-reasoner', everyday: 'my-model' } },
       prices: { 'my-model': { inputPerM: 0.3, outputPerM: 1.2 } },
     });

@@ -4,7 +4,7 @@
  */
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { Job, ModelAdapter, StepResult } from './index.js';
+import type { BuildTask, Job, ModelAdapter, StepResult } from './index.js';
 
 /**
  * Only these variables from the PC are passed to Claude. Anything else, in particular other
@@ -37,6 +37,8 @@ export interface SdkMessage {
   result?: string;
   errors?: string[];
   total_cost_usd?: number;
+  /** For assistant messages: the content blocks, including tool calls. */
+  message?: { content?: Array<{ type: string; name?: string; input?: Record<string, unknown>; text?: string }> };
   modelUsage?: Record<string, { inputTokens: number; outputTokens: number; cacheReadInputTokens?: number; cacheCreationInputTokens?: number }>;
 }
 
@@ -71,6 +73,41 @@ export function friendlyError(raw: string): string {
   return raw;
 }
 
+/** The only tools a build may use: read, search, edit files and run commands, all in its own copy. */
+export const BUILD_TOOLS = ['Read', 'Glob', 'Grep', 'Edit', 'Write', 'Bash'] as const;
+
+/** Most turns one build may take. */
+const BUILD_TURNS = 60;
+
+/** One tool call in plain words for the step list, e.g. "Edit src/app/page.tsx". */
+export function stepText(name: string, input: Record<string, unknown>): string {
+  const s = (k: string) => (typeof input[k] === 'string' ? (input[k] as string) : '');
+  const short = (t: string) => (t.length > 80 ? `${t.slice(0, 77)}…` : t);
+  switch (name) {
+    case 'Read':
+    case 'Edit':
+    case 'Write':
+      return `${name} ${s('file_path')}`;
+    case 'Glob':
+    case 'Grep':
+      return `Search ${short(s('pattern'))}`;
+    case 'Bash':
+      return `Run ${short(s('command').replace(/\s+/g, ' '))}`;
+    default:
+      return name;
+  }
+}
+
+function usageOf(final: SdkMessage, apiKey: string): StepResult {
+  let inputTokens = 0;
+  let outputTokens = 0;
+  for (const u of Object.values(final.modelUsage ?? {})) {
+    inputTokens += u.inputTokens + (u.cacheReadInputTokens ?? 0) + (u.cacheCreationInputTokens ?? 0);
+    outputTokens += u.outputTokens;
+  }
+  return { text: redact(final.result ?? '', apiKey), usage: { inputTokens, outputTokens, costUsd: final.total_cost_usd ?? 0 } };
+}
+
 export function createClaudeAdapter(opts: ClaudeAdapterOptions): ModelAdapter {
   if (!opts.apiKey) throw new Error('No Claude API key saved. Add it in Settings.');
   return {
@@ -102,16 +139,52 @@ export function createClaudeAdapter(opts: ClaudeAdapterOptions): ModelAdapter {
         const why = (final.errors ?? []).join('; ') || final.subtype || 'unknown error';
         throw new Error(friendlyError(redact(why, opts.apiKey)));
       }
-      let inputTokens = 0;
-      let outputTokens = 0;
-      for (const u of Object.values(final.modelUsage ?? {})) {
-        inputTokens += u.inputTokens + (u.cacheReadInputTokens ?? 0) + (u.cacheCreationInputTokens ?? 0);
-        outputTokens += u.outputTokens;
+      return usageOf(final, opts.apiKey);
+    },
+    async build(task: BuildTask): Promise<StepResult> {
+      const query = opts.query ?? (await loadQuery());
+      const abort = new AbortController();
+      const onAbort = () => abort.abort();
+      task.signal?.addEventListener('abort', onAbort);
+      let final: SdkMessage | undefined;
+      try {
+        for await (const msg of query({
+          prompt: task.prompt,
+          options: {
+            model: task.model,
+            cwd: task.cwd,
+            env: claudeEnv(opts.apiKey),
+            settingSources: [], // never the PC's or the project's own Claude settings
+            tools: [...BUILD_TOOLS],
+            permissionMode: 'default', // every tool call comes to checkTool first
+            canUseTool: async (name: string, input: Record<string, unknown>) => {
+              const d = await task.checkTool(name, input);
+              return d.allow ? { behavior: 'allow', updatedInput: input } : { behavior: 'deny', message: d.reason };
+            },
+            maxTurns: BUILD_TURNS,
+            persistSession: false,
+            abortController: abort,
+            ...(opts.maxBudgetUsd !== undefined ? { maxBudgetUsd: opts.maxBudgetUsd } : {}),
+          },
+        })) {
+          if (msg.type === 'assistant') {
+            for (const b of msg.message?.content ?? []) if (b.type === 'tool_use' && b.name) task.onStep?.(stepText(b.name, b.input ?? {}));
+          }
+          if (msg.type === 'result') final = msg;
+        }
+      } catch (err) {
+        if (task.signal?.aborted) throw new Error('Stopped.');
+        const message = err instanceof Error ? err.message : String(err);
+        throw new Error(friendlyError(redact(message, opts.apiKey)));
+      } finally {
+        task.signal?.removeEventListener('abort', onAbort);
       }
-      return {
-        text: redact(final.result ?? '', opts.apiKey),
-        usage: { inputTokens, outputTokens, costUsd: final.total_cost_usd ?? 0 },
-      };
+      if (!final) throw new Error(task.signal?.aborted ? 'Stopped.' : 'Claude ended without an answer.');
+      if (final.subtype !== 'success') {
+        const why = (final.errors ?? []).join('; ') || final.subtype || 'unknown error';
+        throw new Error(friendlyError(redact(why, opts.apiKey)));
+      }
+      return usageOf(final, opts.apiKey);
     },
   };
 }
