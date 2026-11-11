@@ -37,14 +37,16 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
+    # ubuntu-latest is now Ubuntu 26.04, whose apt mirror stalls on every package download (each
+    # one waits 20s and is skipped), so the install never finishes. The window libraries are
+    # installed on Ubuntu 24.04 instead; the check keeps its name so nothing else changes.
+    runs-on: ${{ matrix.os == 'ubuntu-latest' && 'ubuntu-24.04' || matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - name: Linux libraries for the window
         if: runner.os == 'Linux'
-        # This step hung on ubuntu-latest. Rebuilding the man-page index after install is a known
-        # cause on these runners, so it is switched off; apt also retries downloads and never waits
-        # for an answer. If it still sticks, the step fails after 10 minutes and can be re-run.
+        # Faster and safer installs: no man-page index rebuild, download retries, never waits for an
+        # answer. If it still sticks, the step fails after 10 minutes and can be re-run.
         timeout-minutes: 10
         env:
           DEBIAN_FRONTEND: noninteractive
