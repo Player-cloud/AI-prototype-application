@@ -17,6 +17,12 @@
  *  - tool_rate: {settings, tool, rating} -> saves a 1–5 rating in ledger.md and syncs the data repo.
  *    With dbPath, the change is kept in the history so it can be undone.
  *  - data_sync: {settings} -> commits data folder changes and syncs with GitHub. Never forces.
+ *  - interview_stages: {} -> the plan interview's stages, questions and checklist areas.
+ *  - project_list: {settings} -> the projects in the data folder with their status.
+ *  - interview_start: {settings, name} -> starts a project's plan interview in projects/<slug>/.
+ *  - interview_get / interview_save: {settings, slug, stage?, patch?} -> the interview (saving answers first).
+ *  - interview_confirm: {settings, slug, stage} -> confirms a stage; the last one writes spec.md and
+ *    the done files, then syncs the data repo.
  *  - settings_saved: {dbPath, before, after, undoes?} -> keeps a settings change in the history (id, or null if nothing changed).
  *  - history_list: {dbPath} -> the newest changes, newest first.
  *  - undo: {dbPath, id, settings} -> puts a change back if nothing has changed since. For settings it
@@ -30,6 +36,7 @@ import { formatCost } from './money.ts';
 import { DEFAULT_SETTINGS, checkSettings, type AppSettings } from './settings.ts';
 import { dataOverview, rateAndSync, syncAfterUndo, syncNow } from './data.ts';
 import { historyList, settingsSaved, undoStart } from './history.ts';
+import { confirm, getInterview, interviewStages, listProjects, saveAnswers, startInterview } from './projects.ts';
 import { readBudget, recordSpend } from './budget.ts';
 import { gate, listRules } from './gate.ts';
 
@@ -106,6 +113,10 @@ function undoesOf(v: unknown): { id: number; label: string } | undefined {
   const u = obj(v);
   if (typeof u.id !== 'number' || !Number.isInteger(u.id) || typeof u.label !== 'string') throw new Error('undoes must have id and label');
   return { id: u.id, label: u.label };
+}
+
+function optionalStage(p: Record<string, unknown>): string | undefined {
+  return typeof p.stage === 'string' && p.stage ? p.stage : undefined;
 }
 
 function settingsOrNull(raw: unknown): AppSettings | null {
@@ -214,6 +225,24 @@ const HANDLERS: Record<string, Handler> = {
   settings_saved: (params, deps) => {
     const p = obj(params);
     return settingsSaved(str(p, 'dbPath'), p.before, p.after, deps.now?.() ?? new Date(), undoesOf(p.undoes));
+  },
+  interview_stages: () => interviewStages(),
+  project_list: (params) => listProjects(checkSettings(obj(params).settings)),
+  interview_start: (params, deps) => {
+    const p = obj(params);
+    return startInterview(checkSettings(p.settings), p.name, deps.now?.() ?? new Date());
+  },
+  interview_get: (params) => {
+    const p = obj(params);
+    return getInterview(checkSettings(p.settings), str(p, 'slug'), optionalStage(p));
+  },
+  interview_save: (params, deps) => {
+    const p = obj(params);
+    return saveAnswers(checkSettings(p.settings), str(p, 'slug'), obj(p.patch ?? {}), optionalStage(p), deps.now?.() ?? new Date());
+  },
+  interview_confirm: (params, deps) => {
+    const p = obj(params);
+    return confirm(checkSettings(p.settings), str(p, 'slug'), str(p, 'stage'), deps.now?.() ?? new Date());
   },
   history_list: (params) => historyList(str(obj(params), 'dbPath')),
   undo: async (params, deps) => {

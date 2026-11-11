@@ -9,6 +9,7 @@
   "dependencies": {
     "@aip/models": "workspace:*",
     "@aip/memory": "workspace:*",
-    "@aip/gatekeeper": "workspace:*"
+    "@aip/gatekeeper": "workspace:*",
+    "@aip/checks": "workspace:*"
   }
 }

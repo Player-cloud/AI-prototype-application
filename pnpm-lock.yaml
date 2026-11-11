@@ -62,6 +62,9 @@ importers:
 
   packages/engine:
     dependencies:
+      '@aip/checks':
+        specifier: workspace:*
+        version: link:../checks
       '@aip/gatekeeper':
         specifier: workspace:*
         version: link:../gatekeeper

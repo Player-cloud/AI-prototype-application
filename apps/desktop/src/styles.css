@@ -129,3 +129,30 @@ body { margin: 0; min-height: 100vh; background: radial-gradient(circle at 20% 1
 /* Some system webviews draw the drop-down in light colours; keep it readable on the dark glass. */
 .budget-form select { appearance: none; color-scheme: dark; background-color: #161b26; cursor: pointer; }
 .budget-form select option { background-color: #161b26; color: var(--text); }
+.project-list { list-style: none; margin: 16px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.project-row {
+  width: 100%; display: flex; justify-content: space-between; gap: 8px; align-items: center; text-align: left;
+  padding: 10px 12px; border-radius: 8px; border: 1px solid var(--glass-border); background: rgba(0, 0, 0, 0.15);
+  color: var(--text); font: inherit; cursor: pointer;
+}
+.project-row:hover { background: var(--glass); }
+.interview-head h2 { margin: 8px 0 4px; font-size: 1.2rem; }
+.stage-list { list-style: none; display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 16px; padding: 0; }
+.stage-step {
+  padding: 6px 10px; border-radius: 999px; border: 1px solid var(--glass-border); background: transparent;
+  color: var(--muted); font: inherit; font-size: 0.85rem; cursor: pointer;
+}
+.stage-step:disabled { cursor: default; opacity: 0.55; }
+.stage-step[aria-current='step'] { color: var(--accent); border-color: var(--accent); opacity: 1; }
+.interview h3 { margin: 0; font-size: 1.05rem; }
+.interview .muted { margin: 0; color: var(--muted); font-size: 0.9rem; }
+.budget-form .field.column { flex-direction: column; align-items: stretch; }
+.budget-form .field.column label { flex: none; }
+.budget-form textarea {
+  min-width: 0; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--glass-border);
+  background: rgba(0, 0, 0, 0.25); color: var(--text); font: inherit; resize: vertical;
+}
+.feature-id { flex: 0 0 44px; font-size: 0.85rem; color: var(--muted); }
+.check { display: flex; align-items: center; gap: 6px; }
+.tool-hints { display: flex; flex-direction: column; gap: 4px; }
+.projects .hint, .projects .key-note { margin-top: 12px; }
