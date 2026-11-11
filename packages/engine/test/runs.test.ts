@@ -40,6 +40,7 @@ describe('feature runs in git worktrees', () => {
     await mkdir(code);
     await mkdir(data);
     git(code, 'init', '-q', '-b', 'main');
+    git(code, 'config', 'core.autocrlf', 'false'); // Windows runners turn LF into CRLF on checkout otherwise
   });
   afterEach(async () => {
     await rm(root, { recursive: true, force: true });
