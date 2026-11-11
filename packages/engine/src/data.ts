@@ -14,6 +14,11 @@ export interface ToolRow {
   useWhen: string;
   dontUseWhen: string;
   cost: string;
+  /** Tool health in plain words ('' when all is well), and the flags behind it. */
+  health: string;
+  stale: boolean;
+  failuresInRow: number;
+  switchedOff: boolean;
 }
 
 export type DataOverview =
@@ -71,6 +76,8 @@ export async function dataOverview(settings: AppSettings): Promise<DataOverview>
   if (!settings.dataFolder) return { configured: false };
   const m = await import('@aip/memory');
   const repo = await m.loadDataRepo(settings.dataFolder);
+  const health = await m.listHealth(settings.dataFolder);
+  const healthOf = (name: string) => health.get(m.slugify(name)) ?? m.emptyHealth(name);
   return {
     configured: true,
     folder: repo.folder,
@@ -85,6 +92,10 @@ export async function dataOverview(settings: AppSettings): Promise<DataOverview>
       useWhen: t.card?.useWhen ?? '',
       dontUseWhen: t.card?.dontUseWhen ?? '',
       cost: t.card?.cost ?? '',
+      health: m.healthNote(healthOf(t.name)),
+      stale: healthOf(t.name).stale,
+      failuresInRow: healthOf(t.name).consecutiveFailures,
+      switchedOff: healthOf(t.name).off !== null,
     })),
     habits: repo.habits,
     ruleCount: repo.rules.length,
@@ -92,4 +103,26 @@ export async function dataOverview(settings: AppSettings): Promise<DataOverview>
     firstReadTokens: m.roughTokens(m.firstRead(repo)),
     allTokens: m.roughTokens(repo.notes.map((n) => n.body).join('\n')),
   };
+}
+
+/**
+ * Notes the version of a tool in use (D-2: a new version marks old test evidence stale and
+ * schedules a retest on its next use). Saved in the data folder; synced with the next sync.
+ */
+export async function noteToolVersion(settings: AppSettings, tool: string, version: string) {
+  const folder = folderOf(settings);
+  const m = await import('@aip/memory');
+  const before = await m.readHealth(folder, tool);
+  const after = m.noteVersion(before, version);
+  if (after !== before) await m.writeHealth(folder, after);
+  return after;
+}
+
+/** Records one use of a tool: success, or failure with its error. Saved in the data folder. */
+export async function recordToolRun(settings: AppSettings, tool: string, run: { ok: boolean; error?: string }, now: Date) {
+  const folder = folderOf(settings);
+  const m = await import('@aip/memory');
+  const after = m.recordRun(await m.readHealth(folder, tool), run, now);
+  await m.writeHealth(folder, after);
+  return after;
 }

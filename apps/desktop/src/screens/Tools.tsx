@@ -96,6 +96,7 @@ export function Tools({ invoke }: { invoke: Invoke | null }) {
               <span className={`tool-state ${t.state}`}>{STATE_LABEL[t.state]}</span>
             </button>
             <p className="tool-what">{t.what || t.job}</p>
+            {t.health && <p className={`tool-health${t.switchedOff || t.failuresInRow > 0 ? ' warn' : ''}`}>{t.health}</p>}
             {open === t.name && (
               <dl className="tool-detail">
                 <dt>Status</dt>
