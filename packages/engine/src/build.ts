@@ -9,8 +9,9 @@
  * health record; 3 failures in a row switch it off until joshua switches it back on (D-2). The
  * data folder syncs after the task.
  */
+import { readFile } from 'node:fs/promises';
 import { isAbsolute, relative, resolve } from 'node:path';
-import type { CheckResult } from '@aip/checks';
+import type { CheckResult, Picture, PicturesResult } from '@aip/checks';
 import type { ModelAdapter, Provider, ToolDecision } from '@aip/models';
 import { readBudget, recordSpend } from './budget.ts';
 import { gate } from './gate.ts';
@@ -30,6 +31,8 @@ export interface BuildDeps {
   runTests?(dir: string): Promise<CheckResult>;
   /** The free checks after the tests (9b): secrets, audit, checklist rules. */
   freeChecks?(dir: string, base: string, areas: string[]): Promise<CheckResult[]>;
+  /** Desktop and phone pictures plus axe and phone width (9c), with the browser already on the computer. */
+  pictures?(dir: string, outDir: string, previous: Picture[]): Promise<PicturesResult>;
 }
 
 export interface BuildStep { text: string; refused?: string }
@@ -56,6 +59,11 @@ export interface BuildResult {
   checks: CheckResult[];
   /** Whether Keep is allowed, and what stops it. */
   keep: { keep: boolean; blocking: string[] };
+  /** Desktop and phone pictures (9c), ready to show. */
+  pictures: { name: string; path: string; dataUrl: string }[];
+  /** Against the last build's pictures; null when there was nothing to compare with. */
+  screensChanged: boolean | null;
+  picturesNote: string;
 }
 
 /** The run's limit in dollars: the Settings limit (in £) or what's left this month, whichever is less. */
@@ -119,7 +127,7 @@ export function checkStep(settings: AppSettings, runPath: string, tool: string, 
 }
 
 /** Plain names for the step list. */
-const CHECK_NAMES: Record<string, string> = { secrets: 'Secret scan', audit: 'Package audit', checklist: 'Checklist rules' };
+const CHECK_NAMES: Record<string, string> = { secrets: 'Secret scan', audit: 'Package audit', checklist: 'Checklist rules', axe: 'Accessibility', 'phone-overflow': 'Phone width' };
 
 /** How many times a failing test run is handed back to the model to fix (inside the run's limit). */
 export const FIX_ATTEMPTS = 2;
@@ -249,6 +257,29 @@ export async function buildFeature(
     checks = [{ name: 'free checks', passed: false, free: true, detail: `Couldn’t run: ${(err as Error).message}` }];
   }
   for (const c of checks) add({ text: `${CHECK_NAMES[c.name] ?? c.name}: ${c.passed ? 'passed' : c.advisory ? 'see notes' : 'failed'}` });
+
+  add({ text: 'Taking desktop and phone pictures' });
+  let previous: Picture[] = [];
+  if (p.dbPath) {
+    const m = await import('@aip/memory');
+    const log = m.RunLog.open(p.dbPath);
+    try {
+      previous = log.lastPictures(p.slug).map((x) => ({ ...x, name: x.name === 'phone' ? 'phone' : 'desktop' }));
+    } finally {
+      log.close();
+    }
+  }
+  const takePictures = deps.pictures ?? (async (dir: string, out: string, prev: Picture[]) => (await import('@aip/checks')).takePictures(dir, out, { previous: prev }));
+  let shots: PicturesResult;
+  try {
+    shots = await takePictures(run.path, `${run.path}-pictures`, previous);
+  } catch (err) {
+    const note = `No pictures: ${(err as Error).message.split('\n')[0]}`;
+    shots = { pictures: [], checks: [{ name: 'pictures', passed: false, free: true, advisory: true, detail: note }], changed: null, note };
+  }
+  add({ text: shots.note.split('\n')[0]! });
+  for (const c of shots.checks) if (c.name !== 'pictures') add({ text: `${CHECK_NAMES[c.name] ?? c.name}: ${c.passed ? 'passed' : 'see notes'}` });
+  checks.push(...shots.checks);
   const { canKeep } = await import('@aip/checks');
   const keep = canKeep([{ ...tests, name: 'tests' }, ...checks]);
   const synced = await syncAfter(settings, `Build ${p.slug} ${p.feature}`);
@@ -270,6 +301,7 @@ export async function buildFeature(
         fixAttempts: fixes,
         summary: summary.slice(0, 2000),
         checks: checks.map((c) => ({ name: c.name, passed: c.passed, advisory: c.advisory ?? false, detail: c.detail ?? '' })),
+        pictures: shots.pictures,
       });
     } finally {
       log.close();
@@ -287,6 +319,11 @@ export async function buildFeature(
     synced,
     checks,
     keep,
+    pictures: await Promise.all(
+      shots.pictures.map(async (x) => ({ name: x.name, path: x.path, dataUrl: `data:image/png;base64,${(await readFile(x.path)).toString('base64')}` })),
+    ),
+    screensChanged: shots.changed,
+    picturesNote: shots.note,
   };
 }
 

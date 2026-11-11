@@ -43,7 +43,7 @@ export {
 
 export { SpendLog, monthKey, type MonthSpend, type SpendRecord } from './spend.js';
 
-export { KEEP_RUNS, RunLog, type NewRun, type Run, type RunCheck, type RunStatus } from './runlog.js';
+export { KEEP_RUNS, RunLog, type NewRun, type Run, type RunCheck, type RunPicture, type RunStatus } from './runlog.js';
 
 export { ChangeLog, KEEP_CHANGES, MAX_CHANGE_CHARS, type Change, type ChangeKind, type NewChange } from './history.js';
 
