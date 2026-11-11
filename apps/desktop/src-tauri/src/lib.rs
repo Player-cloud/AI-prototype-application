@@ -357,13 +357,22 @@ async fn test_model(
     )
 }
 
+/// Tests the GitHub token for phone messages (step 10a). Free: it only reads the data repo's issues.
+/// The token goes from the password store straight to the engine; the screens get only the summary.
+#[tauri::command]
+async fn github_test(app: tauri::AppHandle, state: tauri::State<'_, Engine>) -> Result<serde_json::Value, String> {
+    let token = keys::load(&OsKeyring, "github")?;
+    let saved = settings::read(&settings_path(&app)?)?;
+    engine_call(&state, "github_check", serde_json::json!({ "token": token, "settings": saved }))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let helper = EngineHelper::start(&helper_command(std::env::var("AIP_ENGINE").ok()));
     tauri::Builder::default()
         .manage(Engine(Mutex::new(helper)))
         .manage(Build(Mutex::new(None)))
-        .invoke_handler(tauri::generate_handler![version, engine_status, key_status, key_save, key_remove, test_model, settings_get, settings_save, data_overview, spend_summary, tool_rate, tool_switch_on, data_sync, gate_rules, history_list, history_undo, project, interview_suggest, interview_review, build_feature, build_stop, run_list, run_decide, run_rate])
+        .invoke_handler(tauri::generate_handler![version, engine_status, key_status, key_save, key_remove, test_model, settings_get, settings_save, data_overview, spend_summary, tool_rate, tool_switch_on, data_sync, gate_rules, history_list, history_undo, project, interview_suggest, interview_review, build_feature, build_stop, run_list, run_decide, run_rate, github_test])
         .run(tauri::generate_context!())
         .expect("error while running the app");
 }

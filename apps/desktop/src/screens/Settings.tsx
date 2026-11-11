@@ -131,7 +131,13 @@ export function Settings({ invoke }: { invoke: Invoke | null }) {
       <h2>API keys</h2>
       <p className="muted">
         Keys are kept encrypted in this computer’s own password store (Credential Manager on Windows, the keyring on
-        Linux). They are never saved in a file, sent to GitHub, or shown again. Each computer needs its own copy.
+        Linux). They are never saved in a file or shown again, and each one only goes to its own service. Each computer
+        needs its own copy.
+      </p>
+      <p className="muted">
+        The GitHub token lets the app message your phone through Issues on your data repo. Make a fine-grained token on
+        GitHub (Settings → Developer settings → Fine-grained tokens) with only that repo and only “Issues: Read and
+        write”.
       </p>
       {invoke ? (
         PROVIDERS.map((p) => <KeyRow key={p.id} invoke={invoke} {...p} />)

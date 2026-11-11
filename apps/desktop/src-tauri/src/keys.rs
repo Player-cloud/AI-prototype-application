@@ -3,8 +3,8 @@
 
 use serde::Serialize;
 
-/// The model providers the app can hold a key for.
-pub const PROVIDERS: [&str; 3] = ["anthropic", "openai", "deepseek"];
+/// The model providers the app can hold a key for, and "github": the token for phone messages (step 10).
+pub const PROVIDERS: [&str; 4] = ["anthropic", "openai", "deepseek", "github"];
 
 /// Name the keys are filed under in the password store.
 pub const SERVICE: &str = "app.aiprototype.desktop";
@@ -72,6 +72,13 @@ pub fn validate_key(provider: &str, key: &str) -> Result<(), String> {
     if !(20..=400).contains(&key.len()) {
         return Err("the key is not the right length".into());
     }
+    if provider == "github" {
+        // Fine-grained tokens only: they can be limited to Issues on one repo.
+        if !key.starts_with("github_pat_") {
+            return Err("this doesn't look like a fine-grained GitHub token (it should start with github_pat_)".into());
+        }
+        return Ok(());
+    }
     let prefix = if provider == "anthropic" { "sk-ant-" } else { "sk-" };
     if !key.starts_with(prefix) {
         return Err(format!("this doesn't look like a {provider} key (it should start with {prefix})"));
@@ -129,6 +136,7 @@ pub mod tests {
     // Obviously fake test values, not real keys.
     const FAKE_ANTHROPIC: &str = "sk-ant-test-0000000000000000";
     const FAKE_OPENAI: &str = "sk-test-0000000000000000";
+    const FAKE_GITHUB: &str = "github_pat_test_0000000000";
 
     #[test]
     fn save_status_remove_round_trip() {
@@ -166,12 +174,20 @@ pub mod tests {
             ("anthropic", "sk-ant-short", "length"),
             ("anthropic", FAKE_OPENAI, "should start with sk-ant-"),
             ("openai", "pk-test-0000000000000000000", "should start with sk-"),
+            ("github", "ghp_test_000000000000000000", "should start with github_pat_"),
             ("nobody", FAKE_OPENAI, "unknown provider"),
         ] {
             let err = save(&store, provider, key).unwrap_err();
             assert!(err.contains(msg), "{provider}/{key}: {err}");
         }
         assert!(store.0.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn saves_a_fine_grained_github_token() {
+        let store = MemoryStore::default();
+        assert!(save(&store, "github", FAKE_GITHUB).unwrap().saved);
+        assert_eq!(load(&store, "github").unwrap(), FAKE_GITHUB);
     }
 
     #[test]

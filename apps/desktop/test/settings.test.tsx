@@ -24,6 +24,7 @@ function fakeShell(initial: string[] = []) {
     if (cmd === 'settings_get') return SETTINGS as T;
     if (cmd === 'gate_rules') return [] as T;
     if (cmd === 'history_list') return [] as T;
+    if (cmd === 'github_test') return { ok: true, summary: 'Connected. The app can read issues on joshua/ai-prototype-data (private).' } as T;
     if (cmd === 'test_model') {
       if (!saved.has(provider)) throw 'No anthropic key saved. Add it in Settings.';
       const summary =
@@ -57,6 +58,16 @@ describe('Settings: API keys', () => {
     expect(await within(row('Claude (Anthropic)')).findByText('Key saved')).toBeTruthy();
     expect(await within(row('OpenAI')).findByText('No key')).toBeTruthy();
     expect(await within(row('DeepSeek')).findByText('No key')).toBeTruthy();
+    expect(await within(row('GitHub (phone messages)')).findByText('No key')).toBeTruthy();
+  });
+
+  it('tests the GitHub token for phone messages without sending it to the screen', async () => {
+    const shell = fakeShell(['github']);
+    render(<Settings invoke={shell.invoke} />);
+    const r = row('GitHub (phone messages)');
+    fireEvent.click(await within(r).findByRole('button', { name: 'Test connection' }));
+    expect(await within(r).findByText('Connected. The app can read issues on joshua/ai-prototype-data (private).')).toBeTruthy();
+    expect(shell.calls).toContainEqual({ cmd: 'github_test', args: undefined });
   });
 
   it('uses a hidden input and clears it after saving', async () => {
@@ -101,7 +112,7 @@ describe('Settings: API keys', () => {
     const shell = fakeShell(['anthropic']);
     render(<Settings invoke={shell.invoke} />);
     await within(row('Claude (Anthropic)')).findByText('Key saved');
-    expect(shell.calls.every((c) => ['key_status', 'key_save', 'key_remove', 'test_model', 'settings_get', 'spend_summary', 'gate_rules', 'history_list'].includes(c.cmd))).toBe(true);
+    expect(shell.calls.every((c) => ['key_status', 'key_save', 'key_remove', 'test_model', 'github_test', 'settings_get', 'spend_summary', 'gate_rules', 'history_list'].includes(c.cmd))).toBe(true);
   });
 
   it('tests the Claude connection and shows the reply and cost', async () => {
