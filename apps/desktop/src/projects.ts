@@ -83,6 +83,10 @@ export const saveAnswers = (invoke: Invoke, slug: string, stage: StageId, patch:
 export const confirmStage = (invoke: Invoke, slug: string, stage: StageId) =>
   call<{ view: InterviewView; files: string[]; summary: string }>(invoke, 'interview_confirm', { slug, stage });
 
+export interface RunInfo { path: string; branch: string; feature: string }
+export interface CodeFolderStatus { folder: string; branch: string; clean: boolean; runs: RunInfo[] }
+export const checkCodeFolder = (invoke: Invoke, slug: string) => call<CodeFolderStatus>(invoke, 'code_folder_check', { slug });
+
 /** Reviews the finished plan (one review, or three fresh-eyes reviewers for a big build). Costs money. */
 export async function reviewPlan(invoke: Invoke, slug: string): Promise<{ view: InterviewView; summary: string }> {
   try {

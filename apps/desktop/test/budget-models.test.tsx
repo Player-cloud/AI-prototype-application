@@ -15,6 +15,7 @@ const DEFAULTS: AppSettings = {
   prices: {},
   dataFolder: '',
   extraRules: [],
+  codeFolders: {},
 };
 
 /** Stand-in for the Rust shell + engine: refuses a bad rate the way the engine does, saves anything else. */

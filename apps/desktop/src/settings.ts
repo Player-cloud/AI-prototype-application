@@ -17,6 +17,8 @@ export interface AppSettings {
   dataFolder: string;
   /** joshua's own ask-first rules. */
   extraRules: ExtraRule[];
+  /** Where each project's code is cloned on this computer, by project folder name. */
+  codeFolders: Record<string, string>;
 }
 
 export interface ExtraRule { match: string; reason: string }

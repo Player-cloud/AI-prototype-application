@@ -37,6 +37,7 @@ function fakeShell() {
     reviewCurrent: iv.review !== null,
   });
 
+  let settings = { dataFolder: '/data', codeFolders: {} as Record<string, string> };
   const invoke: Invoke = async <T,>(cmd: string, args?: Record<string, unknown>) => {
     if (cmd === 'interview_suggest') {
       calls.push({ method: 'suggest', params: args ?? {} });
@@ -52,6 +53,13 @@ function fakeShell() {
       const iv = projects.get(String(args?.slug))!;
       iv.review = { at: '', big: false, costText: '£0.01 ($0.01)', findings: [{ reviewer: 'plan', severity: 'could', text: 'Dark mode' }, { reviewer: 'plan', severity: 'must', text: 'No password reset', feature: 'F-01' }] };
       return { view: view(iv), summary: '2 findings, 1 must fix. Cost: £0.01 ($0.01).' } as T;
+    }
+    if (cmd === 'settings_get') return structuredClone(settings) as T;
+    if (cmd === 'settings_save') {
+      settings = structuredClone(args?.settings) as typeof settings;
+      for (const [k, v] of Object.entries(settings.codeFolders)) if (!v) delete settings.codeFolders[k];
+      calls.push({ method: 'settings_save', params: args ?? {} });
+      return structuredClone(settings) as T;
     }
     if (cmd !== 'project') throw `unexpected ${cmd}`;
     const method = String(args?.method);
@@ -86,6 +94,12 @@ function fakeShell() {
         }
         if (patch.done) for (const [id, list] of Object.entries(patch.done)) iv.done[id] = list.filter(Boolean);
         return view(iv, p.stage as StageId) as T;
+      }
+      case 'code_folder_check': {
+        const folder = settings.codeFolders[String(p.slug)];
+        if (!folder) throw 'Set this project’s code folder first: where its repo is cloned on this computer.';
+        if (folder.includes('nope')) throw `${folder} isn’t a git repo. Clone the project’s repo there first.`;
+        return { folder, branch: 'main', clean: false, runs: [{ path: `${folder}-runs/F-01-20261111-160509`, branch: 'aip/f-01-20261111-160509', feature: 'F-01' }] } as T;
       }
       case 'interview_confirm': {
         const iv = get();
@@ -151,6 +165,20 @@ describe('Projects: plan interview', () => {
     expect([...findings.querySelectorAll('li')].map((li) => li.textContent)).toEqual(['Must fix F-01: No password reset', 'Could add Dark mode']);
     expect(screen.getByRole('status').textContent).toBe('2 findings, 1 must fix. Cost: £0.01 ($0.01).');
     expect(within(review).getByRole('button', { name: /Review again/ })).toBeTruthy();
+
+    // Step 8a: the code folder for this computer, checked when saved.
+    const code = screen.getByRole('region', { name: 'Code folder' });
+    fireEvent.change(within(code).getByLabelText('Code folder path'), { target: { value: '/code/nope' } });
+    fireEvent.click(within(code).getByRole('button', { name: 'Save' }));
+    expect((await within(code).findByRole('alert')).textContent).toBe('/code/nope isn’t a git repo. Clone the project’s repo there first.');
+    fireEvent.change(within(code).getByLabelText('Code folder path'), { target: { value: ' /code/club-hr ' } });
+    fireEvent.click(within(code).getByRole('button', { name: 'Save' }));
+    expect(await within(code).findByText('Ready: on branch main. Builds start from its last commit.')).toBeTruthy();
+    expect(within(code).getByText(/changes that aren’t committed yet/)).toBeTruthy();
+    expect(within(code).getByRole('list', { name: 'Feature runs' }).textContent).toBe('F-01: /code/club-hr-runs/F-01-20261111-160509');
+    const saved = shell.calls.filter((c) => c.method === 'settings_save').at(-1)!.params.settings as { codeFolders: Record<string, string>; dataFolder: string };
+    expect(saved.codeFolders).toEqual({ 'club-hr': '/code/club-hr' });
+    expect(saved.dataFolder).toBe('/data');
   });
 
   it('lets you go back to a confirmed stage, saving what you typed first', async () => {

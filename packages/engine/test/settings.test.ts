@@ -100,4 +100,12 @@ describe('data folder setting', () => {
     expect(() => checkSettings({ dataFolder: 5 })).toThrow('Data folder must be a folder path');
     expect(() => checkSettings({ dataFolder: 'a\nb' })).toThrow('Data folder must be a folder path');
   });
+
+  it('keeps a code folder per project, dropping empty ones', () => {
+    expect(DEFAULT_SETTINGS.codeFolders).toEqual({});
+    expect(checkSettings({ codeFolders: { 'club-hr': ' D:\\code\\club-hr ', school: '' } }).codeFolders).toEqual({ 'club-hr': 'D:\\code\\club-hr' });
+    expect(() => checkSettings({ codeFolders: { '../x': '/a' } })).toThrow('isn’t a project folder name');
+    expect(() => checkSettings({ codeFolders: { 'club-hr': 'a\nb' } })).toThrow('Code folder for club-hr must be a folder path');
+    expect(() => checkSettings({ codeFolders: [] })).toThrow('code folders must be an object');
+  });
 });
