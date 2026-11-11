@@ -43,7 +43,7 @@ const OVERVIEW: DataOverview = {
 const shell = (answer: DataOverview | string, calls: { cmd: string; args?: Record<string, unknown> }[] = [], syncError = ''): Invoke =>
   (async <T,>(cmd: string, args?: Record<string, unknown>) => {
     calls.push({ cmd, args });
-    if (cmd === 'tool_rate' || cmd === 'data_sync') {
+    if (cmd === 'tool_rate' || cmd === 'data_sync' || cmd === 'tool_switch_on') {
       if (syncError) throw syncError;
       return { committed: cmd === 'tool_rate', pushed: true, summary: 'Saved 1 file. Data repo is up to date on GitHub.' } as T;
     }
@@ -73,6 +73,18 @@ describe('Tools page', () => {
     const stale = await screen.findByText(/Updated to 1\.3\.0/);
     expect(stale.className).toBe('tool-health');
     expect(screen.getByText('2 failures in a row.').className).toBe('tool-health warn');
+  });
+
+  it('switches a switched-off tool back on', async () => {
+    const calls: { cmd: string; args?: Record<string, unknown> }[] = [];
+    const tools = [row('Sonnet 5.5', 'unknown', { health: 'Switched off: 3 failures in a row (last: overloaded).', failuresInRow: 3, switchedOff: true })];
+    render(<Tools invoke={shell({ ...OVERVIEW, tools }, calls)} />);
+    expect((await screen.findByText(/^Switched off:/)).className).toBe('tool-health warn');
+    fireEvent.click(screen.getByRole('button', { name: 'Switch Sonnet 5.5 back on' }));
+    expect(await screen.findByText('Saved 1 file. Data repo is up to date on GitHub.')).toBeTruthy();
+    expect(calls).toContainEqual({ cmd: 'tool_switch_on', args: { tool: 'Sonnet 5.5' } });
+    expect(screen.queryByRole('button', { name: 'Switch Sonnet 5.5 back on' })).toBeNull();
+    expect(screen.getByText('It gets a quick retest next time it’s used.')).toBeTruthy();
   });
 
   it('opens a tool card to show when to use it and the rating', async () => {

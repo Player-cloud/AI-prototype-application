@@ -29,8 +29,12 @@
  *    repo with a commit) and lists its feature runs (worktrees on aip/ branches).
  *  - build_feature: {settings, slug, feature, provider, apiKey, dbPath} -> builds one feature in its own
  *    copy of the code (Sonnet for Claude). Every tool call stays in the copy and goes through the
- *    gatekeeper. Stops at the run's cost limit. Returns the run, the Using line, steps and cost.
+ *    gatekeeper. Stops at the run's cost limit. Then runs the project's tests, with up to 2 fix
+ *    attempts inside the limit. Returns the run, the Using line, steps, tests, sync note and cost.
  *    While it runs, event lines {"id", "event"} come first: {type:"using"}, then {type:"step"} each.
+ *    A model that fails 3 runs in a row is switched off (D-2) and refused until switched back on.
+ *  - tool_switch_on: {settings, tool} -> switches a switched-off tool back on (retested on next use)
+ *    and syncs the data repo.
  *  - cancel: {id} -> stops that running request (answered at once, not queued).
  *  - interview_confirm: {settings, slug, stage} -> confirms a stage; the last one writes spec.md and
  *    the done files, then syncs the data repo.
@@ -42,10 +46,11 @@
  *    ask and check also take an optional `settings` (model choices, prices, £/$ rate).
  *    The key comes from the window's password store for this one call and is never echoed back.
  */
+import type { CheckResult } from '@aip/checks';
 import type { Job, ModelAdapter, Provider } from '@aip/models';
 import { formatCost } from './money.ts';
 import { DEFAULT_SETTINGS, checkSettings, type AppSettings } from './settings.ts';
-import { dataOverview, rateAndSync, syncAfterUndo, syncNow } from './data.ts';
+import { dataOverview, rateAndSync, switchToolOn, syncAfterUndo, syncNow } from './data.ts';
 import { historyList, settingsSaved, undoStart } from './history.ts';
 import { parseSuggestions, suggestPrompt } from './suggest.ts';
 import { stageOf } from './interview.ts';
@@ -79,6 +84,8 @@ export interface Deps {
   modelName(id: string): Promise<string>;
   /** The time now; swapped in tests. */
   now?(): Date;
+  /** Runs a project's tests after a build (8d); the real one is @aip/checks. Swapped in tests. */
+  runTests?(dir: string): Promise<CheckResult>;
 }
 
 
@@ -325,6 +332,10 @@ const HANDLERS: Record<string, Handler> = {
     return r;
   },
   data_sync: (params) => syncNow(checkSettings(obj(params).settings)),
+  tool_switch_on: (params) => {
+    const p = obj(params);
+    return switchToolOn(checkSettings(p.settings), str(p, 'tool'));
+  },
 };
 
 function parseRequest(line: string): Request | string {

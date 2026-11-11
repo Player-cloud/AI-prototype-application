@@ -80,11 +80,42 @@ describe('Build screen', () => {
     expect(screen.getByRole('button', { name: 'Stop' })).toBeTruthy();
     expect(shell.calls.find((c) => c.cmd === 'build_feature')?.args).toMatchObject({ slug: 'club-hr', feature: 'F-02' });
 
-    shell.done({ run: RUN, using: 'Using: Sonnet 5.5, file edits, shell', steps: [{ text: 'Write src/rota.tsx' }], summary: 'Added the rota page.', modelName: 'Sonnet 5.5', costText: '£0.33 ($0.42)' });
-    expect((await screen.findByRole('status')).textContent).toBe('Done. Cost: £0.33 ($0.42). Keep or Undo comes in the next step of the plan.');
+    shell.done({
+      run: RUN,
+      using: 'Using: Sonnet 5.5, file edits, shell',
+      steps: [{ text: 'Write src/rota.tsx' }, { text: 'Running tests' }, { text: 'Tests pass' }],
+      summary: 'Added the rota page.',
+      modelName: 'Sonnet 5.5',
+      costText: '£0.33 ($0.42)',
+      tests: { passed: true, output: '3 passed', fixAttempts: 0 },
+      synced: 'Saved 1 file. Data repo is up to date on GitHub.',
+    });
+    expect((await screen.findByRole('status')).textContent).toBe('Done and the tests pass. Cost: £0.33 ($0.42). Keep or Undo comes in the next step of the plan.');
     const result = screen.getByRole('region', { name: 'Build result' });
     expect(within(result).getByText('Added the rota page.')).toBeTruthy();
     expect(within(result).getByText(/on branch aip\/f-02-20261111-170000\. Your own copy wasn’t touched\./)).toBeTruthy();
+    expect(within(result).getByText('All tests pass.')).toBeTruthy();
+    expect(within(result).getByText('3 passed')).toBeTruthy();
+    expect(within(result).getByText('Data folder: Saved 1 file. Data repo is up to date on GitHub.')).toBeTruthy();
+  });
+
+  it('says plainly when the tests still fail after the fix attempts', async () => {
+    const shell = fakeShell();
+    render(<Build invoke={shell.invoke} makeChannel={shell.makeChannel} />);
+    fireEvent.click(await screen.findByRole('button', { name: /^Build F-01/ }));
+    await screen.findByRole('button', { name: 'Stop' });
+    shell.done({
+      run: RUN,
+      using: 'Using: Sonnet 5.5, file edits, shell, tests',
+      steps: [{ text: 'Fix attempt 2 of 2' }, { text: 'Tests still fail' }],
+      summary: 'Added the rota page.',
+      modelName: 'Sonnet 5.5',
+      costText: '£0.79 ($1.00)',
+      tests: { passed: false, output: 'FAIL rota.test.ts', fixAttempts: 2 },
+      synced: '',
+    });
+    expect((await screen.findByRole('alert')).textContent).toBe('Built, but the tests still fail after 2 fix attempts. Cost: £0.79 ($1.00). It can’t be kept until they pass.');
+    expect(within(screen.getByRole('region', { name: 'Build result' })).getByText('Tests fail.')).toBeTruthy();
   });
 
   it('stops a running build', async () => {

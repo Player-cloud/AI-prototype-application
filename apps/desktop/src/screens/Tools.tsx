@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { Invoke } from '../engine';
-import { STATE_LABEL, getDataOverview, rateTool, savedPercent, syncData, type DataOverview, type ToolState } from '../data';
+import { STATE_LABEL, getDataOverview, rateTool, savedPercent, switchToolOn, syncData, type DataOverview, type ToolState } from '../data';
 
 const ORDER: ToolState[] = ['on', 'trial', 'untested', 'off', 'unknown'];
 
@@ -62,6 +62,18 @@ export function Tools({ invoke }: { invoke: Invoke | null }) {
     );
   }
 
+  function switchOn(tool: string) {
+    if (!invoke || !data?.configured) return;
+    void work(`Switching ${tool} back on…`, () => switchToolOn(invoke, tool), () =>
+      setData({
+        ...data,
+        tools: data.tools.map((t) =>
+          t.name === tool ? { ...t, switchedOff: false, failuresInRow: 0, health: 'It gets a quick retest next time it’s used.' } : t,
+        ),
+      }),
+    );
+  }
+
   const tools = [...data.tools].sort((a, b) => ORDER.indexOf(a.state) - ORDER.indexOf(b.state));
   const onCount = data.tools.filter((t) => t.state === 'on').length;
   return (
@@ -97,6 +109,11 @@ export function Tools({ invoke }: { invoke: Invoke | null }) {
             </button>
             <p className="tool-what">{t.what || t.job}</p>
             {t.health && <p className={`tool-health${t.switchedOff || t.failuresInRow > 0 ? ' warn' : ''}`}>{t.health}</p>}
+            {t.switchedOff && (
+              <button type="button" disabled={busy} onClick={() => switchOn(t.name)}>
+                Switch {t.name} back on
+              </button>
+            )}
             {open === t.name && (
               <dl className="tool-detail">
                 <dt>Status</dt>
