@@ -164,8 +164,26 @@ fn key_name(engine: &str) -> Result<&'static str, String> {
     }
 }
 
+/// Calls a paid planning method: the saved provider's key goes from the password store straight to
+/// the engine, with the spend file so the cost counts against the budget.
+fn paid_project_call(
+    app: &tauri::AppHandle,
+    state: &tauri::State<'_, Engine>,
+    method: &str,
+    mut params: serde_json::Map<String, serde_json::Value>,
+) -> Result<serde_json::Value, String> {
+    let saved = settings::read(&settings_path(app)?)?;
+    let provider = saved.get("provider").and_then(|p| p.as_str()).unwrap_or("claude").to_string();
+    let key = keys::load(&OsKeyring, key_name(&provider)?)?;
+    params.insert("settings".into(), saved);
+    params.insert("provider".into(), provider.into());
+    params.insert("apiKey".into(), key.into());
+    params.insert("dbPath".into(), spend_path(app)?.into());
+    engine_call(state, method, serde_json::Value::Object(params))
+}
+
 /// Claude's ideas for one stage of the plan interview. Costs money (the "plan" job), so the
-/// screen says so before calling. The key goes from the password store straight to the engine.
+/// screen says so before calling.
 #[tauri::command]
 async fn interview_suggest(
     slug: String,
@@ -173,15 +191,18 @@ async fn interview_suggest(
     app: tauri::AppHandle,
     state: tauri::State<'_, Engine>,
 ) -> Result<serde_json::Value, String> {
-    let saved = settings::read(&settings_path(&app)?)?;
-    let provider = saved.get("provider").and_then(|p| p.as_str()).unwrap_or("claude").to_string();
-    let key = keys::load(&OsKeyring, key_name(&provider)?)?;
-    let db = spend_path(&app)?;
-    engine_call(
-        &state,
-        "interview_suggest",
-        serde_json::json!({ "settings": saved, "slug": slug, "stage": stage, "provider": provider, "apiKey": key, "dbPath": db }),
-    )
+    let mut params = serde_json::Map::new();
+    params.insert("slug".into(), slug.into());
+    params.insert("stage".into(), stage.into());
+    paid_project_call(&app, &state, "interview_suggest", params)
+}
+
+/// Reviews a finished plan: one plan review, or three fresh-eyes reviewers for a big build.
+#[tauri::command]
+async fn interview_review(slug: String, app: tauri::AppHandle, state: tauri::State<'_, Engine>) -> Result<serde_json::Value, String> {
+    let mut params = serde_json::Map::new();
+    params.insert("slug".into(), slug.into());
+    paid_project_call(&app, &state, "interview_review", params)
 }
 
 /// The newest changes, for Settings → History.
@@ -264,7 +285,7 @@ pub fn run() {
     let helper = EngineHelper::start(&helper_command(std::env::var("AIP_ENGINE").ok()));
     tauri::Builder::default()
         .manage(Engine(Mutex::new(helper)))
-        .invoke_handler(tauri::generate_handler![version, engine_status, key_status, key_save, key_remove, test_model, settings_get, settings_save, data_overview, spend_summary, tool_rate, data_sync, gate_rules, history_list, history_undo, project, interview_suggest])
+        .invoke_handler(tauri::generate_handler![version, engine_status, key_status, key_save, key_remove, test_model, settings_get, settings_save, data_overview, spend_summary, tool_rate, data_sync, gate_rules, history_list, history_undo, project, interview_suggest, interview_review])
         .run(tauri::generate_context!())
         .expect("error while running the app");
 }

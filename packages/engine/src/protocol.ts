@@ -23,6 +23,8 @@
  *  - interview_get / interview_save: {settings, slug, stage?, patch?} -> the interview (saving answers first).
  *  - interview_suggest: {settings, slug, stage, provider, apiKey, dbPath} -> Claude's ideas for the stage
  *    (questions, areas, features or done checks), with the cost. Uses the "plan" job; nothing is saved.
+ *  - interview_review: {settings, slug, provider, apiKey, dbPath} -> reviews the finished spec: one
+ *    plan review, or 3 fresh-eyes reviewers for a big build. Saves review.md and syncs.
  *  - interview_confirm: {settings, slug, stage} -> confirms a stage; the last one writes spec.md and
  *    the done files, then syncs the data repo.
  *  - settings_saved: {dbPath, before, after, undoes?} -> keeps a settings change in the history (id, or null if nothing changed).
@@ -40,6 +42,9 @@ import { dataOverview, rateAndSync, syncAfterUndo, syncNow } from './data.ts';
 import { historyList, settingsSaved, undoStart } from './history.ts';
 import { parseSuggestions, suggestPrompt } from './suggest.ts';
 import { stageOf } from './interview.ts';
+import { reviewPrompt, reviewersFor, parseFindings, specText, type Finding } from './review.ts';
+import { bigBuild } from './interview.ts';
+import { interviewForReview, recordReview } from './projects.ts';
 import { confirm, getInterview, interviewStages, listProjects, saveAnswers, startInterview } from './projects.ts';
 import { MAX_CALL_USD, readBudget, recordSpend } from './budget.ts';
 import { gate, listRules } from './gate.ts';
@@ -251,6 +256,25 @@ const HANDLERS: Record<string, Handler> = {
       deps,
     );
     return { suggestions: parseSuggestions(r.text, interview, stage), modelName: r.modelName, costText: r.costText };
+  },
+  interview_review: async (params, deps) => {
+    const p = obj(params);
+    const settings = checkSettings(p.settings);
+    const iv = await interviewForReview(settings, str(p, 'slug'));
+    const now = deps.now?.() ?? new Date();
+    const spec = specText(iv, new Date(iv.specAt ?? now));
+    const findings: Finding[] = [];
+    let usd: number | null = 0;
+    // Each reviewer is a separate call with only the spec: fresh eyes.
+    for (const r of reviewersFor(bigBuild(iv))) {
+      const out = await runAsk(
+        { provider: p.provider, apiKey: p.apiKey, settings: p.settings, dbPath: p.dbPath, job: 'plan-review', prompt: reviewPrompt(spec, r) },
+        deps,
+      );
+      usd = usd === null || out.costUsd === null ? null : usd + out.costUsd;
+      findings.push(...parseFindings(out.text, r.id, iv.features.map((f) => f.id)));
+    }
+    return recordReview(settings, iv, findings, costText(usd, settings.gbpPerUsd), now);
   },
   interview_confirm: (params, deps) => {
     const p = obj(params);

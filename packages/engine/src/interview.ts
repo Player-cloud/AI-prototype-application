@@ -6,6 +6,7 @@
  *
  * This part is free: no model is called. Claude's help with planning comes in step 7b.
  */
+import { createHash } from 'node:crypto';
 import { isBigBuild } from '@aip/checks';
 import type { AppSettings } from './settings.ts';
 
@@ -139,6 +140,30 @@ export interface Interview {
   lastFeature: number;
   /** When spec.md was last written. */
   specAt: string | null;
+  /** The last plan review, and which spec it looked at. */
+  review: PlanReview | null;
+}
+
+export interface PlanReview {
+  at: string;
+  /** Fingerprint of the spec that was reviewed; if the spec changed since, the review is out of date. */
+  specHash: string;
+  big: boolean;
+  findings: { reviewer: string; severity: 'must' | 'should' | 'could'; text: string; feature?: string }[];
+  costText: string;
+}
+
+function checkReview(v: unknown): PlanReview | null {
+  if (typeof v !== 'object' || v === null) return null;
+  const r = v as Record<string, unknown>;
+  if (typeof r.at !== 'string' || typeof r.specHash !== 'string' || !Array.isArray(r.findings)) return null;
+  const findings = (r.findings as unknown[]).flatMap((f) => {
+    const ff = f as Record<string, unknown>;
+    if (typeof ff?.text !== 'string' || !['must', 'should', 'could'].includes(ff.severity as string)) return [];
+    const base = { reviewer: String(ff.reviewer ?? ''), severity: ff.severity as 'must' | 'should' | 'could', text: ff.text };
+    return [typeof ff.feature === 'string' ? { ...base, feature: ff.feature } : base];
+  });
+  return { at: r.at, specHash: r.specHash, big: r.big === true, findings, costText: typeof r.costText === 'string' ? r.costText : '' };
 }
 
 export interface InterviewPatch {
@@ -190,6 +215,7 @@ export function newInterview(name: string, slug: string, now: Date): Interview {
     done: {},
     lastFeature: 0,
     specAt: null,
+    review: null,
   };
 }
 
@@ -207,6 +233,7 @@ export function checkInterview(raw: unknown): Interview {
     confirmed: Array.isArray(r.confirmed) ? STAGE_IDS.filter((s) => (r.confirmed as unknown[]).includes(s)) : [],
     lastFeature: typeof r.lastFeature === 'number' && Number.isInteger(r.lastFeature) && r.lastFeature >= 0 ? r.lastFeature : 0,
     specAt: typeof r.specAt === 'string' ? r.specAt : null,
+    review: checkReview(r.review),
   };
   return applyPatch(iv, { text: r.text as Record<string, unknown>, areas: r.areas, features: r.features, done: r.done }, true);
 }
@@ -301,6 +328,17 @@ export function bigBuild(iv: Interview): boolean {
     payments: iv.areas.includes('Payments'),
     personalData: iv.areas.includes('Personal data and privacy'),
   });
+}
+
+/** A fingerprint of the spec's content (the date it was written doesn't count). */
+export function specHash(iv: Interview): string {
+  const files = renderSpec(iv, new Date(0));
+  return createHash('sha256').update(JSON.stringify(files)).digest('hex').slice(0, 16);
+}
+
+/** Is there a review of the spec as it is now? */
+export function reviewCurrent(iv: Interview): boolean {
+  return iv.review !== null && iv.specAt !== null && iv.review.specHash === specHash(iv);
 }
 
 export function finished(iv: Interview): boolean {

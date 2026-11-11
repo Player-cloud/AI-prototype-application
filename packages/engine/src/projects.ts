@@ -5,6 +5,7 @@
  */
 import type { AppSettings } from './settings.ts';
 import { askCostNote } from './budget.ts';
+import { renderReview, reviewersFor, type Finding } from './review.ts';
 import {
   CHECKLIST_AREAS,
   STAGES,
@@ -17,6 +18,8 @@ import {
   newInterview,
   projectStatus,
   renderSpec,
+  reviewCurrent,
+  specHash,
   stageOf,
   toolsForStage,
   type Interview,
@@ -43,6 +46,11 @@ export interface InterviewView {
   finished: boolean;
   /** Shown on the "Ask Claude" button, e.g. "costs up to £0.40 ($0.50)". */
   askCost: string;
+  /** How many reviewers the plan gets (1, or 3 fresh-eyes for a big build), and the most it costs. */
+  reviewers: number;
+  reviewCost: string;
+  /** True when the last review looked at the spec as it is now. */
+  reviewCurrent: boolean;
 }
 
 export const interviewStages = () => ({ stages: STAGES, areas: CHECKLIST_AREAS });
@@ -71,7 +79,18 @@ async function view(settings: AppSettings, folder: string, iv: Interview, stage:
   } catch {
     // no ledger: the interview still works, just without tool hints
   }
-  return { interview: iv, missing: missing(iv, stage), tools, big: bigBuild(iv), finished: finished(iv), askCost: askCostNote(settings) };
+  const reviewers = reviewersFor(bigBuild(iv)).length;
+  return {
+    interview: iv,
+    missing: missing(iv, stage),
+    tools,
+    big: bigBuild(iv),
+    finished: finished(iv),
+    askCost: askCostNote(settings),
+    reviewers,
+    reviewCost: askCostNote(settings, reviewers),
+    reviewCurrent: reviewCurrent(iv),
+  };
 }
 
 export async function listProjects(settings: AppSettings): Promise<ProjectRow[]> {
@@ -140,4 +159,32 @@ export async function confirm(settings: AppSettings, slug: string, stage: string
     files,
     summary: `Spec written: ${iv.features.length} feature${iv.features.length === 1 ? '' : 's'}, each with a done file. ${synced}`,
   };
+}
+
+/** Saves a finished plan review as review.md (and in interview.json), then syncs. */
+export async function recordReview(settings: AppSettings, iv: Interview, findings: Finding[], costText: string, now: Date) {
+  const folder = folderOf(settings);
+  if (!iv.specAt) throw new Error('Finish the interview first: the review reads the spec.');
+  const big = bigBuild(iv);
+  const next: Interview = { ...iv, review: { at: now.toISOString(), specHash: specHash(iv), big, findings, costText } };
+  await save(folder, next, { 'review.md': renderReview(next, findings, big, costText, now) });
+  const m = await import('@aip/memory');
+  let synced: string;
+  try {
+    synced = (await m.syncDataRepo(folder, `Plan review for ${iv.name}`)).summary;
+  } catch (err) {
+    synced = `Saved here, but not synced yet: ${(err as Error).message}`;
+  }
+  const must = findings.filter((f) => f.severity === 'must').length;
+  return {
+    view: await view(settings, folder, next),
+    summary: `${findings.length ? `${findings.length} finding${findings.length === 1 ? '' : 's'}${must ? `, ${must} must fix` : ''}` : 'No problems found'}. Cost: ${costText}. ${synced}`,
+  };
+}
+
+/** The interview, checked as finished, for a review. */
+export async function interviewForReview(settings: AppSettings, slug: string): Promise<Interview> {
+  const iv = await load(folderOf(settings), slug);
+  if (!finished(iv) || !iv.specAt) throw new Error('Finish the interview first: the review reads the spec.');
+  return iv;
 }

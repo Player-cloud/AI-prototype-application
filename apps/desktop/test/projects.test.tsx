@@ -32,6 +32,9 @@ function fakeShell() {
     big: false,
     finished: ORDER.every((s) => iv.confirmed.includes(s)),
     askCost: 'costs up to £0.40 ($0.50)',
+    reviewers: 1,
+    reviewCost: 'costs up to £0.40 ($0.50)',
+    reviewCurrent: iv.review !== null,
   });
 
   const invoke: Invoke = async <T,>(cmd: string, args?: Record<string, unknown>) => {
@@ -44,6 +47,11 @@ function fakeShell() {
         return { suggestions: { questions: [], areas: [], features: [], done: { 'F-01': ['A wrong password shows an error'] } }, modelName: 'Opus 5.5', costText: '£0.03 ($0.04)' } as T;
       }
       throw 'No anthropic key saved. Add it in Settings.';
+    }
+    if (cmd === 'interview_review') {
+      const iv = projects.get(String(args?.slug))!;
+      iv.review = { at: '', big: false, costText: '£0.01 ($0.01)', findings: [{ reviewer: 'plan', severity: 'could', text: 'Dark mode' }, { reviewer: 'plan', severity: 'must', text: 'No password reset', feature: 'F-01' }] };
+      return { view: view(iv), summary: '2 findings, 1 must fix. Cost: £0.01 ($0.01).' } as T;
     }
     if (cmd !== 'project') throw `unexpected ${cmd}`;
     const method = String(args?.method);
@@ -62,7 +70,7 @@ function fakeShell() {
       case 'interview_start': {
         const slug = String(p.name).toLowerCase().replace(/[^a-z0-9]+/g, '-');
         if (projects.has(slug)) throw `There’s already a project called “${slug}”.`;
-        const iv: Interview = { name: String(p.name), slug, current: 'idea', confirmed: [], text: {}, areas: [], features: [], done: {}, specAt: null, updatedAt: '' };
+        const iv: Interview = { name: String(p.name), slug, current: 'idea', confirmed: [], text: {}, areas: [], features: [], done: {}, specAt: null, updatedAt: '', review: null };
         projects.set(slug, iv);
         return view(iv) as T;
       }
@@ -135,6 +143,14 @@ describe('Projects: plan interview', () => {
     expect(shell.projects.get('club-hr')?.done).toEqual({ 'F-01': ['A member can sign in'] });
     const stages = screen.getByRole('list', { name: 'Stages' });
     expect(within(stages).getAllByText(/✓/)).toHaveLength(3);
+
+    // The finished plan can be reviewed; findings show most serious first.
+    const review = screen.getByRole('region', { name: 'Plan review' });
+    fireEvent.click(within(review).getByRole('button', { name: 'Review the plan (costs up to £0.40 ($0.50))' }));
+    const findings = await within(review).findByRole('list', { name: 'Findings' });
+    expect([...findings.querySelectorAll('li')].map((li) => li.textContent)).toEqual(['Must fix F-01: No password reset', 'Could add Dark mode']);
+    expect(screen.getByRole('status').textContent).toBe('2 findings, 1 must fix. Cost: £0.01 ($0.01).');
+    expect(within(review).getByRole('button', { name: /Review again/ })).toBeTruthy();
   });
 
   it('lets you go back to a confirmed stage, saving what you typed first', async () => {
