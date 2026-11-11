@@ -119,6 +119,25 @@ async fn data_overview(app: tauri::AppHandle, state: tauri::State<'_, Engine>) -
     engine_call(&state, "data_overview", serde_json::json!({ "settings": saved }))
 }
 
+/// Saves a 1–5 rating for a tool in the data repo's ledger, then syncs it to GitHub.
+#[tauri::command]
+async fn tool_rate(
+    tool: String,
+    rating: u8,
+    app: tauri::AppHandle,
+    state: tauri::State<'_, Engine>,
+) -> Result<serde_json::Value, String> {
+    let saved = settings::read(&settings_path(&app)?)?;
+    engine_call(&state, "tool_rate", serde_json::json!({ "settings": saved, "tool": tool, "rating": rating }))
+}
+
+/// Commits data folder changes and syncs them with GitHub (never forces).
+#[tauri::command]
+async fn data_sync(app: tauri::AppHandle, state: tauri::State<'_, Engine>) -> Result<serde_json::Value, String> {
+    let saved = settings::read(&settings_path(&app)?)?;
+    engine_call(&state, "data_sync", serde_json::json!({ "settings": saved }))
+}
+
 /// Tests a saved key: free for OpenAI and DeepSeek, one tiny question for Claude.
 /// The key goes from the password store straight to the engine; the screens get only the summary.
 #[tauri::command]
@@ -144,7 +163,7 @@ pub fn run() {
     let helper = EngineHelper::start(&helper_command(std::env::var("AIP_ENGINE").ok()));
     tauri::Builder::default()
         .manage(Engine(Mutex::new(helper)))
-        .invoke_handler(tauri::generate_handler![version, engine_status, key_status, key_save, key_remove, test_model, settings_get, settings_save, data_overview, spend_summary])
+        .invoke_handler(tauri::generate_handler![version, engine_status, key_status, key_save, key_remove, test_model, settings_get, settings_save, data_overview, spend_summary, tool_rate, data_sync])
         .run(tauri::generate_context!())
         .expect("error while running the app");
 }

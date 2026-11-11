@@ -64,5 +64,9 @@ counted separately. Below 30% left, the app says your preferences now win over t
 Clone your private `ai-prototype-data` repo, then put its folder in Settings → Budget and models → **Data folder**.
 The Tools page then lists every tool from `ledger.md`, joined with its card from `tools/`, with tools in use first.
 Click a tool to see when to use it, the trial evidence, the cost and your rating. The page also shows how many tokens
-the engine reads first (one line per tool in use, plus habits) compared with reading every file. This step only reads
-the folder; writing ledger lines and syncing to GitHub come in build step 5c.
+the engine reads first (one line per tool in use, plus habits) compared with reading every file.
+
+Open a tool and press 1–5 to rate it: the rating is written to its `ledger.md` line and the data repo syncs with
+GitHub straight away, using this computer's own git login. **Sync with GitHub** commits any other changes in the
+folder and pulls in changes from your other computer. Sync never forces: if both computers changed the same line it
+stops, keeps your change locally and says so. It also refuses to push anything that looks like a key.

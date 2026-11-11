@@ -28,6 +28,25 @@ export type DataOverview =
       allTokens: number;
     };
 
+function folderOf(settings: AppSettings): string {
+  if (!settings.dataFolder) throw new Error('Set your data folder in Settings first.');
+  return settings.dataFolder;
+}
+
+/** Saves joshua's 1–5 rating for a tool in ledger.md, then syncs the data repo to GitHub. */
+export async function rateAndSync(settings: AppSettings, tool: string, rating: number) {
+  const folder = folderOf(settings);
+  const m = await import('@aip/memory');
+  await m.rateTool(folder, tool, rating);
+  return m.syncDataRepo(folder, `Rate ${tool} ${rating}/5`);
+}
+
+/** Commits any changes in the data folder and syncs with GitHub (both ways). */
+export async function syncNow(settings: AppSettings) {
+  const m = await import('@aip/memory');
+  return m.syncDataRepo(folderOf(settings), 'Update from AI Prototype');
+}
+
 export async function dataOverview(settings: AppSettings): Promise<DataOverview> {
   if (!settings.dataFolder) return { configured: false };
   const m = await import('@aip/memory');

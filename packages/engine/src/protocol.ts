@@ -12,13 +12,16 @@
  *    ask and check take an optional dbPath: the call is refused once the month's budget is used up,
  *    and its cost is recorded there afterwards.
  *  - data_overview: {settings} -> the tools, habits and rules in the data folder, and what the engine reads first.
+ *  - tool_rate: {settings, tool, rating} -> saves a 1–5 rating in ledger.md and syncs the data repo.
+ *  - data_sync: {settings} -> commits data folder changes and syncs with GitHub. Never forces.
+ *    Both refuse to push anything key-shaped.
  *    ask and check also take an optional `settings` (model choices, prices, £/$ rate).
  *    The key comes from the window's password store for this one call and is never echoed back.
  */
 import type { Job, ModelAdapter, Provider } from '@aip/models';
 import { formatCost } from './money.ts';
 import { DEFAULT_SETTINGS, checkSettings, type AppSettings } from './settings.ts';
-import { dataOverview } from './data.ts';
+import { dataOverview, rateAndSync, syncNow } from './data.ts';
 import { readBudget, recordSpend } from './budget.ts';
 
 export const ENGINE_VERSION = '0.0.1';
@@ -173,6 +176,13 @@ const HANDLERS: Record<string, Handler> = {
     return { ...b, spentText };
   },
   data_overview: (params) => dataOverview(checkSettings(obj(params).settings)),
+  tool_rate: (params) => {
+    const p = obj(params);
+    const rating = p.rating;
+    if (typeof rating !== 'number') throw new Error('Rating must be a whole number from 1 to 5');
+    return rateAndSync(checkSettings(p.settings), str(p, 'tool'), rating);
+  },
+  data_sync: (params) => syncNow(checkSettings(obj(params).settings)),
 };
 
 function parseRequest(line: string): Request | string {
