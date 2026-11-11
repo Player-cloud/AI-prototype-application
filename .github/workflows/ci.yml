@@ -37,20 +37,21 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
-    # ubuntu-latest is now Ubuntu 26.04, whose apt mirror stalls on every package download (each
-    # one waits 20s and is skipped), so the install never finishes. The window libraries are
-    # installed on Ubuntu 24.04 instead; the check keeps its name so nothing else changes.
-    runs-on: ${{ matrix.os == 'ubuntu-latest' && 'ubuntu-24.04' || matrix.os }}
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - name: Linux libraries for the window
         if: runner.os == 'Linux'
-        # Faster and safer installs: no man-page index rebuild, download retries, never waits for an
-        # answer. If it still sticks, the step fails after 10 minutes and can be re-run.
+        # The runner's own apt mirror (azure.archive.ubuntu.com) answers the package list but stalls
+        # on every download (20s each, then skipped), so the install never ends. Use the main Ubuntu
+        # archive instead. Also: no man-page index rebuild, download retries, never waits for an
+        # answer, and the step fails after 10 minutes instead of hanging.
         timeout-minutes: 10
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
+          if [ -f /etc/apt/apt-mirrors.txt ]; then echo 'http://archive.ubuntu.com/ubuntu/' | sudo tee /etc/apt/apt-mirrors.txt; fi
+          sudo sed -i 's#http://azure.archive.ubuntu.com/ubuntu#http://archive.ubuntu.com/ubuntu#g' /etc/apt/sources.list /etc/apt/sources.list.d/*.sources 2>/dev/null || true
           echo 'set man-db/auto-update false' | sudo debconf-communicate >/dev/null
           sudo rm -f /var/lib/man-db/auto-update
           sudo apt-get update -o Acquire::Retries=3
