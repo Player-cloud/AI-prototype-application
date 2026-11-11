@@ -15,6 +15,10 @@ A desktop app (Windows and Linux) where you describe a web app, it plans it with
 | `packages/gatekeeper` | Ask-first rules (agents can't edit) |
 | `templates/web-app` | Standard stack starter for new websites |
 
+## Ask-first rules
+
+Every risky step goes through the engine's `gate`. It uses the rules in `packages/gatekeeper` unchanged, adds a guard so the agent can never edit those rules or the settings file, and adds your own rules from Settings → Ask-first rules (words to watch for, and why). Only you can add or remove your own rules.
+
 Private data (ledger, habits, rules, tool cards, project plans) lives in the separate `ai-prototype-data` repo.
 
 ## Commands

@@ -7,5 +7,5 @@
     "rewriteRelativeImportExtensions": true
   },
   "include": ["src"],
-  "references": [{ "path": "../models" }, { "path": "../memory" }]
+  "references": [{ "path": "../models" }, { "path": "../memory" }, { "path": "../gatekeeper" }]
 }

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import type { Invoke } from '../engine';
 import { BudgetModels } from './BudgetModels';
+import { SafetyRules } from './SafetyRules';
 import { PROVIDERS, keyStatus, removeKey, saveKey, testModel, type Provider } from '../keys';
 
 function KeyRow({ invoke, id, name, hint }: { invoke: Invoke; id: Provider; name: string; hint: string }) {
@@ -135,6 +136,9 @@ export function Settings({ invoke }: { invoke: Invoke | null }) {
       <h2>Budget and models</h2>
       <p className="muted">Saved on this computer. No keys are kept here.</p>
       {invoke ? <BudgetModels invoke={invoke} /> : <p className="key-note bad">Budget and models can be changed in the desktop app only.</p>}
+      <h2>Ask-first rules</h2>
+      <p className="muted">Every risky step is checked against these first. The built-in ones can’t be changed here, and the agent can never change any of them.</p>
+      {invoke ? <SafetyRules invoke={invoke} /> : <p className="key-note bad">Rules show in the desktop app only.</p>}
     </section>
   );
 }

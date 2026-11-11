@@ -19,7 +19,11 @@ export interface AppSettings {
   prices: Record<string, Price>;
   /** Folder where the private data repo (ai-prototype-data) is cloned on this computer. '' = not set. */
   dataFolder: string;
+  /** joshua's own ask-first rules, added in Settings: any action mentioning `match` waits for his OK. */
+  extraRules: ExtraRule[];
 }
+
+export interface ExtraRule { match: string; reason: string }
 
 /**
  * Starting values. The budget is joshua's agreed £20 a month (it may rise to £40).
@@ -35,11 +39,31 @@ export const DEFAULT_SETTINGS: AppSettings = {
   },
   prices: {},
   dataFolder: '',
+  extraRules: [],
 };
 
 const PROVIDERS: readonly Provider[] = ['claude', 'openai', 'deepseek'];
 const MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,99}$/;
 const MAX_PRICES = 50;
+const MAX_RULES = 30;
+
+function extraRules(v: unknown): ExtraRule[] {
+  if (v === undefined) return [];
+  if (!Array.isArray(v)) throw new Error('extra rules must be a list');
+  if (v.length > MAX_RULES) throw new Error(`at most ${MAX_RULES} extra rules`);
+  return v.map((r) => {
+    if (!isObj(r)) throw new Error('each extra rule needs words to watch for and a reason');
+    const match = typeof r.match === 'string' ? r.match.trim() : '';
+    const reason = typeof r.reason === 'string' ? r.reason.trim() : '';
+    if (match.length < 2 || match.length > 100 || /[\r\n]/.test(match)) {
+      throw new Error('Words to watch for must be 2 to 100 characters on one line');
+    }
+    if (reason.length < 3 || reason.length > 200 || /[\r\n]/.test(reason)) {
+      throw new Error('The reason must be 3 to 200 characters on one line');
+    }
+    return { match, reason };
+  });
+}
 
 function isObj(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -106,6 +130,7 @@ export function checkSettings(raw: unknown): AppSettings {
   return {
     provider,
     dataFolder,
+    extraRules: extraRules(raw.extraRules),
     monthlyBudgetGbp: raw.monthlyBudgetGbp === undefined ? d.monthlyBudgetGbp : num(raw.monthlyBudgetGbp, 'Monthly budget (£)', 0, 10000),
     gbpPerUsd: raw.gbpPerUsd === undefined ? d.gbpPerUsd : num(raw.gbpPerUsd, '£ per $ rate', 0.1, 5),
     models: {
