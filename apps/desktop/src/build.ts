@@ -18,7 +18,29 @@ export interface BuildResult {
   tests: { passed: boolean; output: string; fixAttempts: number };
   /** How the data folder sync went ('' with no data folder). */
   synced: string;
+  /** The saved build that Keep, Undo and the rating act on. */
+  runId: number | null;
 }
+
+/** A saved feature build (step 9a). */
+export interface BuildRun {
+  id: number;
+  at: string;
+  slug: string;
+  feature: string;
+  path: string;
+  branch: string;
+  model: string;
+  costUsd: number | null;
+  testsPassed: boolean;
+  fixAttempts: number;
+  summary: string;
+  status: 'built' | 'kept' | 'undone';
+  rating: number | null;
+  keptInto: string;
+}
+
+export interface Decided { run: BuildRun; note: string }
 
 const plain = (err: unknown) => new Error(err instanceof Error ? err.message : String(err));
 
@@ -41,6 +63,32 @@ export async function startBuild(
 export async function stopBuild(invoke: Invoke): Promise<boolean> {
   try {
     return await invoke<boolean>('build_stop');
+  } catch (err) {
+    throw plain(err);
+  }
+}
+
+/** Saved builds for a project, newest first. */
+export async function listRuns(invoke: Invoke, slug: string): Promise<BuildRun[]> {
+  try {
+    return await invoke<BuildRun[]>('run_list', { slug });
+  } catch (err) {
+    throw plain(err);
+  }
+}
+
+/** Keep merges the build into joshua's own copy (never pushes); Undo removes the build's copy. */
+export async function decideRun(invoke: Invoke, id: number, keep: boolean): Promise<Decided> {
+  try {
+    return await invoke<Decided>('run_decide', { id, keep });
+  } catch (err) {
+    throw plain(err);
+  }
+}
+
+export async function rateRun(invoke: Invoke, id: number, rating: number): Promise<BuildRun> {
+  try {
+    return await invoke<BuildRun>('run_rate', { id, rating });
   } catch (err) {
     throw plain(err);
   }

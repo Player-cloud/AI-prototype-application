@@ -254,6 +254,26 @@ async fn build_stop(build: tauri::State<'_, Build>) -> Result<bool, String> {
     }
 }
 
+/// Saved feature builds for one project (or all), newest first.
+#[tauri::command]
+async fn run_list(slug: Option<String>, app: tauri::AppHandle, state: tauri::State<'_, Engine>) -> Result<serde_json::Value, String> {
+    engine_call(&state, "run_list", serde_json::json!({ "dbPath": spend_path(&app)?, "slug": slug.unwrap_or_default() }))
+}
+
+/// Keep merges a build into joshua's own copy (never pushes); Undo removes the build's copy.
+#[tauri::command]
+async fn run_decide(id: i64, keep: bool, app: tauri::AppHandle, state: tauri::State<'_, Engine>) -> Result<serde_json::Value, String> {
+    let saved = settings::read(&settings_path(&app)?)?;
+    let method = if keep { "run_keep" } else { "run_undo" };
+    engine_call(&state, method, serde_json::json!({ "settings": saved, "dbPath": spend_path(&app)?, "id": id }))
+}
+
+/// joshua's 1–5 rating for a build.
+#[tauri::command]
+async fn run_rate(id: i64, rating: u8, app: tauri::AppHandle, state: tauri::State<'_, Engine>) -> Result<serde_json::Value, String> {
+    engine_call(&state, "run_rate", serde_json::json!({ "dbPath": spend_path(&app)?, "id": id, "rating": rating }))
+}
+
 /// The newest changes, for Settings → History.
 #[tauri::command]
 async fn history_list(app: tauri::AppHandle, state: tauri::State<'_, Engine>) -> Result<serde_json::Value, String> {
@@ -342,7 +362,7 @@ pub fn run() {
     tauri::Builder::default()
         .manage(Engine(Mutex::new(helper)))
         .manage(Build(Mutex::new(None)))
-        .invoke_handler(tauri::generate_handler![version, engine_status, key_status, key_save, key_remove, test_model, settings_get, settings_save, data_overview, spend_summary, tool_rate, tool_switch_on, data_sync, gate_rules, history_list, history_undo, project, interview_suggest, interview_review, build_feature, build_stop])
+        .invoke_handler(tauri::generate_handler![version, engine_status, key_status, key_save, key_remove, test_model, settings_get, settings_save, data_overview, spend_summary, tool_rate, tool_switch_on, data_sync, gate_rules, history_list, history_undo, project, interview_suggest, interview_review, build_feature, build_stop, run_list, run_decide, run_rate])
         .run(tauri::generate_context!())
         .expect("error while running the app");
 }

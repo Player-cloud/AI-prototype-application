@@ -10,7 +10,25 @@ afterEach(cleanup);
 const RUN = { path: '/code/club-hr-runs/F-02-20261111-170000', branch: 'aip/f-02-20261111-170000', feature: 'F-02', base: 'abc' };
 
 /** Stand-in for the shell: two projects (one finished), and a build that streams steps. */
-function fakeShell(opts: { fail?: string } = {}) {
+const WAITING = {
+  id: 7,
+  at: '2026-11-11T17:00:00Z',
+  slug: 'club-hr',
+  feature: 'F-02',
+  path: RUN.path,
+  branch: RUN.branch,
+  model: 'claude-sonnet-5-5',
+  costUsd: 0.42,
+  testsPassed: true,
+  fixAttempts: 0,
+  summary: 'Added the rota page.',
+  status: 'built',
+  rating: null,
+  keptInto: '',
+};
+
+function fakeShell(opts: { fail?: string; runs?: (typeof WAITING)[] } = {}) {
+  let runs = [...(opts.runs ?? [])];
   const calls: { cmd: string; args?: Record<string, unknown> }[] = [];
   let send: ((e: BuildEvent) => void) | null = null;
   let finish: ((v: unknown) => void) | null = null;
@@ -19,6 +37,16 @@ function fakeShell(opts: { fail?: string } = {}) {
   const invoke: Invoke = async <T,>(cmd: string, args?: Record<string, unknown>) => {
     calls.push({ cmd, args });
     if (cmd === 'settings_get') return { gbpPerUsd: 0.79, runCapGbp: 0.8 } as T;
+    if (cmd === 'run_list') return runs as T;
+    if (cmd === 'run_decide') {
+      const keep = args?.keep === true;
+      runs = runs.map((r) => (r.id === args?.id ? { ...r, status: keep ? 'kept' : 'undone', keptInto: keep ? 'main' : '' } : r));
+      return { run: runs[0], note: keep ? 'Kept F-02 in your copy on main. Nothing was pushed.' : 'Undone: F-02’s build was removed. Your copy wasn’t touched.' } as T;
+    }
+    if (cmd === 'run_rate') {
+      runs = runs.map((r) => (r.id === args?.id ? { ...r, rating: args?.rating as null } : r));
+      return runs[0] as T;
+    }
     if (cmd === 'build_stop') {
       fail?.('Stopped.');
       return true as T;
@@ -89,8 +117,9 @@ describe('Build screen', () => {
       costText: '£0.33 ($0.42)',
       tests: { passed: true, output: '3 passed', fixAttempts: 0 },
       synced: 'Saved 1 file. Data repo is up to date on GitHub.',
+      runId: 7,
     });
-    expect((await screen.findByRole('status')).textContent).toBe('Done and the tests pass. Cost: £0.33 ($0.42). Keep or Undo comes in the next step of the plan.');
+    expect((await screen.findByRole('status')).textContent).toBe('Done and the tests pass. Cost: £0.33 ($0.42). Check it, then press Keep or Undo below.');
     const result = screen.getByRole('region', { name: 'Build result' });
     expect(within(result).getByText('Added the rota page.')).toBeTruthy();
     expect(within(result).getByText(/on branch aip\/f-02-20261111-170000\. Your own copy wasn’t touched\./)).toBeTruthy();
@@ -113,9 +142,37 @@ describe('Build screen', () => {
       costText: '£0.79 ($1.00)',
       tests: { passed: false, output: 'FAIL rota.test.ts', fixAttempts: 2 },
       synced: '',
+      runId: 8,
     });
-    expect((await screen.findByRole('alert')).textContent).toBe('Built, but the tests still fail after 2 fix attempts. Cost: £0.79 ($1.00). It can’t be kept until they pass.');
+    expect((await screen.findByRole('alert')).textContent).toBe('Built, but the tests still fail after 2 fix attempts. Cost: £0.79 ($1.00). It can’t be kept, so Undo it below.');
     expect(within(screen.getByRole('region', { name: 'Build result' })).getByText('Tests fail.')).toBeTruthy();
+  });
+
+  it('keeps a waiting build and rates it', async () => {
+    const shell = fakeShell({ runs: [WAITING] });
+    render(<Build invoke={shell.invoke} makeChannel={shell.makeChannel} />);
+    const builds = await screen.findByRole('region', { name: 'Builds' });
+    expect(within(builds).getByText(/F-02 · .* · tests pass · waiting for Keep or Undo/)).toBeTruthy();
+    fireEvent.click(within(builds).getByRole('button', { name: 'Keep F-02' }));
+    expect((await screen.findByRole('status')).textContent).toBe('Kept F-02 in your copy on main. Nothing was pushed.');
+    expect(shell.calls).toContainEqual({ cmd: 'run_decide', args: { id: 7, keep: true } });
+    expect(within(builds).getByText(/kept into main/)).toBeTruthy();
+    expect(within(builds).queryByRole('button', { name: 'Keep F-02' })).toBeNull();
+
+    fireEvent.click(within(builds).getByRole('button', { name: '4' }));
+    expect((await screen.findByText('Rated F-02 4/5.')).getAttribute('role')).toBe('status');
+    expect(shell.calls).toContainEqual({ cmd: 'run_rate', args: { id: 7, rating: 4 } });
+    expect(within(builds).getByRole('button', { name: '4' }).getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('can’t keep a build whose tests fail, only undo it', async () => {
+    const shell = fakeShell({ runs: [{ ...WAITING, testsPassed: false }] });
+    render(<Build invoke={shell.invoke} makeChannel={shell.makeChannel} />);
+    const keep = (await screen.findByRole('button', { name: 'Keep F-02' })) as HTMLButtonElement;
+    expect(keep.disabled).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Undo F-02' }));
+    expect((await screen.findByRole('status')).textContent).toBe('Undone: F-02’s build was removed. Your copy wasn’t touched.');
+    expect(screen.queryByRole('group', { name: /Rate F-02/ })).toBeNull();
   });
 
   it('stops a running build', async () => {
