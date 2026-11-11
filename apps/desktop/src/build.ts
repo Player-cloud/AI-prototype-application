@@ -57,7 +57,9 @@ export function keepable(r: BuildRun): boolean {
 
 export const CHECK_NAME: Record<string, string> = { secrets: 'Secret scan', audit: 'Package audit', checklist: 'Checklist rules', axe: 'Accessibility', 'phone-overflow': 'Phone width', pictures: 'Pictures' };
 
-export interface Decided { run: BuildRun; note: string }
+/** After Keep, Undo or a rating: what happened, and any habit the app learned (step 9d). */
+export interface Decided { run: BuildRun; note: string; learned: string[] }
+export interface Rated { run: BuildRun; learned: string[] }
 
 const plain = (err: unknown) => new Error(err instanceof Error ? err.message : String(err));
 
@@ -103,9 +105,9 @@ export async function decideRun(invoke: Invoke, id: number, keep: boolean): Prom
   }
 }
 
-export async function rateRun(invoke: Invoke, id: number, rating: number): Promise<BuildRun> {
+export async function rateRun(invoke: Invoke, id: number, rating: number): Promise<Rated> {
   try {
-    return await invoke<BuildRun>('run_rate', { id, rating });
+    return await invoke<Rated>('run_rate', { id, rating });
   } catch (err) {
     throw plain(err);
   }

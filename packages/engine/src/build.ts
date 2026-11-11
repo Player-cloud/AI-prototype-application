@@ -15,6 +15,7 @@ import type { CheckResult, Picture, PicturesResult } from '@aip/checks';
 import type { ModelAdapter, Provider, ToolDecision } from '@aip/models';
 import { readBudget, recordSpend } from './budget.ts';
 import { gate } from './gate.ts';
+import { guidance } from './learn.ts';
 import { usingLine } from './using.ts';
 import type { Interview } from './interview.ts';
 import { getInterview } from './projects.ts';
@@ -170,10 +171,12 @@ export async function buildFeature(
   if (stopped(signal)) throw new Error('Stopped.');
   const now = deps.now?.() ?? new Date();
   let leftUsd: number | null = null;
+  let rulesFirst = true;
   if (p.dbPath) {
     const b = await readBudget(p.dbPath, settings, now);
     if (b.leftUsd <= 0) throw new Error(`This month’s budget is used up (£${b.spentGbp} of £${b.budgetGbp}). Raise it in Settings, or wait until next month.`);
     leftUsd = b.leftUsd;
+    rulesFirst = b.rulesWin;
   }
   const cap = runCapUsd(settings, leftUsd);
   const model = await deps.pickModel(p.provider, 'build', settings);
@@ -226,7 +229,8 @@ export async function buildFeature(
     }
   };
 
-  let summary = await once(buildPrompt(interview, p.feature, specText(interview, new Date(interview.specAt ?? now))), adapter);
+  const prompt = buildPrompt(interview, p.feature, specText(interview, new Date(interview.specAt ?? now))) + (await guidance(settings, rulesFirst));
+  let summary = await once(prompt, adapter);
 
   const runTests = deps.runTests ?? (await import('@aip/checks')).runTests;
   add({ text: 'Running tests' });

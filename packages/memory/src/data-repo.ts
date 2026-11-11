@@ -51,7 +51,7 @@ export function bullets(md: string): string[] {
   return md
     .split(/\r?\n/)
     .filter((l) => l.startsWith('- '))
-    .map((l) => l.slice(2).trim());
+    .map((l) => l.slice(2).replace(/<!--.*?-->/g, '').trim());
 }
 
 export function toolState(status: string): ToolState {
