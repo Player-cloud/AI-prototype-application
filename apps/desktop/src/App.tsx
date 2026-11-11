@@ -3,8 +3,9 @@ import { SCREENS, findScreen, type ScreenId } from './screens';
 import { ScreenBody } from './screens/ScreenBody';
 import { EngineBadge } from './EngineBadge';
 import type { Invoke } from './engine';
+import type { MakeChannel } from './build';
 
-export function App({ invoke = null }: { invoke?: Invoke | null }) {
+export function App({ invoke = null, makeChannel = null }: { invoke?: Invoke | null; makeChannel?: MakeChannel | null }) {
   const [current, setCurrent] = useState<ScreenId>('projects');
   const screen = findScreen(current);
 
@@ -28,7 +29,7 @@ export function App({ invoke = null }: { invoke?: Invoke | null }) {
       <main className="panel">
         <h1>{screen.label}</h1>
         <p className="blurb">{screen.blurb}</p>
-        <ScreenBody id={current} invoke={invoke} />
+        <ScreenBody id={current} invoke={invoke} makeChannel={makeChannel} />
       </main>
     </div>
   );

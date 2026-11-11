@@ -160,3 +160,7 @@ body { margin: 0; min-height: 100vh; background: radial-gradient(circle at 20% 1
 .projects .hint, .projects .key-note { margin-top: 12px; }
 .ideas { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 8px; border: 1px dashed var(--glass-border); }
 .review { display: flex; flex-direction: column; gap: 6px; margin: 0 0 16px; padding: 12px; border-radius: 8px; border: 1px solid var(--glass-border); }
+
+.using-line { margin: 12px 0 4px; font-weight: 600; }
+.step-list { margin: 8px 0; padding-left: 22px; display: grid; gap: 4px; font-size: 0.92rem; }
+.step-list li.refused { color: #f2a08c; }

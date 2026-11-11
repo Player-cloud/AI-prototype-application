@@ -6,6 +6,7 @@ use serde_json::{json, Value};
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
+use std::sync::{Arc, Mutex};
 
 /// How to start the helper: a program plus its arguments.
 #[derive(Debug, Clone, PartialEq)]
@@ -38,7 +39,8 @@ pub enum EngineStatus {
 
 pub struct EngineHelper {
     child: Child,
-    stdin: ChildStdin,
+    /// Shared so a running request can be cancelled from another thread.
+    stdin: Arc<Mutex<ChildStdin>>,
     stdout: BufReader<ChildStdout>,
     next_id: u64,
 }
@@ -62,7 +64,7 @@ impl EngineHelper {
             .map_err(|e| format!("could not start {}: {e}", cmd.program))?;
         let stdin = child.stdin.take().ok_or("no stdin")?;
         let stdout = BufReader::new(child.stdout.take().ok_or("no stdout")?);
-        Ok(Self { child, stdin, stdout, next_id: 1 })
+        Ok(Self { child, stdin: Arc::new(Mutex::new(stdin)), stdout, next_id: 1 })
     }
 
     /// Sends one request and waits for its reply line.
@@ -72,6 +74,22 @@ impl EngineHelper {
 
     /// Sends one request with parameters and waits for its reply line.
     pub fn request_with(&mut self, method: &str, params: Value) -> Result<Value, String> {
+        self.request_live(method, params, |_| {})
+    }
+
+    /// The id the next request will get (for cancelling it).
+    pub fn next_id(&self) -> u64 {
+        self.next_id
+    }
+
+    /// Lets another thread stop a running request.
+    pub fn canceller(&self) -> Canceller {
+        Canceller { stdin: Arc::clone(&self.stdin) }
+    }
+
+    /// Sends one request and waits for its reply, passing each event line for it to `on_event`
+    /// first. Lines for other requests (such as a cancel's answer) are skipped.
+    pub fn request_live(&mut self, method: &str, params: Value, mut on_event: impl FnMut(Value)) -> Result<Value, String> {
         let id = self.next_id;
         self.next_id += 1;
         let line = if params.is_null() {
@@ -80,14 +98,19 @@ impl EngineHelper {
             json!({ "id": id, "method": method, "params": params })
         }
         .to_string();
-        writeln!(self.stdin, "{line}").map_err(|e| format!("engine write failed: {e}"))?;
-        self.stdin.flush().map_err(|e| format!("engine write failed: {e}"))?;
-        let mut reply = String::new();
-        let n = self.stdout.read_line(&mut reply).map_err(|e| format!("engine read failed: {e}"))?;
-        if n == 0 {
-            return Err("engine stopped".into());
+        write_line(&self.stdin, &line)?;
+        loop {
+            let mut reply = String::new();
+            let n = self.stdout.read_line(&mut reply).map_err(|e| format!("engine read failed: {e}"))?;
+            if n == 0 {
+                return Err("engine stopped".into());
+            }
+            match line_kind(&reply, id) {
+                LineKind::Event(e) => on_event(e),
+                LineKind::Other => continue,
+                LineKind::Reply => return parse_reply(&reply, id),
+            }
         }
-        parse_reply(&reply, id)
     }
 
     pub fn status(&mut self) -> EngineStatus {
@@ -106,6 +129,49 @@ impl Drop for EngineHelper {
         // Closing stdin makes the helper exit; kill it too in case it hangs.
         let _ = self.child.kill();
         let _ = self.child.wait();
+    }
+}
+
+fn write_line(stdin: &Arc<Mutex<ChildStdin>>, line: &str) -> Result<(), String> {
+    let mut w = match stdin.lock() {
+        Ok(g) => g,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    writeln!(w, "{line}").map_err(|e| format!("engine write failed: {e}"))?;
+    w.flush().map_err(|e| format!("engine write failed: {e}"))
+}
+
+/// Stops a running request from another thread.
+#[derive(Clone)]
+pub struct Canceller {
+    stdin: Arc<Mutex<ChildStdin>>,
+}
+
+impl Canceller {
+    pub fn cancel(&self, request_id: u64) -> Result<(), String> {
+        write_line(&self.stdin, &json!({ "id": 0, "method": "cancel", "params": { "id": request_id } }).to_string())
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub enum LineKind {
+    /// An event for the request we're waiting on.
+    Event(Value),
+    /// The reply to it (or something unreadable, which parse_reply explains).
+    Reply,
+    /// A line for another request.
+    Other,
+}
+
+pub fn line_kind(line: &str, expected_id: u64) -> LineKind {
+    let Ok(v) = serde_json::from_str::<Value>(line.trim()) else { return LineKind::Reply };
+    match v.get("id").and_then(Value::as_u64) {
+        Some(id) if id == expected_id => match v.get("event") {
+            Some(e) => LineKind::Event(e.clone()),
+            None => LineKind::Reply,
+        },
+        Some(_) => LineKind::Other,
+        None => LineKind::Reply,
     }
 }
 
@@ -154,6 +220,33 @@ mod tests {
         let mut h = EngineHelper::start(&cmd).expect("node should start");
         let v = h.request_with("ask", json!({ "prompt": "hi" })).unwrap();
         assert_eq!(v["got"]["prompt"], "hi");
+    }
+
+    #[test]
+    fn sorts_events_replies_and_other_lines() {
+        assert_eq!(line_kind(r#"{"id":3,"event":{"type":"step"}}"#, 3), LineKind::Event(json!({ "type": "step" })));
+        assert_eq!(line_kind(r#"{"id":3,"result":1}"#, 3), LineKind::Reply);
+        assert_eq!(line_kind(r#"{"id":0,"result":{"cancelled":true}}"#, 3), LineKind::Other);
+        assert_eq!(line_kind("oops", 3), LineKind::Reply);
+    }
+
+    /// A stand-in helper that sends two events, then waits; a cancel line makes it reply "Stopped.".
+    #[test]
+    fn passes_events_on_and_can_be_cancelled() {
+        let script = r#"const rl=require('readline').createInterface({input:process.stdin});rl.on('line',l=>{const r=JSON.parse(l);const w=o=>process.stdout.write(JSON.stringify(o)+'\n');if(r.method==='cancel'){w({id:r.id,result:{cancelled:true}});w({id:r.params.id,error:'Stopped.'});return;}w({id:r.id,event:{n:1}});w({id:r.id,event:{n:2}});})"#;
+        let cmd = HelperCommand { program: "node".into(), args: vec!["-e".into(), script.into()] };
+        let mut h = EngineHelper::start(&cmd).expect("node should start");
+        let id = h.next_id();
+        let stop = h.canceller();
+        let mut seen = Vec::new();
+        let r = h.request_live("build_feature", json!({}), |e| {
+            seen.push(e["n"].as_u64().unwrap());
+            if seen.len() == 2 {
+                stop.cancel(id).unwrap();
+            }
+        });
+        assert_eq!(seen, vec![1, 2]);
+        assert_eq!(r, Err("Stopped.".into()));
     }
 
     #[test]

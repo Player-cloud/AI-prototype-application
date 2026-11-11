@@ -30,6 +30,8 @@
  *  - build_feature: {settings, slug, feature, provider, apiKey, dbPath} -> builds one feature in its own
  *    copy of the code (Sonnet for Claude). Every tool call stays in the copy and goes through the
  *    gatekeeper. Stops at the run's cost limit. Returns the run, the Using line, steps and cost.
+ *    While it runs, event lines {"id", "event"} come first: {type:"using"}, then {type:"step"} each.
+ *  - cancel: {id} -> stops that running request (answered at once, not queued).
  *  - interview_confirm: {settings, slug, stage} -> confirms a stage; the last one writes spec.md and
  *    the done files, then syncs the data repo.
  *  - settings_saved: {dbPath, before, after, undoes?} -> keeps a settings change in the history (id, or null if nothing changed).
@@ -208,7 +210,13 @@ async function check(params: unknown, deps: Deps): Promise<{ ok: true; summary: 
   return { ok: true, summary: `Connected. ${r.modelName} replied “${r.text.trim()}”. Cost: ${r.costText}.` };
 }
 
-type Handler = (params: unknown, deps: Deps) => unknown;
+/** For long requests: events sent before the reply (one line each), and a signal to stop early. */
+export interface Live {
+  emit?(event: unknown): void;
+  signal?: AbortSignal;
+}
+
+type Handler = (params: unknown, deps: Deps, live: Live) => unknown;
 
 const HANDLERS: Record<string, Handler> = {
   ping: () => ({ ok: true, version: ENGINE_VERSION }),
@@ -287,13 +295,15 @@ const HANDLERS: Record<string, Handler> = {
     const p = obj(params);
     return confirm(checkSettings(p.settings), str(p, 'slug'), str(p, 'stage'), deps.now?.() ?? new Date());
   },
-  build_feature: async (params, deps) => {
+  build_feature: async (params, deps, live) => {
     const p = obj(params);
     const settings = checkSettings(p.settings);
     const r = await buildFeature(
       settings,
       { slug: str(p, 'slug'), feature: str(p, 'feature'), provider: provider(p), apiKey: str(p, 'apiKey'), dbPath: optionalPath(p, 'dbPath') },
       deps,
+      (e) => live.emit?.(e),
+      live.signal,
     );
     return { ...r, modelName: await deps.modelName(r.model), costText: costText(r.costUsd, settings.gbpPerUsd) };
   },
@@ -332,13 +342,13 @@ function parseRequest(line: string): Request | string {
 }
 
 /** Turns one line of input into one line of output. Never rejects. */
-export async function handleLine(line: string, deps: Deps = realDeps): Promise<string> {
+export async function handleLine(line: string, deps: Deps = realDeps, live: Live = {}): Promise<string> {
   const req = parseRequest(line);
   if (typeof req === 'string') return JSON.stringify({ id: null, error: req } satisfies Reply);
   const handler = Object.hasOwn(HANDLERS, req.method) ? HANDLERS[req.method] : undefined;
   if (!handler) return JSON.stringify({ id: req.id, error: `unknown method: ${req.method}` } satisfies Reply);
   try {
-    return JSON.stringify({ id: req.id, result: await handler(req.params, deps) } satisfies Reply);
+    return JSON.stringify({ id: req.id, result: await handler(req.params, deps, live) } satisfies Reply);
   } catch (err) {
     let message = err instanceof Error ? err.message : String(err);
     // Belt and braces: never send a key back, even inside an error.

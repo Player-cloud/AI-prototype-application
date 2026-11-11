@@ -24,6 +24,9 @@ export interface BuildDeps {
 
 export interface BuildStep { text: string; refused?: string }
 
+/** What a running build reports as it goes. */
+export type BuildEvent = { type: 'using'; using: string; run: StartedRun } | ({ type: 'step' } & BuildStep);
+
 export interface BuildResult {
   run: StartedRun;
   using: string;
@@ -98,9 +101,10 @@ export async function buildFeature(
   settings: AppSettings,
   p: { slug: string; feature: string; provider: Provider; apiKey: string; dbPath: string | null },
   deps: BuildDeps,
-  onStep?: (s: BuildStep) => void,
+  onEvent?: (e: BuildEvent) => void,
   signal?: AbortSignal,
 ): Promise<BuildResult> {
+  if (signal?.aborted) throw new Error('Stopped.');
   const now = deps.now?.() ?? new Date();
   let leftUsd: number | null = null;
   if (p.dbPath) {
@@ -114,10 +118,11 @@ export async function buildFeature(
   const run = await startRun(settings, p.slug, p.feature, now);
   const model = await deps.pickModel(p.provider, 'build', settings);
   const using = usingLine(model, ['file edits', 'shell']);
+  onEvent?.({ type: 'using', using, run });
   const steps: BuildStep[] = [];
   const add = (s: BuildStep) => {
     steps.push(s);
-    onStep?.(s);
+    onEvent?.({ type: 'step', ...s });
   };
   const prompt = buildPrompt(interview, p.feature, specText(interview, new Date(interview.specAt ?? now)));
   const out = await adapter.build({

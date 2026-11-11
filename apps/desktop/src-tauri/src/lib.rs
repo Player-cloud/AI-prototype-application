@@ -5,7 +5,7 @@ mod engine;
 mod keys;
 mod settings;
 
-use engine::{helper_command, EngineHelper, EngineStatus};
+use engine::{helper_command, Canceller, EngineHelper, EngineStatus};
 use keys::{KeyStatus, OsKeyring};
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -18,6 +18,10 @@ pub fn app_version() -> &'static str {
 
 /// The running helper, or why it isn't running.
 struct Engine(Mutex<Result<EngineHelper, String>>);
+
+/// The feature build running now, if any: one at a time, each in its own helper so the rest of
+/// the app stays quick. Holds what's needed to stop it.
+struct Build(Mutex<Option<(Canceller, u64)>>);
 
 #[tauri::command]
 fn version() -> String {
@@ -205,6 +209,51 @@ async fn interview_review(slug: String, app: tauri::AppHandle, state: tauri::Sta
     paid_project_call(&app, &state, "interview_review", params)
 }
 
+/// Builds one feature in its own copy of the code. Each step is sent to `on_step` as it happens.
+/// Costs money (the "build" job, capped per run). Runs in its own helper, off the main thread.
+#[tauri::command]
+async fn build_feature(
+    slug: String,
+    feature: String,
+    on_step: tauri::ipc::Channel<serde_json::Value>,
+    app: tauri::AppHandle,
+    build: tauri::State<'_, Build>,
+) -> Result<serde_json::Value, String> {
+    let saved = settings::read(&settings_path(&app)?)?;
+    let provider = saved.get("provider").and_then(|p| p.as_str()).unwrap_or("claude").to_string();
+    let key = keys::load(&OsKeyring, key_name(&provider)?)?;
+    let params = serde_json::json!({
+        "slug": slug, "feature": feature, "settings": saved, "provider": provider, "apiKey": key, "dbPath": spend_path(&app)?,
+    });
+    let mut helper = EngineHelper::start(&helper_command(std::env::var("AIP_ENGINE").ok()))?;
+    {
+        let mut running = build.0.lock().unwrap_or_else(|p| p.into_inner());
+        if running.is_some() {
+            return Err("A build is already running. Stop it or wait for it to finish.".into());
+        }
+        *running = Some((helper.canceller(), helper.next_id()));
+    }
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        helper.request_live("build_feature", params, |event| {
+            let _ = on_step.send(event);
+        })
+    })
+    .await
+    .map_err(|e| format!("the build stopped unexpectedly: {e}"));
+    *build.0.lock().unwrap_or_else(|p| p.into_inner()) = None;
+    result?
+}
+
+/// Stops the running build, if there is one.
+#[tauri::command]
+async fn build_stop(build: tauri::State<'_, Build>) -> Result<bool, String> {
+    let running = build.0.lock().unwrap_or_else(|p| p.into_inner());
+    match running.as_ref() {
+        Some((stop, id)) => stop.cancel(*id).map(|_| true),
+        None => Ok(false),
+    }
+}
+
 /// The newest changes, for Settings → History.
 #[tauri::command]
 async fn history_list(app: tauri::AppHandle, state: tauri::State<'_, Engine>) -> Result<serde_json::Value, String> {
@@ -285,7 +334,8 @@ pub fn run() {
     let helper = EngineHelper::start(&helper_command(std::env::var("AIP_ENGINE").ok()));
     tauri::Builder::default()
         .manage(Engine(Mutex::new(helper)))
-        .invoke_handler(tauri::generate_handler![version, engine_status, key_status, key_save, key_remove, test_model, settings_get, settings_save, data_overview, spend_summary, tool_rate, data_sync, gate_rules, history_list, history_undo, project, interview_suggest, interview_review])
+        .manage(Build(Mutex::new(None)))
+        .invoke_handler(tauri::generate_handler![version, engine_status, key_status, key_save, key_remove, test_model, settings_get, settings_save, data_overview, spend_summary, tool_rate, data_sync, gate_rules, history_list, history_undo, project, interview_suggest, interview_review, build_feature, build_stop])
         .run(tauri::generate_context!())
         .expect("error while running the app");
 }
