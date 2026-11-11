@@ -15,7 +15,12 @@
  *    and its cost is recorded there afterwards.
  *  - data_overview: {settings} -> the tools, habits and rules in the data folder, and what the engine reads first.
  *  - tool_rate: {settings, tool, rating} -> saves a 1–5 rating in ledger.md and syncs the data repo.
+ *    With dbPath, the change is kept in the history so it can be undone.
  *  - data_sync: {settings} -> commits data folder changes and syncs with GitHub. Never forces.
+ *  - settings_saved: {dbPath, before, after, undoes?} -> keeps a settings change in the history (id, or null if nothing changed).
+ *  - history_list: {dbPath} -> the newest changes, newest first.
+ *  - undo: {dbPath, id, settings} -> puts a change back if nothing has changed since. For settings it
+ *    returns the earlier settings for the shell to save (then settings_saved with undoes).
  *    Both refuse to push anything key-shaped.
  *    ask and check also take an optional `settings` (model choices, prices, £/$ rate).
  *    The key comes from the window's password store for this one call and is never echoed back.
@@ -23,7 +28,8 @@
 import type { Job, ModelAdapter, Provider } from '@aip/models';
 import { formatCost } from './money.ts';
 import { DEFAULT_SETTINGS, checkSettings, type AppSettings } from './settings.ts';
-import { dataOverview, rateAndSync, syncNow } from './data.ts';
+import { dataOverview, rateAndSync, syncAfterUndo, syncNow } from './data.ts';
+import { historyList, settingsSaved, undoStart } from './history.ts';
 import { readBudget, recordSpend } from './budget.ts';
 import { gate, listRules } from './gate.ts';
 
@@ -93,6 +99,21 @@ function optionalPath(p: Record<string, unknown>, key: string): string | null {
   if (v === undefined || v === null || v === '') return null;
   if (typeof v !== 'string') throw new Error(`${key} must be a path`);
   return v;
+}
+
+function undoesOf(v: unknown): { id: number; label: string } | undefined {
+  if (v === undefined || v === null) return undefined;
+  const u = obj(v);
+  if (typeof u.id !== 'number' || !Number.isInteger(u.id) || typeof u.label !== 'string') throw new Error('undoes must have id and label');
+  return { id: u.id, label: u.label };
+}
+
+function settingsOrNull(raw: unknown): AppSettings | null {
+  try {
+    return checkSettings(raw);
+  } catch {
+    return null;
+  }
 }
 
 function obj(params: unknown): Record<string, unknown> {
@@ -184,11 +205,27 @@ const HANDLERS: Record<string, Handler> = {
     return { ...b, spentText };
   },
   data_overview: (params) => dataOverview(checkSettings(obj(params).settings)),
-  tool_rate: (params) => {
+  tool_rate: (params, deps) => {
     const p = obj(params);
     const rating = p.rating;
     if (typeof rating !== 'number') throw new Error('Rating must be a whole number from 1 to 5');
-    return rateAndSync(checkSettings(p.settings), str(p, 'tool'), rating);
+    return rateAndSync(checkSettings(p.settings), str(p, 'tool'), rating, optionalPath(p, 'dbPath'), deps.now?.() ?? new Date());
+  },
+  settings_saved: (params, deps) => {
+    const p = obj(params);
+    return settingsSaved(str(p, 'dbPath'), p.before, p.after, deps.now?.() ?? new Date(), undoesOf(p.undoes));
+  },
+  history_list: (params) => historyList(str(obj(params), 'dbPath')),
+  undo: async (params, deps) => {
+    const p = obj(params);
+    const id = p.id;
+    if (typeof id !== 'number' || !Number.isInteger(id) || id < 1) throw new Error('id must be a whole number');
+    const r = await undoStart(str(p, 'dbPath'), id, p.settings, deps.now?.() ?? new Date());
+    if (r.kind === 'file') {
+      const synced = await syncAfterUndo(settingsOrNull(p.settings) ?? DEFAULT_SETTINGS, r.path, r.label);
+      return { ...r, summary: synced ? `${r.summary} ${synced}` : r.summary };
+    }
+    return r;
   },
   data_sync: (params) => syncNow(checkSettings(obj(params).settings)),
 };

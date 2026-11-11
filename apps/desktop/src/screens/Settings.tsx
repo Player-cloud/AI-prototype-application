@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import type { Invoke } from '../engine';
 import { BudgetModels } from './BudgetModels';
 import { SafetyRules } from './SafetyRules';
+import { History } from './History';
 import { PROVIDERS, keyStatus, removeKey, saveKey, testModel, type Provider } from '../keys';
 
 function KeyRow({ invoke, id, name, hint }: { invoke: Invoke; id: Provider; name: string; hint: string }) {
@@ -121,6 +122,10 @@ function KeyRow({ invoke, id, name, hint }: { invoke: Invoke; id: Provider; name
 }
 
 export function Settings({ invoke }: { invoke: Invoke | null }) {
+  // `tick` refreshes the history after a save; `forms` reloads the forms after a settings undo.
+  const [tick, setTick] = useState(0);
+  const [forms, setForms] = useState(0);
+  const saved = () => setTick((t) => t + 1);
   return (
     <section className="card settings">
       <h2>API keys</h2>
@@ -135,10 +140,17 @@ export function Settings({ invoke }: { invoke: Invoke | null }) {
       )}
       <h2>Budget and models</h2>
       <p className="muted">Saved on this computer. No keys are kept here.</p>
-      {invoke ? <BudgetModels invoke={invoke} /> : <p className="key-note bad">Budget and models can be changed in the desktop app only.</p>}
+      {invoke ? <BudgetModels reload={forms} invoke={invoke} onSaved={saved} /> : <p className="key-note bad">Budget and models can be changed in the desktop app only.</p>}
       <h2>Ask-first rules</h2>
       <p className="muted">Every risky step is checked against these first. The built-in ones can’t be changed here, and the agent can never change any of them.</p>
-      {invoke ? <SafetyRules invoke={invoke} /> : <p className="key-note bad">Rules show in the desktop app only.</p>}
+      {invoke ? <SafetyRules reload={forms} invoke={invoke} onSaved={saved} /> : <p className="key-note bad">Rules show in the desktop app only.</p>}
+      <h2>Change history</h2>
+      <p className="muted">Every settings change and tool rating is kept here. Undo puts it back, as long as nothing has changed it since.</p>
+      {invoke ? (
+        <History invoke={invoke} tick={tick} onUndone={(kind) => kind === 'settings' && setForms((f) => f + 1)} />
+      ) : (
+        <p className="key-note bad">History shows in the desktop app only.</p>
+      )}
     </section>
   );
 }

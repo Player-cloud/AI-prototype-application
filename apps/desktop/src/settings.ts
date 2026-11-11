@@ -107,3 +107,31 @@ export function dollarsFor(gbp: number, gbpPerUsd: number): string {
 export function toNumber(text: string): number {
   return text.trim() === '' ? Number.NaN : Number(text);
 }
+
+/** One change in the undo history. */
+export interface HistoryItem {
+  id: number;
+  at: string;
+  label: string;
+  kind: 'settings' | 'file';
+  undoneAt: string | null;
+  isUndo: boolean;
+}
+
+export async function getHistory(invoke: Invoke): Promise<HistoryItem[]> {
+  try {
+    const items = await invoke<HistoryItem[]>('history_list');
+    return Array.isArray(items) ? items : [];
+  } catch (err) {
+    throw new Error(message(err));
+  }
+}
+
+/** Undoes one change. Returns a plain-words summary, or throws why it can't. */
+export async function undoChange(invoke: Invoke, id: number): Promise<{ kind: 'settings' | 'file'; summary: string }> {
+  try {
+    return await invoke<{ kind: 'settings' | 'file'; summary: string }>('history_undo', { id });
+  } catch (err) {
+    throw new Error(message(err));
+  }
+}

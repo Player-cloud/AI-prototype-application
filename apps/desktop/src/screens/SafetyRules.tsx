@@ -8,7 +8,7 @@ const KIND: Record<RuleView['kind'], string> = { never: 'Never allowed', ask: 'A
  * The ask-first rules. The built-in ones are shown but can't be changed here; joshua can add his
  * own, which the agent can never change.
  */
-export function SafetyRules({ invoke }: { invoke: Invoke }) {
+export function SafetyRules({ invoke, onSaved, reload = 0 }: { invoke: Invoke; onSaved?: () => void; reload?: number }) {
   const [rules, setRules] = useState<RuleView[] | null>(null);
   const [match, setMatch] = useState('');
   const [reason, setReason] = useState('');
@@ -23,7 +23,7 @@ export function SafetyRules({ invoke }: { invoke: Invoke }) {
     return () => {
       live = false;
     };
-  }, [invoke]);
+  }, [invoke, reload]);
 
   async function change(edit: (current: { match: string; reason: string }[]) => { match: string; reason: string }[], done: string) {
     setBusy(true);
@@ -32,6 +32,7 @@ export function SafetyRules({ invoke }: { invoke: Invoke }) {
       await saveSome(invoke, { extraRules: edit(latest.extraRules) });
       setRules(await getRules(invoke));
       setNote({ text: done, bad: false });
+      onSaved?.();
       return true;
     } catch (err) {
       setNote({ text: (err as Error).message, bad: true });
