@@ -42,10 +42,11 @@ jobs:
       - uses: actions/checkout@v4
       - name: Linux libraries for the window
         if: runner.os == 'Linux'
-        # The runner's own apt mirror (azure.archive.ubuntu.com) answers the package list but stalls
-        # on every download (20s each, then skipped), so the install never ends. Use the main Ubuntu
-        # archive instead. Also: no man-page index rebuild, download retries, never waits for an
-        # answer, and the step fails after 10 minutes instead of hanging.
+        # Since 2026-11-11 every package download here stalls for 20s and is skipped (index downloads
+        # still work), on both the runner's mirror and the main Ubuntu archive. A stall of exactly
+        # 20s per file points at IPv6, so apt is forced onto IPv4. The two curl lines print which one
+        # works, to help if it happens again. No man-page index rebuild, download retries, never
+        # waits for an answer, and the step fails after 10 minutes instead of hanging.
         timeout-minutes: 10
         env:
           DEBIAN_FRONTEND: noninteractive
@@ -54,6 +55,9 @@ jobs:
           sudo sed -i 's#http://azure.archive.ubuntu.com/ubuntu#http://archive.ubuntu.com/ubuntu#g' /etc/apt/sources.list /etc/apt/sources.list.d/*.sources 2>/dev/null || true
           echo 'set man-db/auto-update false' | sudo debconf-communicate >/dev/null
           sudo rm -f /var/lib/man-db/auto-update
+          echo 'Acquire::ForceIPv4 "true";' | sudo tee /etc/apt/apt.conf.d/99force-ipv4
+          curl -4 -sS -o /dev/null -m 15 -w 'IPv4 download test: %{http_code} in %{time_total}s\n' http://archive.ubuntu.com/ubuntu/pool/main/b/bzip2/ || true
+          curl -6 -sS -o /dev/null -m 15 -w 'IPv6 download test: %{http_code} in %{time_total}s\n' http://archive.ubuntu.com/ubuntu/pool/main/b/bzip2/ || true
           sudo apt-get update -o Acquire::Retries=3
           sudo apt-get install -y -o Acquire::Retries=3 libwebkit2gtk-4.1-dev libsoup-3.0-dev librsvg2-dev libgtk-3-dev libdbus-1-dev build-essential
       - uses: dtolnay/rust-toolchain@stable
