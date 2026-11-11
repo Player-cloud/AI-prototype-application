@@ -40,4 +40,32 @@ describe('build runs', () => {
     expect(() => log.rate(id, 6)).toThrow('Rating must be a whole number from 1 to 5');
     expect(() => log.rate(999, 3)).toThrow('There’s no such build.');
   });
+
+  it('finds the last build’s pictures to compare screens with', () => {
+    const log = RunLog.open(':memory:');
+    expect(log.lastPictures('club-hr')).toEqual([]);
+    log.add(run({ pictures: [{ name: 'desktop', path: '/p/1.png', hash: 'a' }] }));
+    log.add(run({ feature: 'F-02' })); // no pictures this time
+    log.add(run({ slug: 'school', pictures: [{ name: 'desktop', path: '/s.png', hash: 's' }] }));
+    expect(log.lastPictures('club-hr')).toEqual([{ name: 'desktop', path: '/p/1.png', hash: 'a' }]);
+  });
+
+  it('opens a history file made before free checks and pictures', async () => {
+    const { DatabaseSync } = await import('node:sqlite');
+    const { mkdtemp, rm } = await import('node:fs/promises');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const dir = await mkdtemp(join(tmpdir(), 'aip-runlog-'));
+    const path = join(dir, 'history.sqlite');
+    const old = new DatabaseSync(path);
+    old.exec(`CREATE TABLE runs (id INTEGER PRIMARY KEY, at TEXT NOT NULL, slug TEXT NOT NULL, feature TEXT NOT NULL, path TEXT NOT NULL,
+      branch TEXT NOT NULL, base TEXT NOT NULL, model TEXT NOT NULL, cost_usd REAL, tests_passed INTEGER NOT NULL, fix_attempts INTEGER NOT NULL,
+      summary TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'built', rating INTEGER, decided_at TEXT, merge_commit TEXT NOT NULL DEFAULT '', kept_into TEXT NOT NULL DEFAULT '')`);
+    old.exec(`INSERT INTO runs (at, slug, feature, path, branch, base, model, tests_passed, fix_attempts, summary) VALUES ('2026-11-11', 'club-hr', 'F-01', '/p', 'b', 'c', 'm', 1, 0, 's')`);
+    old.close();
+    const log = RunLog.open(path);
+    expect(log.get(1)).toMatchObject({ feature: 'F-01', checks: [], pictures: [] });
+    log.close();
+    await rm(dir, { recursive: true, force: true });
+  });
 });

@@ -124,6 +124,12 @@ describe('Build screen', () => {
         { name: 'checklist', passed: false, advisory: true, detail: 'src/rota.tsx:3 (Accessibility): Every image needs alt text.' },
       ],
       keep: { keep: true, blocking: [] },
+      pictures: [
+        { name: 'desktop', path: '/runs/F-02-pictures/desktop.png', dataUrl: 'data:image/png;base64,AAAA' },
+        { name: 'phone', path: '/runs/F-02-pictures/phone.png', dataUrl: 'data:image/png;base64,BBBB' },
+      ],
+      screensChanged: true,
+      picturesNote: 'Pictures taken with Edge; the screens changed since the last build.',
     });
     expect((await screen.findByRole('status')).textContent).toBe('Done and the tests pass. Cost: £0.33 ($0.42). Check it, then press Keep or Undo below.');
     const result = screen.getByRole('region', { name: 'Build result' });
@@ -133,6 +139,9 @@ describe('Build screen', () => {
     expect(within(result).getByText('3 passed')).toBeTruthy();
     expect(within(result).getByText('Data folder: Saved 1 file. Data repo is up to date on GitHub.')).toBeTruthy();
     expect(within(result).getByText(/^Secret scan: passed/)).toBeTruthy();
+    expect(within(result).getByText('Pictures taken with Edge; the screens changed since the last build.')).toBeTruthy();
+    expect((within(result).getByAltText('Phone picture of the build') as HTMLImageElement).src).toBe('data:image/png;base64,BBBB');
+    expect(within(result).getByAltText('Desktop picture of the build')).toBeTruthy();
     expect(within(result).getByText(/^Checklist rules: advice \(doesn’t stop Keep\)/)).toBeTruthy();
     expect(within(result).getByText('src/rota.tsx:3 (Accessibility): Every image needs alt text.')).toBeTruthy();
   });
@@ -154,6 +163,9 @@ describe('Build screen', () => {
       runId: 8,
       checks: [],
       keep: { keep: false, blocking: ['tests'] },
+      pictures: [],
+      screensChanged: null,
+      picturesNote: 'No pictures: there’s no page to show (no Next.js or Vite app, and no index.html).',
     });
     expect((await screen.findByRole('alert')).textContent).toBe('Built, but the tests still fail after 2 fix attempts. Cost: £0.79 ($1.00). It can’t be kept, so Undo it below.');
     expect(within(screen.getByRole('region', { name: 'Build result' })).getByText('Tests fail.')).toBeTruthy();

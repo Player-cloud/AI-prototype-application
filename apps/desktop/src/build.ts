@@ -25,6 +25,10 @@ export interface BuildResult {
   runId: number | null;
   checks: Check[];
   keep: { keep: boolean; blocking: string[] };
+  /** Desktop and phone pictures (9c). */
+  pictures: { name: string; path: string; dataUrl: string }[];
+  screensChanged: boolean | null;
+  picturesNote: string;
 }
 
 /** A saved feature build (step 9a). */
@@ -51,7 +55,7 @@ export function keepable(r: BuildRun): boolean {
   return r.testsPassed && !r.checks.some((c) => !c.passed && !c.advisory);
 }
 
-export const CHECK_NAME: Record<string, string> = { secrets: 'Secret scan', audit: 'Package audit', checklist: 'Checklist rules' };
+export const CHECK_NAME: Record<string, string> = { secrets: 'Secret scan', audit: 'Package audit', checklist: 'Checklist rules', axe: 'Accessibility', 'phone-overflow': 'Phone width', pictures: 'Pictures' };
 
 export interface Decided { run: BuildRun; note: string }
 

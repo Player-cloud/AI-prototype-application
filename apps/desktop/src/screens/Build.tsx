@@ -198,6 +198,18 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
               <pre className="test-output">{result.tests.output}</pre>
             </details>
           )}
+          <h3>Pictures</h3>
+          <p className="muted">{result.picturesNote}</p>
+          {result.pictures.length > 0 && (
+            <div className="pictures">
+              {result.pictures.map((p) => (
+                <figure key={p.name} className={`picture ${p.name}`}>
+                  <img src={p.dataUrl} alt={`${p.name === 'phone' ? 'Phone' : 'Desktop'} picture of the build`} />
+                  <figcaption>{p.name === 'phone' ? 'Phone' : 'Desktop'}</figcaption>
+                </figure>
+              ))}
+            </div>
+          )}
           {result.checks.length > 0 && (
             <>
               <h3>Free checks</h3>

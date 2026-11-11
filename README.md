@@ -45,6 +45,16 @@ After the tests, three free checks run in the build's copy (no model, no cost):
 - **Package audit:** `pnpm audit` (or `npm audit`). High or critical problems stop Keep. If it can't run, for example with no internet, that's shown as advice.
 - **Checklist rules:** simple rules for the enterprise checklist areas the project ticked, checked on the lines the build added. Examples: images need alt text, no raw HTML, no passwords in logs, no fixed widths too wide for a phone. These are advice: they're shown but don't stop Keep.
 
+## Pictures (step 9)
+
+After the free checks, the app takes a desktop picture (1280×800) and a phone picture (390×844) of the build's home page. It uses the browser already on the computer: Edge on Windows, Chrome on Linux, or the browser whose full path is in `AIP_BROWSER`. Nothing is downloaded. It starts the page with `next dev` or `vite` when the project uses them, or serves a plain `index.html`. The pictures are saved next to the build's copy (`…-runs/F-01-<time>-pictures`), never inside it, and compared with the last build's so the report says whether the screens changed.
+
+Two more free checks come with the pictures, both advice only:
+- **Accessibility:** axe, which lists serious and critical problems.
+- **Phone width:** whether the page fits a phone's width without scrolling sideways.
+
+If the page can't start or the browser can't open, the report says why and the build carries on.
+
 ## Keep or Undo (step 9)
 
 Every build is saved on this computer (in history.sqlite, next to the spend records) and listed under **Builds** on the Build screen, so a build can be decided later, even after the app restarts.

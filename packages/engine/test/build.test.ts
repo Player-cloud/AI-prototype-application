@@ -66,7 +66,7 @@ describe('build_feature', () => {
   });
 
   /** A fake agent: tries a write in its copy, a push and a write outside, then reports. */
-  type Seen = { task?: BuildTask; maxUsd?: number; answers: unknown[]; prompts?: string[]; caps?: number[] };
+  type Seen = { task?: BuildTask; maxUsd?: number; answers: unknown[]; prompts?: string[]; caps?: number[]; previous?: unknown[] };
   /** opts.tests: what each test run gives (passes when it runs out); opts.fail: the model errors. */
   function deps(seen: Seen, withBuild = true, opts: { tests?: boolean[]; fail?: string; checks?: { name: string; passed: boolean; free: boolean; detail?: string; advisory?: boolean }[] } = {}): Deps {
     const results = [...(opts.tests ?? [])];
@@ -112,6 +112,21 @@ describe('build_feature', () => {
         return 'Sonnet 5.5';
       },
       now: () => NOW,
+      async pictures(_dir, out, previous) {
+        (seen.previous ??= []).push(previous);
+        const path = join(out, 'desktop.png');
+        await mkdir(out, { recursive: true });
+        await writeFile(path, 'png');
+        return {
+          pictures: [{ name: 'desktop' as const, path, hash: 'h1' }],
+          checks: [
+            { name: 'axe', passed: true, free: true, advisory: true, detail: 'No serious accessibility problems.' },
+            { name: 'phone-overflow', passed: true, free: true, advisory: true, detail: 'Fits a phone’s width.' },
+          ],
+          changed: previous.length ? false : null,
+          note: previous.length ? 'Pictures taken with Chrome; the screens look the same as the last build.' : 'Pictures taken with Chrome.',
+        };
+      },
       async freeChecks() {
         return opts.checks ?? [
           { name: 'secrets', passed: true, free: true, detail: 'No keys found in 1 changed file.' },
@@ -176,17 +191,24 @@ describe('build_feature', () => {
     expect(events.slice(1).map((e) => e.text)).toEqual(out.steps.map((s: { text: string }) => s.text));
 
     // Then the project's tests ran in the copy and passed first time; the data folder sync was tried.
-    expect(out.steps.slice(-6).map((s: { text: string }) => s.text)).toEqual([
+    expect(out.steps.slice(-10).map((s: { text: string }) => s.text)).toEqual([
       'Running tests',
       'Tests pass',
       'Running free checks',
       'Secret scan: passed',
       'Package audit: passed',
       'Checklist rules: see notes',
+      'Taking desktop and phone pictures',
+      'Pictures taken with Chrome.',
+      'Accessibility: passed',
+      'Phone width: passed',
     ]);
+    // The pictures sit next to the build's copy (never inside it, so Keep never merges them).
+    expect(out.pictures).toEqual([{ name: 'desktop', path: join(`${out.run.path}-pictures`, 'desktop.png'), dataUrl: `data:image/png;base64,${Buffer.from('png').toString('base64')}` }]);
+    expect(out.screensChanged).toBeNull();
     // Advice-only findings are reported but don't stop Keep.
     expect(out.keep).toEqual({ keep: true, blocking: [] });
-    expect(out.checks.map((c: { name: string }) => c.name)).toEqual(['secrets', 'audit', 'checklist']);
+    expect(out.checks.map((c: { name: string }) => c.name)).toEqual(['secrets', 'audit', 'checklist', 'axe', 'phone-overflow']);
     expect(out.tests).toEqual({ passed: true, output: '3 passed', fixAttempts: 0 });
     expect(out.synced).toMatch(/^Saved here, but not synced yet: .*not a git clone/);
 
@@ -204,6 +226,7 @@ describe('build_feature', () => {
       advisory: true,
       detail: 'login.md:1 (Security): Use https:// links.',
     });
+    expect((await call('run_list', { dbPath, slug: 'club-hr' })).result[0].pictures).toEqual([{ name: 'desktop', path: out.pictures[0].path, hash: 'h1' }]);
   });
 
   it('does nothing when stopped before it starts', async () => {
@@ -247,6 +270,10 @@ describe('build_feature', () => {
       'Secret scan: passed',
       'Package audit: passed',
       'Checklist rules: see notes',
+      'Taking desktop and phone pictures',
+      'Pictures taken with Chrome.',
+      'Accessibility: passed',
+      'Phone width: passed',
     ]);
     expect(out.keep).toEqual({ keep: false, blocking: ['tests'] });
     // Each fix was told the test output, never to skip tests, and capped at what was left.
