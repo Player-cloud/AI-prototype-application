@@ -43,4 +43,6 @@ export {
 
 export { SpendLog, monthKey, type MonthSpend, type SpendRecord } from './spend.js';
 
+export { ChangeLog, KEEP_CHANGES, MAX_CHANGE_CHARS, type Change, type ChangeKind, type NewChange } from './history.js';
+
 export { changedFiles, looksLikeKey, rateTool, realGit, setRating, syncDataRepo, type Git, type SyncResult } from './sync.js';

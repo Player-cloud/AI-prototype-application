@@ -115,8 +115,45 @@ async fn settings_save(
     settings: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
     let checked = engine_call(&state, "settings_check", serde_json::json!({ "settings": settings }))?;
-    settings::write(&settings_path(&app)?, &checked)?;
+    let path = settings_path(&app)?;
+    // What was there before, for the undo history. A damaged old file counts as the defaults.
+    let before = settings::read(&path).unwrap_or_else(|_| serde_json::json!({}));
+    settings::write(&path, &checked)?;
+    // The save has happened; a history that can't be written shouldn't undo it.
+    let _ = engine_call(
+        &state,
+        "settings_saved",
+        serde_json::json!({ "dbPath": spend_path(&app)?, "before": before, "after": checked }),
+    );
     Ok(checked)
+}
+
+/// The newest changes, for Settings → History.
+#[tauri::command]
+async fn history_list(app: tauri::AppHandle, state: tauri::State<'_, Engine>) -> Result<serde_json::Value, String> {
+    engine_call(&state, "history_list", serde_json::json!({ "dbPath": spend_path(&app)? }))
+}
+
+/// One-click undo. Only puts a change back if nothing has changed since.
+#[tauri::command]
+async fn history_undo(id: i64, app: tauri::AppHandle, state: tauri::State<'_, Engine>) -> Result<serde_json::Value, String> {
+    let path = settings_path(&app)?;
+    let db = spend_path(&app)?;
+    let current = settings::read(&path)?;
+    let r = engine_call(&state, "undo", serde_json::json!({ "dbPath": db, "id": id, "settings": current }))?;
+    if r.get("kind").and_then(|k| k.as_str()) != Some("settings") {
+        return Ok(r);
+    }
+    let label = r.get("label").and_then(|l| l.as_str()).unwrap_or("change").to_string();
+    let restored = r.get("settings").cloned().ok_or("engine gave no settings to restore")?;
+    settings::write(&path, &restored)?;
+    engine_call(
+        &state,
+        "settings_saved",
+        serde_json::json!({ "dbPath": db, "before": current, "after": restored, "undoes": { "id": id, "label": label } }),
+    )?;
+    let summary = r.get("summary").and_then(|t| t.as_str()).unwrap_or("Undone.").to_string();
+    Ok(serde_json::json!({ "kind": "settings", "id": id, "label": label, "summary": summary }))
 }
 
 /// The tools, habits and rules in the data folder chosen in Settings (read-only).
@@ -135,7 +172,8 @@ async fn tool_rate(
     state: tauri::State<'_, Engine>,
 ) -> Result<serde_json::Value, String> {
     let saved = settings::read(&settings_path(&app)?)?;
-    engine_call(&state, "tool_rate", serde_json::json!({ "settings": saved, "tool": tool, "rating": rating }))
+    let db = spend_path(&app)?;
+    engine_call(&state, "tool_rate", serde_json::json!({ "settings": saved, "tool": tool, "rating": rating, "dbPath": db }))
 }
 
 /// Commits data folder changes and syncs them with GitHub (never forces).
@@ -170,7 +208,7 @@ pub fn run() {
     let helper = EngineHelper::start(&helper_command(std::env::var("AIP_ENGINE").ok()));
     tauri::Builder::default()
         .manage(Engine(Mutex::new(helper)))
-        .invoke_handler(tauri::generate_handler![version, engine_status, key_status, key_save, key_remove, test_model, settings_get, settings_save, data_overview, spend_summary, tool_rate, data_sync, gate_rules])
+        .invoke_handler(tauri::generate_handler![version, engine_status, key_status, key_save, key_remove, test_model, settings_get, settings_save, data_overview, spend_summary, tool_rate, data_sync, gate_rules, history_list, history_undo])
         .run(tauri::generate_context!())
         .expect("error while running the app");
 }

@@ -1,6 +1,7 @@
 /** What the Tools screen shows: the data repo's tools, habits and rules, read through the memory package. */
 import type { ToolState } from '@aip/memory';
 import type { AppSettings } from './settings.ts';
+import { fileChanged, isInside, undoLabel } from './history.ts';
 
 export interface ToolRow {
   name: string;
@@ -33,12 +34,31 @@ function folderOf(settings: AppSettings): string {
   return settings.dataFolder;
 }
 
-/** Saves joshua's 1–5 rating for a tool in ledger.md, then syncs the data repo to GitHub. */
-export async function rateAndSync(settings: AppSettings, tool: string, rating: number) {
+/**
+ * Saves joshua's 1–5 rating for a tool in ledger.md, keeps the change in the history (when
+ * dbPath is given) so it can be undone, then syncs the data repo to GitHub.
+ */
+export async function rateAndSync(settings: AppSettings, tool: string, rating: number, dbPath: string | null = null, now = new Date()) {
   const folder = folderOf(settings);
   const m = await import('@aip/memory');
+  const { readFile } = await import('node:fs/promises');
+  const { join } = await import('node:path');
+  const ledger = join(folder, 'ledger.md');
+  const before = dbPath ? await readFile(ledger, 'utf8') : '';
   await m.rateTool(folder, tool, rating);
+  if (dbPath) await fileChanged(dbPath, ledger, before, await readFile(ledger, 'utf8'), `Rated ${tool} ${rating}/5`, now);
   return m.syncDataRepo(folder, `Rate ${tool} ${rating}/5`);
+}
+
+/** After an undo puts back a data-folder file, sync it. A failed sync doesn't undo the undo. */
+export async function syncAfterUndo(settings: AppSettings, path: string, label: string): Promise<string> {
+  if (!isInside(settings.dataFolder, path)) return '';
+  const m = await import('@aip/memory');
+  try {
+    return (await m.syncDataRepo(settings.dataFolder, undoLabel(label))).summary;
+  } catch (err) {
+    return `Saved here, but not synced yet: ${(err as Error).message}`;
+  }
 }
 
 /** Commits any changes in the data folder and syncs with GitHub (both ways). */

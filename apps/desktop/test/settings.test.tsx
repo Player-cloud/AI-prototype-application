@@ -23,6 +23,7 @@ function fakeShell(initial: string[] = []) {
     if (cmd === 'key_remove') saved.delete(provider);
     if (cmd === 'settings_get') return SETTINGS as T;
     if (cmd === 'gate_rules') return [] as T;
+    if (cmd === 'history_list') return [] as T;
     if (cmd === 'test_model') {
       if (!saved.has(provider)) throw 'No anthropic key saved. Add it in Settings.';
       const summary =
@@ -100,7 +101,7 @@ describe('Settings: API keys', () => {
     const shell = fakeShell(['anthropic']);
     render(<Settings invoke={shell.invoke} />);
     await within(row('Claude (Anthropic)')).findByText('Key saved');
-    expect(shell.calls.every((c) => ['key_status', 'key_save', 'key_remove', 'test_model', 'settings_get', 'spend_summary', 'gate_rules'].includes(c.cmd))).toBe(true);
+    expect(shell.calls.every((c) => ['key_status', 'key_save', 'key_remove', 'test_model', 'settings_get', 'spend_summary', 'gate_rules', 'history_list'].includes(c.cmd))).toBe(true);
   });
 
   it('tests the Claude connection and shows the reply and cost', async () => {

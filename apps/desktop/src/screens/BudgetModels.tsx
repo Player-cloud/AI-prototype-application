@@ -73,7 +73,8 @@ function chosenModels(d: Draft): string[] {
   return [...new Set(all.filter((m) => m !== ''))];
 }
 
-export function BudgetModels({ invoke }: { invoke: Invoke }) {
+/** `reload` changes when the saved settings changed elsewhere (an undo), so the form re-reads them in place. */
+export function BudgetModels({ invoke, onSaved, reload = 0 }: { invoke: Invoke; onSaved?: () => void; reload?: number }) {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [note, setNote] = useState<{ text: string; bad: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -88,7 +89,7 @@ export function BudgetModels({ invoke }: { invoke: Invoke }) {
     return () => {
       live = false;
     };
-  }, [invoke]);
+  }, [invoke, reload]);
 
   if (!draft) {
     return note ? (
@@ -114,6 +115,7 @@ export function BudgetModels({ invoke }: { invoke: Invoke }) {
       const saved = await saveSome(invoke, fromDraft(draft));
       setDraft(toDraft(saved));
       setNote({ text: 'Saved on this computer.', bad: false });
+      onSaved?.();
       setSpend(await getSpend(invoke)); // the budget may have changed
     } catch (err) {
       setNote({ text: (err as Error).message, bad: true });
