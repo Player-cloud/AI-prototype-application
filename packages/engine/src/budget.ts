@@ -3,8 +3,18 @@
  * in Settings. Model calls are refused once the budget is used up, and each Claude call is capped
  * to what's left.
  */
-import { round2 } from './money.ts';
+import { formatCost, round2 } from './money.ts';
 import type { AppSettings } from './settings.ts';
+
+/** Most a single call may cost, even with plenty of budget left (Claude enforces it). */
+export const MAX_CALL_USD = 0.5;
+
+/** What the screen says before a paid planning call. Only Claude can be capped up front. */
+export function askCostNote(settings: AppSettings): string {
+  return settings.provider === 'claude'
+    ? `costs up to ${formatCost(MAX_CALL_USD, settings.gbpPerUsd)}`
+    : 'costs money; the exact cost shows after it runs';
+}
 
 /** Percentage of the monthly £ budget still left, 0-100, one decimal place. */
 export function budgetLeftPercent(spentUsd: number, budgetGbp: number, gbpPerUsd: number): number {

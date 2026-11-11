@@ -27,6 +27,26 @@ export interface InterviewView {
   tools: ToolHint[];
   big: boolean;
   finished: boolean;
+  /** e.g. "costs up to £0.40 ($0.50)". */
+  askCost: string;
+}
+
+export interface Suggestions {
+  questions: string[];
+  areas: string[];
+  features: { name: string; what: string }[];
+  done: Record<string, string[]>;
+}
+
+export interface SuggestResult { suggestions: Suggestions; modelName: string; costText: string }
+
+/** Claude's ideas for a stage. Costs money; nothing is added until joshua picks it. */
+export async function suggest(invoke: Invoke, slug: string, stage: StageId): Promise<SuggestResult> {
+  try {
+    return await invoke<SuggestResult>('interview_suggest', { slug, stage });
+  } catch (err) {
+    throw new Error(err instanceof Error ? err.message : String(err));
+  }
 }
 
 export interface ProjectRow { slug: string; name: string; status: string; finished: boolean; updatedAt: string }

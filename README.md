@@ -21,7 +21,9 @@ Every risky step goes through the engine's `gate`, which asks `packages/gatekeep
 
 ## Plan interview
 
-Projects → name a project → answer seven stages in order: the idea, who it's for and goals, features, enterprise checklist areas, look and brand, tech, and what "done" means. Each stage shows its questions together, with related tools from your ledger listed first, and nothing moves on until you confirm. Answers save to `projects/<name>/interview.json` in your data repo. Confirming the last stage writes `spec.md` (every feature gets a fixed ID like F-01) and one pass/fail file per feature in `done/`, then syncs the data repo. No model is called, so it's free.
+Projects → name a project → answer seven stages in order: the idea, who it's for and goals, features, enterprise checklist areas, look and brand, tech, and what "done" means. Each stage shows its questions together, with related tools from your ledger listed first, and nothing moves on until you confirm. Answers save to `projects/<name>/interview.json` in your data repo. Confirming the last stage writes `spec.md` (every feature gets a fixed ID like F-01) and one pass/fail file per feature in `done/`, then syncs the data repo. No model is called unless you ask.
+
+Each stage also has **Ask Claude for ideas**. It sends the answers so far to the planning model (Opus for Claude) and shows suggested questions, checklist areas, features or done checks. The button shows the most it can cost first, and the real cost after; it counts against your monthly budget. Nothing is added to the plan until you pick it.
 
 ## Undo
 
