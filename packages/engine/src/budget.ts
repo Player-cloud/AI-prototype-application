@@ -10,9 +10,9 @@ import type { AppSettings } from './settings.ts';
 export const MAX_CALL_USD = 0.5;
 
 /** What the screen says before a paid planning call. Only Claude can be capped up front. */
-export function askCostNote(settings: AppSettings): string {
+export function askCostNote(settings: AppSettings, calls = 1): string {
   return settings.provider === 'claude'
-    ? `costs up to ${formatCost(MAX_CALL_USD, settings.gbpPerUsd)}`
+    ? `costs up to ${formatCost(MAX_CALL_USD * calls, settings.gbpPerUsd)}`
     : 'costs money; the exact cost shows after it runs';
 }
 

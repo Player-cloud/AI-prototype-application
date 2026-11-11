@@ -17,7 +17,11 @@ export interface Interview {
   done: Record<string, string[]>;
   specAt: string | null;
   updatedAt: string;
+  review: PlanReview | null;
 }
+
+export interface Finding { reviewer: string; severity: 'must' | 'should' | 'could'; text: string; feature?: string }
+export interface PlanReview { at: string; big: boolean; findings: Finding[]; costText: string }
 
 export interface ToolHint { name: string; state: string; job: string }
 
@@ -29,6 +33,9 @@ export interface InterviewView {
   finished: boolean;
   /** e.g. "costs up to £0.40 ($0.50)". */
   askCost: string;
+  reviewers: number;
+  reviewCost: string;
+  reviewCurrent: boolean;
 }
 
 export interface Suggestions {
@@ -75,3 +82,12 @@ export const saveAnswers = (invoke: Invoke, slug: string, stage: StageId, patch:
   call<InterviewView>(invoke, 'interview_save', { slug, stage, patch });
 export const confirmStage = (invoke: Invoke, slug: string, stage: StageId) =>
   call<{ view: InterviewView; files: string[]; summary: string }>(invoke, 'interview_confirm', { slug, stage });
+
+/** Reviews the finished plan (one review, or three fresh-eyes reviewers for a big build). Costs money. */
+export async function reviewPlan(invoke: Invoke, slug: string): Promise<{ view: InterviewView; summary: string }> {
+  try {
+    return await invoke<{ view: InterviewView; summary: string }>('interview_review', { slug });
+  } catch (err) {
+    throw new Error(err instanceof Error ? err.message : String(err));
+  }
+}

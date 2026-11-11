@@ -25,6 +25,8 @@ Projects → name a project → answer seven stages in order: the idea, who it's
 
 Each stage also has **Ask Claude for ideas**. It sends the answers so far to the planning model (Opus for Claude) and shows suggested questions, checklist areas, features or done checks. The button shows the most it can cost first, and the real cost after; it counts against your monthly budget. Nothing is added to the plan until you pick it.
 
+When the interview is finished, **Review the plan** checks it. Small plans get one review by the plan-review model (Sonnet for Claude). Big plans (5+ features, or logins, payments or personal data) get three fresh-eyes reviewers instead: one looks at users and goals, one at features and done checks, one at risk. Each sees only `spec.md` and the done files, not how the plan was made. Findings (must fix, should fix, could add) are saved as `projects/<name>/review.md` and synced. The button shows the most it can cost first. If you change the plan, the review is marked out of date. Nothing in the plan changes until you edit it.
+
 ## Undo
 
 Every settings change and tool rating is kept in `history.sqlite` on this computer, with exactly what it was before and after. Settings → Change history lists them, each with an Undo button. Undo only puts a change back if nothing has changed it since; otherwise it says so and touches nothing. Undoing a rating also syncs the data repo. An undo can itself be undone (shown as Redo).

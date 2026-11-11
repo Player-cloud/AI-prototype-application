@@ -9,6 +9,7 @@ import {
   saveAnswers,
   startProject,
   suggest,
+  reviewPlan,
   type SuggestResult,
   type InterviewView,
   type Patch,
@@ -18,6 +19,8 @@ import {
 } from '../projects';
 
 type Note = { text: string; bad: boolean } | null;
+
+const SEVERITY = { must: 'Must fix', should: 'Should fix', could: 'Could add' } as const;
 
 function NoteLine({ note }: { note: Note }) {
   if (!note) return null;
@@ -167,6 +170,20 @@ function InterviewScreen({ invoke, start, onBack }: { invoke: Invoke; start: Int
     }
   }
 
+  async function onReview() {
+    setBusy(true);
+    setNote({ text: view.reviewers > 1 ? `Asking ${view.reviewers} fresh-eyes reviewers…` : 'Reviewing the plan…', bad: false });
+    try {
+      const r = await reviewPlan(invoke, iv.slug);
+      setView(r.view);
+      setNote({ text: r.summary, bad: false });
+    } catch (err) {
+      setNote({ text: (err as Error).message, bad: true });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const addFeature = (f: { name: string; what: string }) => {
     const rows = draft.features.filter((x) => x.name.trim() || x.id);
     setDraft({ ...draft, features: [...rows, { ...f }] });
@@ -240,6 +257,41 @@ function InterviewScreen({ invoke, start, onBack }: { invoke: Invoke; start: Int
         <h2>{iv.name}</h2>
         {view.finished && <p className="key-note">Spec ready in projects/{iv.slug}/spec.md{view.big ? ' · big build: the plan gets a fresh-eyes review' : ''}</p>}
       </div>
+      {view.finished && (
+        <div className="review" role="region" aria-label="Plan review">
+          <h3>Plan review</h3>
+          <p className="muted">
+            {view.reviewers > 1
+              ? `Big build: ${view.reviewers} fresh-eyes reviewers each read only the spec, with different things to look for.`
+              : 'One reviewer reads the spec and done files and points out gaps.'}{' '}
+            Nothing in the plan changes until you edit it.
+          </p>
+          {iv.review && (
+            <>
+              {!view.reviewCurrent && <p className="hint">The plan has changed since this review.</p>}
+              {iv.review.findings.length === 0 ? (
+                <p>No problems found.</p>
+              ) : (
+                <ul className="rule-list" aria-label="Findings">
+                  {[...iv.review.findings]
+                    .sort((a, b) => ['must', 'should', 'could'].indexOf(a.severity) - ['must', 'should', 'could'].indexOf(b.severity))
+                    .map((f, i) => (
+                      <li key={i}>
+                        <span className={`rule-kind ${f.severity === 'must' ? 'never' : 'ask'}`}>{SEVERITY[f.severity]}</span>
+                        {f.feature ? ` ${f.feature}:` : ''} {f.text}
+                      </li>
+                    ))}
+                </ul>
+              )}
+            </>
+          )}
+          <div className="key-controls">
+            <button type="button" disabled={busy} onClick={() => void onReview()}>
+              {iv.review ? 'Review again' : 'Review the plan'} ({view.reviewCost})
+            </button>
+          </div>
+        </div>
+      )}
       {!stages && !note && <p className="muted">Loading…</p>}
       {stages && (
         <ol className="stage-list" aria-label="Stages">
