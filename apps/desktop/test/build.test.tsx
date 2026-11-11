@@ -42,11 +42,11 @@ function fakeShell(opts: { fail?: string; runs?: (typeof WAITING)[] } = {}) {
     if (cmd === 'run_decide') {
       const keep = args?.keep === true;
       runs = runs.map((r) => (r.id === args?.id ? { ...r, status: keep ? 'kept' : 'undone', keptInto: keep ? 'main' : '' } : r));
-      return { run: runs[0], note: keep ? 'Kept F-02 in your copy on main. Nothing was pushed.' : 'Undone: F-02’s build was removed. Your copy wasn’t touched.' } as T;
+      return { run: runs[0], note: keep ? 'Kept F-02 in your copy on main. Nothing was pushed.' : 'Undone: F-02’s build was removed. Your copy wasn’t touched.', learned: [] } as T;
     }
     if (cmd === 'run_rate') {
       runs = runs.map((r) => (r.id === args?.id ? { ...r, rating: args?.rating as null } : r));
-      return runs[0] as T;
+      return { run: runs[0], learned: ['New habit: Sonnet builds are usually kept (kept 5 of 5): keep using it for builds.'] } as T;
     }
     if (cmd === 'build_stop') {
       fail?.('Stopped.');
@@ -186,6 +186,9 @@ describe('Build screen', () => {
     expect((await screen.findByText('Rated F-02 4/5.')).getAttribute('role')).toBe('status');
     expect(shell.calls).toContainEqual({ cmd: 'run_rate', args: { id: 7, rating: 4 } });
     expect(within(builds).getByRole('button', { name: '4' }).getAttribute('aria-pressed')).toBe('true');
+    // The app says what it learned from the rating.
+    const learned = screen.getByRole('region', { name: 'What the app learned' });
+    expect(within(learned).getByText('New habit: Sonnet builds are usually kept (kept 5 of 5): keep using it for builds.')).toBeTruthy();
   });
 
   it('can’t keep a build whose secret scan failed', async () => {

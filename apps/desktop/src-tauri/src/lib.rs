@@ -268,10 +268,11 @@ async fn run_decide(id: i64, keep: bool, app: tauri::AppHandle, state: tauri::St
     engine_call(&state, method, serde_json::json!({ "settings": saved, "dbPath": spend_path(&app)?, "id": id }))
 }
 
-/// joshua's 1–5 rating for a build.
+/// joshua's 1–5 rating for a build. The app may then update its learned habits (step 9d).
 #[tauri::command]
 async fn run_rate(id: i64, rating: u8, app: tauri::AppHandle, state: tauri::State<'_, Engine>) -> Result<serde_json::Value, String> {
-    engine_call(&state, "run_rate", serde_json::json!({ "dbPath": spend_path(&app)?, "id": id, "rating": rating }))
+    let saved = settings::read(&settings_path(&app)?)?;
+    engine_call(&state, "run_rate", serde_json::json!({ "settings": saved, "dbPath": spend_path(&app)?, "id": id, "rating": rating }))
 }
 
 /// The newest changes, for Settings → History.

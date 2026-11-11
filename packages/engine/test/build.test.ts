@@ -166,6 +166,7 @@ describe('build_feature', () => {
     const settings = { dataFolder: data, codeFolders: { 'club-hr': code } };
     const events: { type: string; text?: string; using?: string }[] = [];
     const call = await plan(d, settings, { emit: (e) => events.push(e as (typeof events)[number]) });
+    await writeFile(join(data, 'rules.md'), '- Ask first.\n');
     const dbPath = join(root, 'history.sqlite');
 
     const r = await call('build_feature', { settings, slug: 'club-hr', feature: 'F-01', provider: 'claude', apiKey: FAKE_KEY, dbPath });
@@ -181,6 +182,9 @@ describe('build_feature', () => {
     expect(seen.task?.cwd).toBe(out.run.path);
     expect(seen.task?.prompt).toContain('Build feature F-01 (Login)');
     expect(seen.task?.prompt).toContain('=== done/F-01.md ===');
+    // joshua's rules (and habits, learned ones included) go with every build (step 9d).
+    expect(seen.task?.prompt).toContain('joshua’s rules come first');
+    expect(seen.task?.prompt).toContain('Rules:\n- Ask first.');
     expect(await readFile(join(out.run.path, 'login.md'), 'utf8')).toBe('Login');
     await expect(readFile(join(code, 'hack.md'), 'utf8')).rejects.toThrow();
     expect(seen.answers.map((a) => (a as { allow: boolean }).allow)).toEqual([true, false, false]);

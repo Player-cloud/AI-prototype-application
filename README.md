@@ -61,7 +61,17 @@ Every build is saved on this computer (in history.sqlite, next to the spend reco
 
 - **Keep** merges the build's branch into your copy, on the branch you have checked out, as one merge commit. It never pushes. It's refused when the build's tests fail or your copy has changes not committed yet, and if the build clashes with your newer work nothing is changed. The build's copy and branch are then removed.
 - **Undo** removes the build's copy and branch. Your copy isn't touched.
-- Each build can be rated 1–5. Ratings are the evidence the app learns from later in step 9.
+- Each build can be rated 1–5. Ratings are the evidence the app learns from (below).
+
+## What the app learns (step 9)
+
+After each Keep, Undo or rating, the app looks at its build history and keeps its own section of `habits.md` ("Learned by the app") up to date. Your own lines above it are never changed. It only writes a habit when there's enough evidence:
+
+- A build model with at least 5 decided builds: "usually kept" (80% or more kept, and an average rating of 4 or more once there are 3 ratings) or "often undone or rated low" (40% or less kept, or an average of 2.5 or less).
+- A checklist rule tripped in at least 3 of the last 10 builds.
+- Fix attempts needed in at least 3 of the last 5 builds.
+
+A habit is updated when the numbers change, and dropped when it stops being true. Each change is shown on the Build screen, kept in **History** (one-click undo) and synced to the data repo. Every build is given your rules and habits; your rules win while more than 30% of the month's budget is left, and below that a cheaper habit wins where the two clash.
 
 ## Tool health
 

@@ -64,7 +64,7 @@ describe('Keep or Undo a build', () => {
 
     // Once decided, it can't be decided again; it can still be rated.
     expect((await call('run_undo', { settings, dbPath: db, id: b.id })).error).toBe('That build was already kept.');
-    expect((await call('run_rate', { dbPath: db, id: b.id, rating: 4 })).result.rating).toBe(4);
+    expect((await call('run_rate', { dbPath: db, id: b.id, rating: 4 })).result.run.rating).toBe(4);
     expect((await call('run_list', { dbPath: db, slug: 'club-hr' })).result.map((x: { status: string }) => x.status)).toEqual(['kept']);
   });
 

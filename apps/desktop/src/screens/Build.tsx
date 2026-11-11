@@ -27,6 +27,7 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
   const [note, setNote] = useState<Note>(null);
   const [runs, setRuns] = useState<BuildRun[]>([]);
   const [busy, setBusy] = useState(false);
+  const [learned, setLearned] = useState<string[]>([]);
 
   useEffect(() => {
     if (!invoke) return;
@@ -101,14 +102,16 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
     }
   }
 
-  async function act(label: string, job: () => Promise<string>) {
+  async function act(label: string, job: () => Promise<{ text: string; learned: string[] }>) {
     if (!invoke) return;
     setBusy(true);
     setNote({ text: label, bad: false });
+    setLearned([]);
     try {
-      const text = await job();
+      const { text, learned } = await job();
       setRuns(await listRuns(invoke, slug));
       setNote({ text, bad: false });
+      setLearned(learned);
     } catch (err) {
       setNote({ text: (err as Error).message, bad: true });
     } finally {
@@ -117,8 +120,12 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
   }
 
   const decide = (r: BuildRun, keep: boolean) =>
-    act(keep ? `Keeping ${r.feature}…` : `Undoing ${r.feature}…`, async () => (await decideRun(invoke!, r.id, keep)).note);
-  const rate = (r: BuildRun, n: number) => act(`Saving ${n}/5…`, async () => (await rateRun(invoke!, r.id, n), `Rated ${r.feature} ${n}/5.`));
+    act(keep ? `Keeping ${r.feature}…` : `Undoing ${r.feature}…`, async () => {
+      const d = await decideRun(invoke!, r.id, keep);
+      return { text: d.note, learned: d.learned };
+    });
+  const rate = (r: BuildRun, n: number) =>
+    act(`Saving ${n}/5…`, async () => ({ text: `Rated ${r.feature} ${n}/5.`, learned: (await rateRun(invoke!, r.id, n)).learned }));
 
   async function onStop() {
     if (!invoke) return;
@@ -266,6 +273,17 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
         <p className={note.bad ? 'key-note bad' : 'key-note'} role={note.bad ? 'alert' : 'status'}>
           {note.text}
         </p>
+      )}
+      {learned.length > 0 && (
+        <div className="learned" role="region" aria-label="What the app learned">
+          <h3>What the app learned</h3>
+          <ul>
+            {learned.map((l) => (
+              <li key={l}>{l}</li>
+            ))}
+          </ul>
+          <p className="muted">Saved in habits.md. You can undo it in Settings → History.</p>
+        </div>
       )}
     </section>
   );
