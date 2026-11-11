@@ -3,13 +3,20 @@
  * Haiku reads changed code for what they miss. Tests must always pass and are never cut.
  */
 
-export interface CheckResult { name: string; passed: boolean; free: boolean; detail?: string }
+export interface CheckResult {
+  name: string;
+  passed: boolean;
+  free: boolean;
+  detail?: string;
+  /** Advice only: shown in the report, but a failure doesn't stop Keep. */
+  advisory?: boolean;
+}
 
 export const FREE_CHECKS = ['tests', 'axe', 'phone-overflow', 'secretlint', 'npm-audit'] as const;
 
-/** A build may be kept only when every check passed. */
+/** A build may be kept only when every check passed (advice-only checks don't block). */
 export function canKeep(results: CheckResult[]): { keep: boolean; blocking: string[] } {
-  const blocking = results.filter((r) => !r.passed).map((r) => r.name);
+  const blocking = results.filter((r) => !r.passed && !r.advisory).map((r) => r.name);
   const missingTests = !results.some((r) => r.name === 'tests');
   if (missingTests) blocking.unshift('tests (not run)');
   return { keep: blocking.length === 0, blocking };
@@ -21,3 +28,5 @@ export function isBigBuild(features: number, touches: { logins?: boolean; paymen
 }
 
 export { KEEP_OUTPUT, packageManager, realExec, runTests, type Exec, type ExecResult } from './tests.js';
+
+export { CHECKLIST_RULES, MAX_FINDINGS, auditCheck, changedSince, checklistCheck, runFreeChecks, secretScan, type AddedLine, type ChangedFiles } from './free.js';

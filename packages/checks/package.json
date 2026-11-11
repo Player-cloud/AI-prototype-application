@@ -5,5 +5,9 @@
   "type": "module",
   "description": "Tests, free checks (axe, phone overflow, secretlint, npm audit), screenshots, enterprise checklist rules.",
   "main": "dist/index.js",
-  "types": "dist/index.d.ts"
+  "types": "dist/index.d.ts",
+  "dependencies": {
+    "@secretlint/node": "^11.2.0",
+    "@secretlint/secretlint-rule-preset-recommend": "^11.2.0"
+  }
 }

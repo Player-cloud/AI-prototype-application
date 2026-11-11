@@ -37,6 +37,14 @@ The **Build** screen lists finished plans and their features. Press **Build F-01
 
 After the model finishes, the project's own tests run in the copy (`pnpm test`, or the package manager its lock file shows; packages are installed first if the copy has none). If they fail, the model gets up to 2 fix attempts with the end of the test output, inside what's left of the run's limit. It's told never to skip, delete or weaken tests. The result shows whether the tests pass and the end of their output; a build whose tests fail can't be kept. The data folder syncs after each build.
 
+## Free checks (step 9)
+
+After the tests, three free checks run in the build's copy (no model, no cost):
+
+- **Secret scan:** secretlint (the same rules as this repo's `pnpm secrets`) on every file the build added or changed, plus no key files (.env, *.pem). Secret values are never shown. A failure stops Keep.
+- **Package audit:** `pnpm audit` (or `npm audit`). High or critical problems stop Keep. If it can't run, for example with no internet, that's shown as advice.
+- **Checklist rules:** simple rules for the enterprise checklist areas the project ticked, checked on the lines the build added. Examples: images need alt text, no raw HTML, no passwords in logs, no fixed widths too wide for a phone. These are advice: they're shown but don't stop Keep.
+
 ## Keep or Undo (step 9)
 
 Every build is saved on this computer (in history.sqlite, next to the spend records) and listed under **Builds** on the Build screen, so a build can be decided later, even after the app restarts.

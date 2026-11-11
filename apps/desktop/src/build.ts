@@ -7,6 +7,9 @@ export interface RunInfo { path: string; branch: string; feature: string; base: 
 export interface BuildStep { text: string; refused?: string }
 export type BuildEvent = { type: 'using'; using: string; run: RunInfo } | ({ type: 'step' } & BuildStep);
 
+/** One free check (9b). Advice-only checks don't stop Keep. */
+export interface Check { name: string; passed: boolean; advisory?: boolean; detail?: string }
+
 export interface BuildResult {
   run: RunInfo;
   using: string;
@@ -20,6 +23,8 @@ export interface BuildResult {
   synced: string;
   /** The saved build that Keep, Undo and the rating act on. */
   runId: number | null;
+  checks: Check[];
+  keep: { keep: boolean; blocking: string[] };
 }
 
 /** A saved feature build (step 9a). */
@@ -38,7 +43,15 @@ export interface BuildRun {
   status: 'built' | 'kept' | 'undone';
   rating: number | null;
   keptInto: string;
+  checks: Check[];
 }
+
+/** True when nothing stops Keep: tests pass and no blocking check failed. */
+export function keepable(r: BuildRun): boolean {
+  return r.testsPassed && !r.checks.some((c) => !c.passed && !c.advisory);
+}
+
+export const CHECK_NAME: Record<string, string> = { secrets: 'Secret scan', audit: 'Package audit', checklist: 'Checklist rules' };
 
 export interface Decided { run: BuildRun; note: string }
 

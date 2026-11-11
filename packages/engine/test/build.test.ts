@@ -68,7 +68,7 @@ describe('build_feature', () => {
   /** A fake agent: tries a write in its copy, a push and a write outside, then reports. */
   type Seen = { task?: BuildTask; maxUsd?: number; answers: unknown[]; prompts?: string[]; caps?: number[] };
   /** opts.tests: what each test run gives (passes when it runs out); opts.fail: the model errors. */
-  function deps(seen: Seen, withBuild = true, opts: { tests?: boolean[]; fail?: string } = {}): Deps {
+  function deps(seen: Seen, withBuild = true, opts: { tests?: boolean[]; fail?: string; checks?: { name: string; passed: boolean; free: boolean; detail?: string; advisory?: boolean }[] } = {}): Deps {
     const results = [...(opts.tests ?? [])];
     const adapter: ModelAdapter = {
       provider: 'claude',
@@ -112,6 +112,13 @@ describe('build_feature', () => {
         return 'Sonnet 5.5';
       },
       now: () => NOW,
+      async freeChecks() {
+        return opts.checks ?? [
+          { name: 'secrets', passed: true, free: true, detail: 'No keys found in 1 changed file.' },
+          { name: 'audit', passed: true, free: true, advisory: true, detail: 'No package.json, so there’s nothing to audit.' },
+          { name: 'checklist', passed: false, free: true, advisory: true, detail: 'login.md:1 (Security): Use https:// links.' },
+        ];
+      },
       async runTests() {
         const passed = results.length ? results.shift()! : true;
         return { name: 'tests', passed, free: true, detail: passed ? '3 passed' : 'FAIL rota.test.ts: expected 2, got 3' };
@@ -169,7 +176,17 @@ describe('build_feature', () => {
     expect(events.slice(1).map((e) => e.text)).toEqual(out.steps.map((s: { text: string }) => s.text));
 
     // Then the project's tests ran in the copy and passed first time; the data folder sync was tried.
-    expect(out.steps.slice(-2).map((s: { text: string }) => s.text)).toEqual(['Running tests', 'Tests pass']);
+    expect(out.steps.slice(-6).map((s: { text: string }) => s.text)).toEqual([
+      'Running tests',
+      'Tests pass',
+      'Running free checks',
+      'Secret scan: passed',
+      'Package audit: passed',
+      'Checklist rules: see notes',
+    ]);
+    // Advice-only findings are reported but don't stop Keep.
+    expect(out.keep).toEqual({ keep: true, blocking: [] });
+    expect(out.checks.map((c: { name: string }) => c.name)).toEqual(['secrets', 'audit', 'checklist']);
     expect(out.tests).toEqual({ passed: true, output: '3 passed', fixAttempts: 0 });
     expect(out.synced).toMatch(/^Saved here, but not synced yet: .*not a git clone/);
 
@@ -181,6 +198,12 @@ describe('build_feature', () => {
     expect((await call('run_list', { dbPath, slug: 'club-hr' })).result).toMatchObject([
       { id: 1, feature: 'F-01', branch: out.run.branch, path: out.run.path, testsPassed: true, status: 'built', costUsd: 0.42 },
     ]);
+    expect((await call('run_list', { dbPath, slug: 'club-hr' })).result[0].checks[2]).toEqual({
+      name: 'checklist',
+      passed: false,
+      advisory: true,
+      detail: 'login.md:1 (Security): Use https:// links.',
+    });
   });
 
   it('does nothing when stopped before it starts', async () => {
@@ -220,7 +243,12 @@ describe('build_feature', () => {
       'Edit src/fix.ts',
       'Running tests',
       'Tests still fail',
+      'Running free checks',
+      'Secret scan: passed',
+      'Package audit: passed',
+      'Checklist rules: see notes',
     ]);
+    expect(out.keep).toEqual({ keep: false, blocking: ['tests'] });
     // Each fix was told the test output, never to skip tests, and capped at what was left.
     expect(seen.prompts?.[1]).toContain('fix attempt 1 of 2');
     expect(seen.prompts?.[1]).toContain('Never skip, delete or weaken tests');
@@ -239,7 +267,7 @@ describe('build_feature', () => {
     const out = (await call('build_feature', { settings, slug: 'club-hr', feature: 'F-01', provider: 'claude', apiKey: FAKE_KEY, dbPath: null })).result;
     expect(out.tests).toMatchObject({ passed: true, fixAttempts: 1 });
     expect(out.runId).toBeNull(); // no history file, nothing saved
-    expect(out.steps.at(-1).text).toBe('Tests pass');
+    expect(out.steps.map((s: { text: string }) => s.text)).toContain('Tests pass');
   });
 
   it('switches the build model off after 3 failures in a row, and refuses it until switched back on', async () => {
