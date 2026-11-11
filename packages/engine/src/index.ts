@@ -2,11 +2,7 @@
 
 export { formatCost } from './money.ts';
 
-export function usingLine(model: string, tools: string[]): string {
-  const short = model.replace(/^claude-/, '').replace(/-(\d+)-(\d+)$/, ' $1.$2');
-  const name = short.charAt(0).toUpperCase() + short.slice(1);
-  return `Using: ${[name, ...tools].join(', ')}`;
-}
+export { usingLine } from './using.ts';
 
 export { budgetLeftPercent, rulesWin } from './budget.ts';
 

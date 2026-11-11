@@ -31,6 +31,8 @@ When the interview is finished, **Review the plan** checks it. Small plans get o
 
 Each finished project has a **Code folder** box: where its repo is cloned on this computer (saved per computer in settings.json). Every feature build runs in its own git worktree next to it, `<folder>-runs/F-01-<time>`, on a new branch `aip/f-01-<time>`, starting from the folder's last commit. Your own copy is never touched; uncommitted changes there aren't included. Keep or Undo comes in step 9.
 
+A build run (engine `build_feature`) gives the build model (Sonnet for Claude) the spec and the feature's done file, and lets it read, edit and run commands only in that copy. Every tool call is checked first: paths must stay inside the copy, then the gatekeeper decides. Anything that needs your OK (push, deploy, outside services) is refused and noted, and key files are never touched. The Using line shows first, for example "Using: Sonnet 5.5, file edits, shell". A run stops at its cost limit, £0.80 by default (Settings → Budget and models), or at what's left of the month's budget. Building needs Claude for now.
+
 ## Tool health
 
 Each tool has a small health record in the data repo, `tool-health/<tool>.json`: the version in use, the version its test evidence is for, and its recent failures. When a tool updates, its old evidence is marked stale and it gets a quick retest the next time it's used. A good run clears the mark. The Tools page shows this under each tool, for example "2 failures in a row." Switching a tool off never uninstalls it. What happens after repeated failures comes with the build loop (step 8).

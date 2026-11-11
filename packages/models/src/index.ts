@@ -10,9 +10,28 @@ export type Job = 'plan' | 'final-review' | 'security-review' | 'build' | 'read'
 export interface Usage { inputTokens: number; outputTokens: number; costUsd: number | null }
 export interface StepResult { text: string; usage: Usage }
 
+/** The app's answer before an agent tool runs: allow it, or refuse with a reason the model sees. */
+export type ToolDecision = { allow: true } | { allow: false; reason: string };
+
+/** A build task: the agent works in `cwd` with file and shell tools, each checked first. */
+export interface BuildTask {
+  model: string;
+  prompt: string;
+  /** The feature's own copy of the code (its worktree). */
+  cwd: string;
+  /** Asked before every tool call. */
+  checkTool(tool: string, input: Record<string, unknown>): Promise<ToolDecision>;
+  /** Told about each step as it happens, in plain words. */
+  onStep?(step: string): void;
+  /** Stops the run. */
+  signal?: AbortSignal;
+}
+
 export interface ModelAdapter {
   provider: Provider;
   run(task: { job: Job; prompt: string; model: string }): Promise<StepResult>;
+  /** Builds with tools (file edits, shell). Only Claude can, for now. */
+  build?(task: BuildTask): Promise<StepResult>;
   /** Checks the key works. Free where the provider allows it (no model call). */
   checkKey?(): Promise<void>;
 }
@@ -43,7 +62,7 @@ export function pickClaudeModel(job: Job, opts: { sensitive?: boolean; multiFile
   return CLAUDE_MODEL_BY_JOB[job];
 }
 
-export { claudeEnv, createClaudeAdapter, friendlyError, redact, type ClaudeAdapterOptions, type QueryFn, type SdkMessage } from './claude.js';
+export { BUILD_TOOLS, claudeEnv, createClaudeAdapter, stepText, friendlyError, redact, type ClaudeAdapterOptions, type QueryFn, type SdkMessage } from './claude.js';
 
 /** Plain name for a model id, e.g. "claude-haiku-5-5" -> "Haiku 5.5". */
 export function modelName(id: string): string {

@@ -27,6 +27,7 @@ export function describeSettingsChange(before: AppSettings, after: AppSettings):
   if (before.monthlyBudgetGbp !== after.monthlyBudgetGbp) {
     parts.push(`Monthly budget £${before.monthlyBudgetGbp} → £${after.monthlyBudgetGbp}`);
   }
+  if (before.runCapGbp !== after.runCapGbp) parts.push(`Build run limit £${before.runCapGbp} → £${after.runCapGbp}`);
   if (before.gbpPerUsd !== after.gbpPerUsd) parts.push(`£/$ rate ${before.gbpPerUsd} → ${after.gbpPerUsd}`);
   if (stable(before.models) !== stable(after.models)) parts.push('Model choices');
   if (stable(before.prices) !== stable(after.prices)) parts.push('Prices');

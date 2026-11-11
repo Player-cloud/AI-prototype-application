@@ -120,3 +120,77 @@ describe('helpers', () => {
     expect(modelName('gpt-x')).toBe('gpt-x');
   });
 });
+
+describe('Claude build runs', () => {
+  type Can = (name: string, input: Record<string, unknown>, o: { signal: AbortSignal }) => Promise<{ behavior: string; message?: string }>;
+
+  /** Stands in for the SDK: asks canUseTool about each tool call, as the real one does. */
+  function agent(calls: { name: string; input: Record<string, unknown> }[], answers: unknown[], seen: { options?: Record<string, unknown> } = {}): QueryFn {
+    return ({ options }) => {
+      seen.options = options;
+      return (async function* () {
+        for (const c of calls) {
+          yield { type: 'assistant', message: { content: [{ type: 'text', text: 'ok' }, { type: 'tool_use', name: c.name, input: c.input }] } };
+          answers.push(await (options.canUseTool as Can)(c.name, c.input, { signal: new AbortController().signal }));
+        }
+        yield { ...success, result: 'Built F-01.', total_cost_usd: 0.31 };
+      })();
+    };
+  }
+
+  it('works in the given folder with file and shell tools, asking the app before each call', async () => {
+    const seen: { options?: Record<string, unknown> } = {};
+    const answers: unknown[] = [];
+    const steps: string[] = [];
+    const asked: string[] = [];
+    const adapter = createClaudeAdapter({
+      apiKey: FAKE_KEY,
+      maxBudgetUsd: 1,
+      query: agent(
+        [
+          { name: 'Write', input: { file_path: '/runs/F-01/src/login.tsx', content: 'x' } },
+          { name: 'Bash', input: { command: 'git   push origin main' } },
+        ],
+        answers,
+        seen,
+      ),
+    });
+    const r = await adapter.build!({
+      model: 'claude-sonnet-5-5',
+      prompt: 'Build F-01',
+      cwd: '/runs/F-01',
+      onStep: (s) => steps.push(s),
+      async checkTool(tool) {
+        asked.push(tool);
+        return tool === 'Bash' ? { allow: false, reason: 'pushing code needs joshua’s OK' } : { allow: true };
+      },
+    });
+    expect(seen.options).toMatchObject({
+      model: 'claude-sonnet-5-5',
+      cwd: '/runs/F-01',
+      tools: ['Read', 'Glob', 'Grep', 'Edit', 'Write', 'Bash'],
+      permissionMode: 'default',
+      settingSources: [],
+      maxBudgetUsd: 1,
+    });
+    expect(asked).toEqual(['Write', 'Bash']);
+    expect(answers).toEqual([
+      { behavior: 'allow', updatedInput: { file_path: '/runs/F-01/src/login.tsx', content: 'x' } },
+      { behavior: 'deny', message: 'pushing code needs joshua’s OK' },
+    ]);
+    expect(steps).toEqual(['Write /runs/F-01/src/login.tsx', 'Run git push origin main']);
+    expect(r).toEqual({ text: 'Built F-01.', usage: { inputTokens: 115, outputTokens: 2, costUsd: 0.31 } });
+  });
+
+  it('says Stopped when the run is stopped', async () => {
+    const stop = new AbortController();
+    const query: QueryFn = ({ options }) =>
+      (async function* () {
+        stop.abort();
+        if ((options.abortController as AbortController).signal.aborted) throw new Error('aborted by user');
+        yield success;
+      })();
+    const adapter = createClaudeAdapter({ apiKey: FAKE_KEY, query });
+    await expect(adapter.build!({ model: 'm', prompt: 'p', cwd: '/x', signal: stop.signal, checkTool: async () => ({ allow: true }) })).rejects.toThrow('Stopped.');
+  });
+});
