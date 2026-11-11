@@ -18,6 +18,10 @@ const row = (name: string, state: ToolRow['state'], extra: Partial<ToolRow> = {}
   useWhen: '',
   dontUseWhen: '',
   cost: '',
+  health: '',
+  stale: false,
+  failuresInRow: 0,
+  switchedOff: false,
   ...extra,
 });
 
@@ -58,6 +62,17 @@ describe('Tools page', () => {
       .map((b) => b.querySelector('.tool-name')?.textContent)
       .filter(Boolean);
     expect(names).toEqual(['Only CLI (oc)', 'EGM', 'Old thing']);
+  });
+
+  it('shows tool health under the tool, warning about failures', async () => {
+    const tools = [
+      row('Only CLI (oc)', 'on', { health: 'Updated to 1.3.0 since it was tested. It gets a quick retest next time it’s used.', stale: true }),
+      row('EGM', 'on', { health: '2 failures in a row.', failuresInRow: 2 }),
+    ];
+    render(<Tools invoke={shell({ ...OVERVIEW, tools })} />);
+    const stale = await screen.findByText(/Updated to 1\.3\.0/);
+    expect(stale.className).toBe('tool-health');
+    expect(screen.getByText('2 failures in a row.').className).toBe('tool-health warn');
   });
 
   it('opens a tool card to show when to use it and the rating', async () => {

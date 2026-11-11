@@ -13,6 +13,11 @@ export interface ToolRow {
   useWhen: string;
   dontUseWhen: string;
   cost: string;
+  /** Tool health in plain words ('' when all is well). */
+  health: string;
+  stale: boolean;
+  failuresInRow: number;
+  switchedOff: boolean;
 }
 
 export type DataOverview =

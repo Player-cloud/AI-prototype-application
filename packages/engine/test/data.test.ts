@@ -2,6 +2,8 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { noteToolVersion, recordToolRun } from '../src/data.ts';
+import { checkSettings } from '../src/settings.ts';
 import { handleLine } from '../src/protocol.ts';
 
 let folder = '';
@@ -39,6 +41,21 @@ describe('data_overview', () => {
     expect(r.ruleCount).toBe(2);
     expect(r.firstReadTokens).toBeGreaterThan(0);
     expect(r.firstReadTokens).toBeLessThan(r.allTokens);
+  });
+
+  it('shows each tool’s health from tool-health/', async () => {
+    const settings = checkSettings({ dataFolder: folder });
+    expect((await overview(settings)).result.tools[0]).toMatchObject({ health: '', stale: false, failuresInRow: 0, switchedOff: false });
+    await noteToolVersion(settings, 'Only CLI (oc)', '1.2.0');
+    await noteToolVersion(settings, 'Only CLI (oc)', '1.3.0');
+    await recordToolRun(settings, 'Only CLI (oc)', { ok: false, error: 'timed out' }, new Date('2026-11-11T16:00:00Z'));
+    const t = (await overview(settings)).result.tools[0];
+    expect(t).toMatchObject({ stale: true, failuresInRow: 1, switchedOff: false });
+    expect(t.health).toBe('Updated to 1.3.0 since it was tested. It gets a quick retest next time it’s used. 1 failure in a row.');
+    // A good run (the retest) clears both.
+    await recordToolRun(settings, 'Only CLI (oc)', { ok: true }, new Date('2026-11-11T16:05:00Z'));
+    expect((await overview(settings)).result.tools[0]).toMatchObject({ health: '', stale: false, failuresInRow: 0 });
+    await expect(recordToolRun(checkSettings({}), 'x', { ok: true }, new Date())).rejects.toThrow('Set your data folder in Settings first.');
   });
 
   it('explains a wrong folder in plain words', async () => {

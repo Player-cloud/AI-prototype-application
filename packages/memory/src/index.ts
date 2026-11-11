@@ -48,3 +48,19 @@ export { ChangeLog, KEEP_CHANGES, MAX_CHANGE_CHARS, type Change, type ChangeKind
 export { SLUG, listProjectSlugs, readProjectJson, slugify, writeProjectFiles } from './projects.js';
 
 export { changedFiles, looksLikeKey, rateTool, realGit, setRating, syncDataRepo, type Git, type SyncResult } from './sync.js';
+
+export {
+  KEEP_FAILURES,
+  checkHealth,
+  emptyHealth,
+  healthNote,
+  listHealth,
+  noteVersion,
+  readHealth,
+  recordRun,
+  switchOff,
+  switchOn,
+  writeHealth,
+  type ToolFailure,
+  type ToolHealth,
+} from './health.js';
