@@ -21,7 +21,7 @@ function fakeShell(opts: { failSave?: boolean } = {}) {
     if (cmd === 'gate_rules') {
       return [
         { id: 'no-force-push', reason: 'Force push can wipe history', kind: 'never', source: 'gatekeeper' },
-        { id: 'guard-rules', reason: 'The agent cannot change its own rules', kind: 'never', source: 'app' },
+        { id: 'protect-rules', reason: 'The agent cannot change its own rules', kind: 'never', source: 'gatekeeper' },
         ...settings.extraRules.map((r, i) => ({ id: `yours-${i + 1}`, reason: r.reason, kind: 'ask', source: 'yours', match: r.match })),
       ] as T;
     }

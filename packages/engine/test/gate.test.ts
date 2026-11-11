@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_SETTINGS, checkSettings } from '../src/settings.ts';
-import { gate, guardsRules, listRules } from '../src/gate.ts';
+import { gate, listRules } from '../src/gate.ts';
 import { handleLine } from '../src/protocol.ts';
 
 const withRules = (extraRules: { match: string; reason: string }[]) => checkSettings({ extraRules });
@@ -29,7 +29,7 @@ describe('gate', () => {
       const d = gate(tool, input, DEFAULT_SETTINGS);
       expect(d, `${tool} ${JSON.stringify(input)}`).toMatchObject({ allow: false, askJoshua: false });
     }
-    expect(guardsRules('Bash', { command: 'cat packages/gatekeeper/src/index.ts' })).toEqual({ allow: true });
+    expect(gate('Bash', { command: 'cat packages/gatekeeper/src/index.ts' }, DEFAULT_SETTINGS)).toEqual({ allow: true });
   });
 
   it('adds joshua’s own ask-first rules, matching his words as plain text', () => {
@@ -56,7 +56,7 @@ describe('extra rule settings', () => {
 describe('rules for Settings', () => {
   it('lists the guard, the gatekeeper’s rules and joshua’s, in plain words', () => {
     const rules = listRules(withRules([{ match: 'stripe', reason: 'payments need my OK' }]));
-    expect(rules[0]).toMatchObject({ id: 'protect-rules', kind: 'never', source: 'app' });
+    expect(rules[0]).toMatchObject({ id: 'protect-rules', kind: 'never', source: 'gatekeeper' });
     expect(rules.find((r) => r.id === 'push')).toMatchObject({ kind: 'ask', source: 'gatekeeper' });
     expect(rules.find((r) => r.id === 'key-files')).toMatchObject({ kind: 'never' });
     expect(rules.at(-1)).toEqual({ id: 'yours-1', reason: 'payments need my OK', kind: 'ask', source: 'yours', match: 'stripe' });
