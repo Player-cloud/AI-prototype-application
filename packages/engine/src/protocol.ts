@@ -8,6 +8,8 @@
  *  - ask:  {provider, apiKey, job, prompt} -> {text, model, modelName, inputTokens, outputTokens, costUsd, costText}
  *  - check: {provider, apiKey} -> {ok, summary}. Claude: a one-word ask. OpenAI/DeepSeek: the free "list models" call.
  *  - settings_check: {settings} -> the settings with defaults filled in, or a plain-words error.
+ *  - gate_check: {settings, tool, input} -> {allow} or {allow:false, reason, askJoshua}. Every risky step asks this first.
+ *  - gate_rules: {settings} -> the ask-first rules in plain words, for Settings.
  *  - spend_summary: {settings, dbPath} -> this month's spend against the budget.
  *    ask and check take an optional dbPath: the call is refused once the month's budget is used up,
  *    and its cost is recorded there afterwards.
@@ -23,6 +25,7 @@ import { formatCost } from './money.ts';
 import { DEFAULT_SETTINGS, checkSettings, type AppSettings } from './settings.ts';
 import { dataOverview, rateAndSync, syncNow } from './data.ts';
 import { readBudget, recordSpend } from './budget.ts';
+import { gate, listRules } from './gate.ts';
 
 export const ENGINE_VERSION = '0.0.1';
 
@@ -166,6 +169,11 @@ const HANDLERS: Record<string, Handler> = {
   ask,
   check,
   settings_check: (params) => checkSettings(obj(params).settings),
+  gate_check: (params) => {
+    const p = obj(params);
+    return gate(str(p, 'tool'), p.input, checkSettings(p.settings));
+  },
+  gate_rules: (params) => listRules(checkSettings(obj(params).settings)),
   spend_summary: async (params, deps) => {
     const p = obj(params);
     const settings = checkSettings(p.settings);

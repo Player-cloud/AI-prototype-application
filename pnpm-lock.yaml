@@ -62,6 +62,9 @@ importers:
 
   packages/engine:
     dependencies:
+      '@aip/gatekeeper':
+        specifier: workspace:*
+        version: link:../gatekeeper
       '@aip/memory':
         specifier: workspace:*
         version: link:../memory

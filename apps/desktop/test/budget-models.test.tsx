@@ -14,6 +14,7 @@ const DEFAULTS: AppSettings = {
   models: { openai: { strong: 'gpt-5', everyday: 'gpt-5-mini' }, deepseek: { strong: 'deepseek-reasoner', everyday: 'deepseek-chat' } },
   prices: {},
   dataFolder: '',
+  extraRules: [],
 };
 
 /** Stand-in for the Rust shell + engine: refuses a bad rate the way the engine does, saves anything else. */

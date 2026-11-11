@@ -4,7 +4,7 @@ import {
   dollarsFor,
   getSettings,
   getSpend,
-  saveSettings,
+  saveSome,
   spendLine,
   toNumber,
   type AppSettings,
@@ -48,7 +48,7 @@ function toDraft(s: AppSettings): Draft {
   };
 }
 
-function fromDraft(d: Draft): AppSettings {
+function fromDraft(d: Draft): Omit<AppSettings, 'extraRules'> {
   const prices: Record<string, Price> = {};
   for (const [model, p] of Object.entries(d.prices)) {
     if (p.input.trim() === '' && p.output.trim() === '') continue; // blank = price not known
@@ -111,7 +111,7 @@ export function BudgetModels({ invoke }: { invoke: Invoke }) {
     if (!draft) return;
     setBusy(true);
     try {
-      const saved = await saveSettings(invoke, fromDraft(draft));
+      const saved = await saveSome(invoke, fromDraft(draft));
       setDraft(toDraft(saved));
       setNote({ text: 'Saved on this computer.', bad: false });
       setSpend(await getSpend(invoke)); // the budget may have changed

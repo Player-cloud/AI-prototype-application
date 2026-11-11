@@ -93,6 +93,13 @@ async fn spend_summary(app: tauri::AppHandle, state: tauri::State<'_, Engine>) -
     engine_call(&state, "spend_summary", serde_json::json!({ "settings": saved, "dbPath": db }))
 }
 
+/// The ask-first rules in plain words (the gatekeeper's, the app's guard, and joshua's own).
+#[tauri::command]
+async fn gate_rules(app: tauri::AppHandle, state: tauri::State<'_, Engine>) -> Result<serde_json::Value, String> {
+    let saved = settings::read(&settings_path(&app)?)?;
+    engine_call(&state, "gate_rules", serde_json::json!({ "settings": saved }))
+}
+
 /// Saved settings with defaults filled in by the engine.
 #[tauri::command]
 async fn settings_get(app: tauri::AppHandle, state: tauri::State<'_, Engine>) -> Result<serde_json::Value, String> {
@@ -163,7 +170,7 @@ pub fn run() {
     let helper = EngineHelper::start(&helper_command(std::env::var("AIP_ENGINE").ok()));
     tauri::Builder::default()
         .manage(Engine(Mutex::new(helper)))
-        .invoke_handler(tauri::generate_handler![version, engine_status, key_status, key_save, key_remove, test_model, settings_get, settings_save, data_overview, spend_summary, tool_rate, data_sync])
+        .invoke_handler(tauri::generate_handler![version, engine_status, key_status, key_save, key_remove, test_model, settings_get, settings_save, data_overview, spend_summary, tool_rate, data_sync, gate_rules])
         .run(tauri::generate_context!())
         .expect("error while running the app");
 }

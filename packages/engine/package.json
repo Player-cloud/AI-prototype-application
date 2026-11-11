@@ -8,6 +8,7 @@
   "types": "dist/index.d.ts",
   "dependencies": {
     "@aip/models": "workspace:*",
-    "@aip/memory": "workspace:*"
+    "@aip/memory": "workspace:*",
+    "@aip/gatekeeper": "workspace:*"
   }
 }

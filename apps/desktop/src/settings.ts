@@ -15,7 +15,11 @@ export interface AppSettings {
   prices: Record<string, Price>;
   /** Folder where ai-prototype-data is cloned on this computer. '' = not set. */
   dataFolder: string;
+  /** joshua's own ask-first rules. */
+  extraRules: ExtraRule[];
 }
+
+export interface ExtraRule { match: string; reason: string }
 
 function message(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -33,6 +37,33 @@ export async function getSettings(invoke: Invoke): Promise<AppSettings> {
 export async function saveSettings(invoke: Invoke, settings: AppSettings): Promise<AppSettings> {
   try {
     return await invoke<AppSettings>('settings_save', { settings });
+  } catch (err) {
+    throw new Error(message(err));
+  }
+}
+
+/**
+ * Saves only some fields on top of the latest saved settings, so two parts of the Settings page
+ * can't undo each other's changes.
+ */
+export async function saveSome(invoke: Invoke, change: Partial<AppSettings>): Promise<AppSettings> {
+  const latest = await getSettings(invoke);
+  return saveSettings(invoke, { ...latest, ...change });
+}
+
+/** A rule as Settings shows it. */
+export interface RuleView {
+  id: string;
+  reason: string;
+  kind: 'never' | 'ask';
+  source: 'gatekeeper' | 'app' | 'yours';
+  match?: string;
+}
+
+export async function getRules(invoke: Invoke): Promise<RuleView[]> {
+  try {
+    const rules = await invoke<RuleView[]>('gate_rules');
+    return Array.isArray(rules) ? rules : [];
   } catch (err) {
     throw new Error(message(err));
   }
