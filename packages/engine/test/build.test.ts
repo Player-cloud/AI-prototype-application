@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { BuildTask, ModelAdapter } from '@aip/models';
 import { checkStep, runCapUsd, staysInside } from '../src/build.ts';
 import { checkSettings } from '../src/settings.ts';
-import { handleLine, type Deps } from '../src/protocol.ts';
+import { handleLine, type Deps, type Live } from '../src/protocol.ts';
 
 // Obviously fake test value, not a real key.
 const FAKE_KEY = 'sk-ant-test-0000000000000000';
@@ -105,8 +105,8 @@ describe('build_feature', () => {
     };
   }
 
-  async function plan(d: Deps, settings: Record<string, unknown>) {
-    const call = async (method: string, params: Record<string, unknown>) => JSON.parse(await handleLine(JSON.stringify({ id: 1, method, params }), d));
+  async function plan(d: Deps, settings: Record<string, unknown>, live: Live = {}) {
+    const call = async (method: string, params: Record<string, unknown>) => JSON.parse(await handleLine(JSON.stringify({ id: 1, method, params }), d, live));
     await call('interview_start', { settings, name: 'Club HR' });
     const patches: Record<string, Record<string, unknown>> = {
       idea: { text: { 'idea.what': 'HR' } },
@@ -128,7 +128,8 @@ describe('build_feature', () => {
     const seen = { answers: [] as unknown[] } as { task?: BuildTask; maxUsd?: number; answers: unknown[] };
     const d = deps(seen);
     const settings = { dataFolder: data, codeFolders: { 'club-hr': code } };
-    const call = await plan(d, settings);
+    const events: { type: string; text?: string; using?: string }[] = [];
+    const call = await plan(d, settings, { emit: (e) => events.push(e as (typeof events)[number]) });
     const dbPath = join(root, 'history.sqlite');
 
     const r = await call('build_feature', { settings, slug: 'club-hr', feature: 'F-01', provider: 'claude', apiKey: FAKE_KEY, dbPath });
@@ -149,8 +150,23 @@ describe('build_feature', () => {
     expect(seen.answers.map((a) => (a as { allow: boolean }).allow)).toEqual([true, false, false]);
     expect(out.steps.filter((s: { refused?: string }) => s.refused).map((s: { text: string }) => s.text)).toEqual(['Refused: Bash', 'Refused: Write']);
 
+    // The screen saw the Using line first, then each step as it happened.
+    expect(events[0]).toMatchObject({ type: 'using', using: 'Using: Sonnet 5.5, file edits, shell' });
+    expect(events.slice(1).map((e) => e.text)).toEqual(out.steps.map((s: { text: string }) => s.text));
+
     // The cost counts against the month's budget.
     expect((await call('spend_summary', { settings, dbPath })).result.calls).toBe(1);
+  });
+
+  it('does nothing when stopped before it starts', async () => {
+    const seen = { answers: [] as unknown[] };
+    const stop = new AbortController();
+    stop.abort();
+    const settings = { dataFolder: data, codeFolders: { 'club-hr': code } };
+    const call = await plan(deps(seen), settings, { signal: stop.signal });
+    const r = await call('build_feature', { settings, slug: 'club-hr', feature: 'F-01', provider: 'claude', apiKey: FAKE_KEY, dbPath: null });
+    expect(r.error).toBe('Stopped.');
+    expect(git(code, 'worktree', 'list').trim().split('\n')).toHaveLength(1);
   });
 
   it('says plainly when the provider can’t build yet, before making a copy', async () => {
