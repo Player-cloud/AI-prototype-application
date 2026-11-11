@@ -39,6 +39,8 @@ describe('describing a settings change', () => {
       'Provider Claude → OpenAI; Monthly budget £20 → £30; Data folder set to C:\\data; Added rule “stripe”',
     );
     expect(describeSettingsChange(after, DEFAULT_SETTINGS)).toContain('Removed rule “stripe”');
+    expect(describeSettingsChange(DEFAULT_SETTINGS, { ...DEFAULT_SETTINGS, codeFolders: { 'club-hr': '/code/club-hr' } })).toBe('Code folder for club-hr set to /code/club-hr');
+    expect(describeSettingsChange({ ...DEFAULT_SETTINGS, codeFolders: { 'club-hr': '/code/club-hr' } }, DEFAULT_SETTINGS)).toBe('Code folder for club-hr cleared');
     expect(describeSettingsChange(DEFAULT_SETTINGS, { ...DEFAULT_SETTINGS })).toBe('');
   });
 

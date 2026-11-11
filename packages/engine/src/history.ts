@@ -33,6 +33,11 @@ export function describeSettingsChange(before: AppSettings, after: AppSettings):
   if (before.dataFolder !== after.dataFolder) {
     parts.push(after.dataFolder ? `Data folder set to ${after.dataFolder}` : 'Data folder cleared');
   }
+  for (const slug of new Set([...Object.keys(before.codeFolders), ...Object.keys(after.codeFolders)])) {
+    const b = before.codeFolders[slug];
+    const a = after.codeFolders[slug];
+    if (a !== b) parts.push(a ? `Code folder for ${slug} set to ${a}` : `Code folder for ${slug} cleared`);
+  }
   const had = new Set(before.extraRules.map((r) => stable(r)));
   const has = new Set(after.extraRules.map((r) => stable(r)));
   for (const r of after.extraRules) if (!had.has(stable(r))) parts.push(`Added rule “${r.match}”`);

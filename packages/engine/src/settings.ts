@@ -21,6 +21,8 @@ export interface AppSettings {
   dataFolder: string;
   /** joshua's own ask-first rules, added in Settings: any action mentioning `match` waits for his OK. */
   extraRules: ExtraRule[];
+  /** Where each project's code is cloned on this computer, by project folder name (slug). */
+  codeFolders: Record<string, string>;
 }
 
 export interface ExtraRule { match: string; reason: string }
@@ -40,12 +42,34 @@ export const DEFAULT_SETTINGS: AppSettings = {
   prices: {},
   dataFolder: '',
   extraRules: [],
+  codeFolders: {},
 };
 
 const PROVIDERS: readonly Provider[] = ['claude', 'openai', 'deepseek'];
 const MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,99}$/;
 const MAX_PRICES = 50;
 const MAX_RULES = 30;
+const MAX_CODE_FOLDERS = 50;
+const SLUG = /^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/;
+
+function folderPath(v: unknown, label: string): string {
+  if (typeof v !== 'string' || v.length > 500 || /[\r\n\0]/.test(v)) throw new Error(`${label} must be a folder path`);
+  return v.trim();
+}
+
+function codeFolders(v: unknown): Record<string, string> {
+  if (v === undefined) return {};
+  if (!isObj(v)) throw new Error('code folders must be an object');
+  const entries = Object.entries(v);
+  if (entries.length > MAX_CODE_FOLDERS) throw new Error(`at most ${MAX_CODE_FOLDERS} code folders`);
+  const out: Record<string, string> = {};
+  for (const [slug, path] of entries) {
+    if (!SLUG.test(slug)) throw new Error(`“${slug}” isn’t a project folder name`);
+    const p = folderPath(path, `Code folder for ${slug}`);
+    if (p) out[slug] = p;
+  }
+  return out;
+}
 
 function extraRules(v: unknown): ExtraRule[] {
   if (v === undefined) return [];
@@ -119,18 +143,13 @@ export function checkSettings(raw: unknown): AppSettings {
     };
   }
 
-  let dataFolder = d.dataFolder;
-  if (raw.dataFolder !== undefined) {
-    if (typeof raw.dataFolder !== 'string' || raw.dataFolder.length > 500 || /[\r\n\0]/.test(raw.dataFolder)) {
-      throw new Error('Data folder must be a folder path');
-    }
-    dataFolder = raw.dataFolder.trim();
-  }
+  const dataFolder = raw.dataFolder === undefined ? d.dataFolder : folderPath(raw.dataFolder, 'Data folder');
 
   return {
     provider,
     dataFolder,
     extraRules: extraRules(raw.extraRules),
+    codeFolders: codeFolders(raw.codeFolders),
     monthlyBudgetGbp: raw.monthlyBudgetGbp === undefined ? d.monthlyBudgetGbp : num(raw.monthlyBudgetGbp, 'Monthly budget (£)', 0, 10000),
     gbpPerUsd: raw.gbpPerUsd === undefined ? d.gbpPerUsd : num(raw.gbpPerUsd, '£ per $ rate', 0.1, 5),
     models: {

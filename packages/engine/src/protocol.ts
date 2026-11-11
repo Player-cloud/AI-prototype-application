@@ -25,6 +25,8 @@
  *    (questions, areas, features or done checks), with the cost. Uses the "plan" job; nothing is saved.
  *  - interview_review: {settings, slug, provider, apiKey, dbPath} -> reviews the finished spec: one
  *    plan review, or 3 fresh-eyes reviewers for a big build. Saves review.md and syncs.
+ *  - code_folder_check: {settings, slug} -> checks the project's code folder on this computer (a git
+ *    repo with a commit) and lists its feature runs (worktrees on aip/ branches).
  *  - interview_confirm: {settings, slug, stage} -> confirms a stage; the last one writes spec.md and
  *    the done files, then syncs the data repo.
  *  - settings_saved: {dbPath, before, after, undoes?} -> keeps a settings change in the history (id, or null if nothing changed).
@@ -48,6 +50,7 @@ import { interviewForReview, recordReview } from './projects.ts';
 import { confirm, getInterview, interviewStages, listProjects, saveAnswers, startInterview } from './projects.ts';
 import { MAX_CALL_USD, readBudget, recordSpend } from './budget.ts';
 import { gate, listRules } from './gate.ts';
+import { checkCodeFolder, codeFolderOf } from './runs.ts';
 
 export const ENGINE_VERSION = '0.0.1';
 
@@ -279,6 +282,11 @@ const HANDLERS: Record<string, Handler> = {
   interview_confirm: (params, deps) => {
     const p = obj(params);
     return confirm(checkSettings(p.settings), str(p, 'slug'), str(p, 'stage'), deps.now?.() ?? new Date());
+  },
+  code_folder_check: (params) => {
+    const p = obj(params);
+    const settings = checkSettings(p.settings);
+    return checkCodeFolder(codeFolderOf(settings, str(p, 'slug')));
   },
   history_list: (params) => historyList(str(obj(params), 'dbPath')),
   undo: async (params, deps) => {

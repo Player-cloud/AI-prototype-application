@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import type { Invoke } from '../engine';
 import { STATE_LABEL, type ToolState } from '../data';
+import { getSettings, saveSettings } from '../settings';
 import {
   confirmStage,
   getStages,
@@ -10,6 +11,8 @@ import {
   startProject,
   suggest,
   reviewPlan,
+  checkCodeFolder,
+  type CodeFolderStatus,
   type SuggestResult,
   type InterviewView,
   type Patch,
@@ -118,6 +121,85 @@ function patchFor(stage: Stage, d: Draft): Patch {
 }
 
 /** One project's plan interview, a stage at a time. */
+/** Step 8a: where the project's code is on this computer. Each feature build gets its own copy of it. */
+function CodeFolder({ invoke, slug }: { invoke: Invoke; slug: string }) {
+  const [path, setPath] = useState('');
+  const [status, setStatus] = useState<CodeFolderStatus | null>(null);
+  const [note, setNote] = useState<Note>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function check() {
+    try {
+      setStatus(await checkCodeFolder(invoke, slug));
+      setNote(null);
+    } catch (err) {
+      setStatus(null);
+      setNote({ text: (err as Error).message, bad: true });
+    }
+  }
+
+  useEffect(() => {
+    let live = true;
+    getSettings(invoke)
+      .then((s) => {
+        if (!live) return;
+        const saved = s.codeFolders?.[slug] ?? '';
+        setPath(saved);
+        if (saved) void check();
+      })
+      .catch((err: Error) => live && setNote({ text: err.message, bad: true }));
+    return () => {
+      live = false;
+    };
+  }, [invoke, slug]);
+
+  async function onSave(e: FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      const latest = await getSettings(invoke);
+      const saved = await saveSettings(invoke, { ...latest, codeFolders: { ...(latest.codeFolders ?? {}), [slug]: path.trim() } });
+      setPath(saved.codeFolders?.[slug] ?? '');
+      if (saved.codeFolders?.[slug]) await check();
+      else {
+        setStatus(null);
+        setNote({ text: 'Code folder cleared.', bad: false });
+      }
+    } catch (err) {
+      setNote({ text: (err as Error).message, bad: true });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="review" role="region" aria-label="Code folder">
+      <h3>Code folder</h3>
+      <p className="muted">Where this project’s repo is cloned on this computer. Each feature is built in its own copy, so your code isn’t touched until you keep it.</p>
+      <form className="key-controls" onSubmit={(e) => void onSave(e)}>
+        <input aria-label="Code folder path" value={path} placeholder={'e.g. D:\\code\\club-hr'} onChange={(e) => setPath(e.target.value)} />
+        <button type="submit" disabled={busy}>Save</button>
+      </form>
+      {status && (
+        <>
+          <p className="key-note">Ready: on branch {status.branch}. Builds start from its last commit.</p>
+          {!status.clean && <p className="hint">You have changes that aren’t committed yet. Builds won’t include them.</p>}
+          {status.runs.length > 0 && (
+            <ul className="rule-list" aria-label="Feature runs">
+              {status.runs.map((r) => (
+                <li key={r.branch}>
+                  {r.feature || 'Run'}: {r.path}
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      )}
+      <NoteLine note={note} />
+    </div>
+  );
+}
+
 function InterviewScreen({ invoke, start, onBack }: { invoke: Invoke; start: InterviewView; onBack: () => void }) {
   const [view, setView] = useState(start);
   const [stage, setStage] = useState<StageId>(start.interview.current);
@@ -292,6 +374,7 @@ function InterviewScreen({ invoke, start, onBack }: { invoke: Invoke; start: Int
           </div>
         </div>
       )}
+      {view.finished && <CodeFolder invoke={invoke} slug={iv.slug} />}
       {!stages && !note && <p className="muted">Loading…</p>}
       {stages && (
         <ol className="stage-list" aria-label="Stages">
