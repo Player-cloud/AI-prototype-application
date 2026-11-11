@@ -128,6 +128,32 @@ async fn settings_save(
     Ok(checked)
 }
 
+/// The engine methods the Projects screen may call. Anything else is refused.
+const PROJECT_METHODS: [&str; 6] = ["interview_stages", "project_list", "interview_start", "interview_get", "interview_save", "interview_confirm"];
+
+fn project_method(method: &str) -> Result<&str, String> {
+    PROJECT_METHODS.iter().find(|m| **m == method).copied().ok_or_else(|| format!("not a project method: {method}"))
+}
+
+/// Projects and the plan interview. The saved settings (for the data folder) are added here.
+#[tauri::command]
+async fn project(
+    method: String,
+    params: serde_json::Value,
+    app: tauri::AppHandle,
+    state: tauri::State<'_, Engine>,
+) -> Result<serde_json::Value, String> {
+    let method = project_method(&method)?;
+    let saved = settings::read(&settings_path(&app)?)?;
+    let mut params = match params {
+        serde_json::Value::Object(map) => map,
+        serde_json::Value::Null => serde_json::Map::new(),
+        _ => return Err("params must be an object".into()),
+    };
+    params.insert("settings".into(), saved);
+    engine_call(&state, method, serde_json::Value::Object(params))
+}
+
 /// The newest changes, for Settings → History.
 #[tauri::command]
 async fn history_list(app: tauri::AppHandle, state: tauri::State<'_, Engine>) -> Result<serde_json::Value, String> {
@@ -208,7 +234,7 @@ pub fn run() {
     let helper = EngineHelper::start(&helper_command(std::env::var("AIP_ENGINE").ok()));
     tauri::Builder::default()
         .manage(Engine(Mutex::new(helper)))
-        .invoke_handler(tauri::generate_handler![version, engine_status, key_status, key_save, key_remove, test_model, settings_get, settings_save, data_overview, spend_summary, tool_rate, data_sync, gate_rules, history_list, history_undo])
+        .invoke_handler(tauri::generate_handler![version, engine_status, key_status, key_save, key_remove, test_model, settings_get, settings_save, data_overview, spend_summary, tool_rate, data_sync, gate_rules, history_list, history_undo, project])
         .run(tauri::generate_context!())
         .expect("error while running the app");
 }
@@ -222,6 +248,13 @@ mod tests {
         assert_eq!(engine_provider("anthropic"), Ok("claude"));
         assert_eq!(engine_provider("openai"), Ok("openai"));
         assert!(engine_provider("x").is_err());
+    }
+
+    #[test]
+    fn only_project_methods_pass() {
+        assert_eq!(project_method("interview_save"), Ok("interview_save"));
+        assert!(project_method("tool_rate").is_err());
+        assert!(project_method("ask").is_err());
     }
 
     #[test]
