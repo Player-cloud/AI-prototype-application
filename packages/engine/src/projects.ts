@@ -4,6 +4,7 @@
  * the done files, then syncs the data repo (a failed sync keeps everything saved here).
  */
 import type { AppSettings } from './settings.ts';
+import { askCostNote } from './budget.ts';
 import {
   CHECKLIST_AREAS,
   STAGES,
@@ -40,6 +41,8 @@ export interface InterviewView {
   tools: ToolHint[];
   big: boolean;
   finished: boolean;
+  /** Shown on the "Ask Claude" button, e.g. "costs up to £0.40 ($0.50)". */
+  askCost: string;
 }
 
 export const interviewStages = () => ({ stages: STAGES, areas: CHECKLIST_AREAS });
@@ -60,7 +63,7 @@ async function save(folder: string, iv: Interview, extra: Record<string, string>
   return m.writeProjectFiles(folder, iv.slug, { 'interview.json': `${text}\n`, ...extra });
 }
 
-async function view(folder: string, iv: Interview, stage: StageId = iv.current): Promise<InterviewView> {
+async function view(settings: AppSettings, folder: string, iv: Interview, stage: StageId = iv.current): Promise<InterviewView> {
   const m = await import('@aip/memory');
   let tools: ToolHint[] = [];
   try {
@@ -68,7 +71,7 @@ async function view(folder: string, iv: Interview, stage: StageId = iv.current):
   } catch {
     // no ledger: the interview still works, just without tool hints
   }
-  return { interview: iv, missing: missing(iv, stage), tools, big: bigBuild(iv), finished: finished(iv) };
+  return { interview: iv, missing: missing(iv, stage), tools, big: bigBuild(iv), finished: finished(iv), askCost: askCostNote(settings) };
 }
 
 export async function listProjects(settings: AppSettings): Promise<ProjectRow[]> {
@@ -95,13 +98,13 @@ export async function startInterview(settings: AppSettings, name: unknown, now: 
   if ((await m.readProjectJson(folder, slug)) !== null) throw new Error(`There’s already a project called “${slug}”. Open it from the list.`);
   const iv = newInterview(name, slug, now);
   await save(folder, iv);
-  return view(folder, iv);
+  return view(settings, folder, iv);
 }
 
 export async function getInterview(settings: AppSettings, slug: string, stage?: string): Promise<InterviewView> {
   const folder = folderOf(settings);
   const iv = await load(folder, slug);
-  return view(folder, iv, stage ? stageOf(stage).id : iv.current);
+  return view(settings, folder, iv, stage ? stageOf(stage).id : iv.current);
 }
 
 /** Saves answers without confirming anything. `stage` is the stage on screen. */
@@ -109,7 +112,7 @@ export async function saveAnswers(settings: AppSettings, slug: string, patch: In
   const folder = folderOf(settings);
   const iv = { ...applyPatch(await load(folder, slug), patch), updatedAt: now.toISOString() };
   await save(folder, iv);
-  return view(folder, iv, stage ? stageOf(stage).id : iv.current);
+  return view(settings, folder, iv, stage ? stageOf(stage).id : iv.current);
 }
 
 /**
@@ -121,7 +124,7 @@ export async function confirm(settings: AppSettings, slug: string, stage: string
   let iv = confirmStage(await load(folder, slug), stageOf(stage).id, now);
   if (!finished(iv)) {
     await save(folder, iv);
-    return { view: await view(folder, iv), files: [] as string[], summary: `${stageOf(stage).title}: confirmed.` };
+    return { view: await view(settings, folder, iv), files: [] as string[], summary: `${stageOf(stage).title}: confirmed.` };
   }
   iv = { ...iv, specAt: now.toISOString() };
   const files = await save(folder, iv, renderSpec(iv, now));
@@ -133,7 +136,7 @@ export async function confirm(settings: AppSettings, slug: string, stage: string
     synced = `Saved here, but not synced yet: ${(err as Error).message}`;
   }
   return {
-    view: await view(folder, iv),
+    view: await view(settings, folder, iv),
     files,
     summary: `Spec written: ${iv.features.length} feature${iv.features.length === 1 ? '' : 's'}, each with a done file. ${synced}`,
   };

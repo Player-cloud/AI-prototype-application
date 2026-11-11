@@ -154,6 +154,36 @@ async fn project(
     engine_call(&state, method, serde_json::Value::Object(params))
 }
 
+/// The password-store name for an engine provider ("claude" is stored as "anthropic").
+fn key_name(engine: &str) -> Result<&'static str, String> {
+    match engine {
+        "claude" => Ok("anthropic"),
+        "openai" => Ok("openai"),
+        "deepseek" => Ok("deepseek"),
+        other => Err(format!("unknown provider: {other}")),
+    }
+}
+
+/// Claude's ideas for one stage of the plan interview. Costs money (the "plan" job), so the
+/// screen says so before calling. The key goes from the password store straight to the engine.
+#[tauri::command]
+async fn interview_suggest(
+    slug: String,
+    stage: String,
+    app: tauri::AppHandle,
+    state: tauri::State<'_, Engine>,
+) -> Result<serde_json::Value, String> {
+    let saved = settings::read(&settings_path(&app)?)?;
+    let provider = saved.get("provider").and_then(|p| p.as_str()).unwrap_or("claude").to_string();
+    let key = keys::load(&OsKeyring, key_name(&provider)?)?;
+    let db = spend_path(&app)?;
+    engine_call(
+        &state,
+        "interview_suggest",
+        serde_json::json!({ "settings": saved, "slug": slug, "stage": stage, "provider": provider, "apiKey": key, "dbPath": db }),
+    )
+}
+
 /// The newest changes, for Settings → History.
 #[tauri::command]
 async fn history_list(app: tauri::AppHandle, state: tauri::State<'_, Engine>) -> Result<serde_json::Value, String> {
@@ -234,7 +264,7 @@ pub fn run() {
     let helper = EngineHelper::start(&helper_command(std::env::var("AIP_ENGINE").ok()));
     tauri::Builder::default()
         .manage(Engine(Mutex::new(helper)))
-        .invoke_handler(tauri::generate_handler![version, engine_status, key_status, key_save, key_remove, test_model, settings_get, settings_save, data_overview, spend_summary, tool_rate, data_sync, gate_rules, history_list, history_undo, project])
+        .invoke_handler(tauri::generate_handler![version, engine_status, key_status, key_save, key_remove, test_model, settings_get, settings_save, data_overview, spend_summary, tool_rate, data_sync, gate_rules, history_list, history_undo, project, interview_suggest])
         .run(tauri::generate_context!())
         .expect("error while running the app");
 }
@@ -248,6 +278,13 @@ mod tests {
         assert_eq!(engine_provider("anthropic"), Ok("claude"));
         assert_eq!(engine_provider("openai"), Ok("openai"));
         assert!(engine_provider("x").is_err());
+    }
+
+    #[test]
+    fn maps_engine_providers_to_key_names() {
+        assert_eq!(key_name("claude"), Ok("anthropic"));
+        assert_eq!(key_name("deepseek"), Ok("deepseek"));
+        assert!(key_name("anthropic").is_err());
     }
 
     #[test]

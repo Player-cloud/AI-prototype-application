@@ -8,6 +8,8 @@ import {
   openProject,
   saveAnswers,
   startProject,
+  suggest,
+  type SuggestResult,
   type InterviewView,
   type Patch,
   type ProjectRow,
@@ -121,6 +123,7 @@ function InterviewScreen({ invoke, start, onBack }: { invoke: Invoke; start: Int
   const [draft, setDraft] = useState<Draft>(() => toDraft(start));
   const [note, setNote] = useState<Note>(null);
   const [busy, setBusy] = useState(false);
+  const [ideas, setIdeas] = useState<SuggestResult | null>(null);
 
   useEffect(() => {
     let live = true;
@@ -142,8 +145,44 @@ function InterviewScreen({ invoke, start, onBack }: { invoke: Invoke; start: Int
   function show(v: InterviewView, at: StageId) {
     setView(v);
     setDraft(toDraft(v));
+    if (at !== stage) setIdeas(null);
     setStage(at);
   }
+
+  async function onIdeas() {
+    if (!current) return;
+    setBusy(true);
+    setNote({ text: 'Asking Claude…', bad: false });
+    try {
+      // Save first so Claude sees what's on screen.
+      show(await saveAnswers(invoke, iv.slug, current.id, patchFor(current, draft)), current.id);
+      const r = await suggest(invoke, iv.slug, current.id);
+      setIdeas(r);
+      const none = !r.suggestions.questions.length && !r.suggestions.areas.length && !r.suggestions.features.length && !Object.keys(r.suggestions.done).length;
+      setNote({ text: `${none ? 'No new ideas this time. ' : ''}${r.modelName} · cost ${r.costText}`, bad: false });
+    } catch (err) {
+      setNote({ text: (err as Error).message, bad: true });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const addFeature = (f: { name: string; what: string }) => {
+    const rows = draft.features.filter((x) => x.name.trim() || x.id);
+    setDraft({ ...draft, features: [...rows, { ...f }] });
+    if (ideas) setIdeas({ ...ideas, suggestions: { ...ideas.suggestions, features: ideas.suggestions.features.filter((x) => x !== f) } });
+  };
+  const addArea = (a: string) => {
+    if (!draft.areas.includes(a)) setDraft({ ...draft, areas: [...draft.areas, a] });
+  };
+  const addCheck = (id: string, c: string) => {
+    const now = (draft.done[id] ?? '').trim();
+    setDraft({ ...draft, done: { ...draft.done, [id]: now ? `${now}\n${c}` : c } });
+    if (ideas) {
+      const left = (ideas.suggestions.done[id] ?? []).filter((x) => x !== c);
+      setIdeas({ ...ideas, suggestions: { ...ideas.suggestions, done: { ...ideas.suggestions.done, [id]: left } } });
+    }
+  };
 
   async function go(to: StageId) {
     if (!current) return;
@@ -305,10 +344,65 @@ function InterviewScreen({ invoke, start, onBack }: { invoke: Invoke; start: Int
             );
           })}
 
+          {ideas && (
+            <div className="ideas" aria-label="Claude’s ideas" role="region">
+              <p className="muted-inline">Claude’s ideas (nothing is added until you pick it):</p>
+              {ideas.suggestions.questions.length > 0 && (
+                <ul className="rule-list" aria-label="Worth answering">
+                  {ideas.suggestions.questions.map((q) => (
+                    <li key={q}>{q}</li>
+                  ))}
+                </ul>
+              )}
+              {ideas.suggestions.areas.length > 0 && (
+                <ul className="rule-list" aria-label="Areas that may apply">
+                  {ideas.suggestions.areas.map((a) => (
+                    <li key={a}>
+                      {a}{' '}
+                      <button type="button" className="link-button" disabled={draft.areas.includes(a)} onClick={() => addArea(a)}>
+                        {draft.areas.includes(a) ? 'Ticked' : 'Tick'}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {ideas.suggestions.features.length > 0 && (
+                <ul className="rule-list" aria-label="Features to consider">
+                  {ideas.suggestions.features.map((f) => (
+                    <li key={f.name}>
+                      <strong>{f.name}</strong>
+                      {f.what ? `: ${f.what}` : ''}{' '}
+                      <button type="button" className="link-button" aria-label={`Add ${f.name}`} onClick={() => addFeature(f)}>
+                        Add
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {Object.entries(ideas.suggestions.done).map(([id, checks]) =>
+                checks.length === 0 ? null : (
+                  <ul className="rule-list" key={id} aria-label={`Done checks for ${id}`}>
+                    {checks.map((c) => (
+                      <li key={c}>
+                        {id}: {c}{' '}
+                        <button type="button" className="link-button" aria-label={`Add “${c}” to ${id}`} onClick={() => addCheck(id, c)}>
+                          Add
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                ),
+              )}
+            </div>
+          )}
+
           {stage === iv.current && view.missing.length > 0 && <p className="hint">Still needed: {view.missing.join('; ')}.</p>}
           <div className="key-controls">
             <button type="button" disabled={busy} onClick={() => void onSave()}>
               Save
+            </button>
+            <button type="button" disabled={busy} onClick={() => void onIdeas()} title="Uses Claude’s planning model (Opus)">
+              Ask Claude for ideas ({view.askCost})
             </button>
             <button type="submit" disabled={busy}>
               {iv.confirmed.includes(current.id) ? 'Confirm again' : 'Confirm and continue'}

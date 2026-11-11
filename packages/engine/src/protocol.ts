@@ -21,6 +21,8 @@
  *  - project_list: {settings} -> the projects in the data folder with their status.
  *  - interview_start: {settings, name} -> starts a project's plan interview in projects/<slug>/.
  *  - interview_get / interview_save: {settings, slug, stage?, patch?} -> the interview (saving answers first).
+ *  - interview_suggest: {settings, slug, stage, provider, apiKey, dbPath} -> Claude's ideas for the stage
+ *    (questions, areas, features or done checks), with the cost. Uses the "plan" job; nothing is saved.
  *  - interview_confirm: {settings, slug, stage} -> confirms a stage; the last one writes spec.md and
  *    the done files, then syncs the data repo.
  *  - settings_saved: {dbPath, before, after, undoes?} -> keeps a settings change in the history (id, or null if nothing changed).
@@ -36,8 +38,10 @@ import { formatCost } from './money.ts';
 import { DEFAULT_SETTINGS, checkSettings, type AppSettings } from './settings.ts';
 import { dataOverview, rateAndSync, syncAfterUndo, syncNow } from './data.ts';
 import { historyList, settingsSaved, undoStart } from './history.ts';
+import { parseSuggestions, suggestPrompt } from './suggest.ts';
+import { stageOf } from './interview.ts';
 import { confirm, getInterview, interviewStages, listProjects, saveAnswers, startInterview } from './projects.ts';
-import { readBudget, recordSpend } from './budget.ts';
+import { MAX_CALL_USD, readBudget, recordSpend } from './budget.ts';
 import { gate, listRules } from './gate.ts';
 
 export const ENGINE_VERSION = '0.0.1';
@@ -63,8 +67,6 @@ export interface Deps {
   now?(): Date;
 }
 
-/** Most a single call may cost, even with plenty of budget left. */
-const MAX_CALL_USD = 0.5;
 
 /** Loads the models package only when a model is first used. */
 export const realDeps: Deps = {
@@ -239,6 +241,16 @@ const HANDLERS: Record<string, Handler> = {
   interview_save: (params, deps) => {
     const p = obj(params);
     return saveAnswers(checkSettings(p.settings), str(p, 'slug'), obj(p.patch ?? {}), optionalStage(p), deps.now?.() ?? new Date());
+  },
+  interview_suggest: async (params, deps) => {
+    const p = obj(params);
+    const stage = stageOf(str(p, 'stage')).id;
+    const { interview } = await getInterview(checkSettings(p.settings), str(p, 'slug'), stage);
+    const r = await runAsk(
+      { provider: p.provider, apiKey: p.apiKey, settings: p.settings, dbPath: p.dbPath, job: 'plan', prompt: suggestPrompt(interview, stage) },
+      deps,
+    );
+    return { suggestions: parseSuggestions(r.text, interview, stage), modelName: r.modelName, costText: r.costText };
   },
   interview_confirm: (params, deps) => {
     const p = obj(params);

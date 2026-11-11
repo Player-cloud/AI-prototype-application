@@ -31,9 +31,20 @@ function fakeShell() {
     tools: stage === 'idea' ? [{ name: 'EGM', state: 'on', job: 'planning' }] : [],
     big: false,
     finished: ORDER.every((s) => iv.confirmed.includes(s)),
+    askCost: 'costs up to £0.40 ($0.50)',
   });
 
   const invoke: Invoke = async <T,>(cmd: string, args?: Record<string, unknown>) => {
+    if (cmd === 'interview_suggest') {
+      calls.push({ method: 'suggest', params: args ?? {} });
+      if (args?.stage === 'features') {
+        return { suggestions: { questions: ['Do coaches log in too?'], areas: [], features: [{ name: 'Rota', what: 'Weekly shifts' }], done: {} }, modelName: 'Opus 5.5', costText: '£0.02 ($0.02)' } as T;
+      }
+      if (args?.stage === 'done') {
+        return { suggestions: { questions: [], areas: [], features: [], done: { 'F-01': ['A wrong password shows an error'] } }, modelName: 'Opus 5.5', costText: '£0.03 ($0.04)' } as T;
+      }
+      throw 'No anthropic key saved. Add it in Settings.';
+    }
     if (cmd !== 'project') throw `unexpected ${cmd}`;
     const method = String(args?.method);
     const p = (args?.params ?? {}) as Record<string, unknown>;
@@ -155,6 +166,44 @@ describe('Projects: plan interview', () => {
     fireEvent.change(await screen.findByLabelText('Project name'), { target: { value: 'Club HR' } });
     fireEvent.click(screen.getByRole('button', { name: 'Start planning' }));
     await waitFor(() => expect(screen.getByRole('alert').textContent).toMatch(/already a project/));
+  });
+
+  it('asks Claude for ideas only when you press the button, shows the cost and adds only what you pick', async () => {
+    const shell = fakeShell();
+    render(<Projects invoke={shell.invoke} />);
+    await screen.findByText(/No projects yet/);
+    fireEvent.change(screen.getByLabelText('Project name'), { target: { value: 'Club HR' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Start planning' }));
+    const idea = await screen.findByRole('form', { name: 'The idea' });
+    expect(shell.calls.some((c) => c.method === 'suggest')).toBe(false);
+
+    // No key: a plain-words refusal.
+    fireEvent.click(within(idea).getByRole('button', { name: 'Ask Claude for ideas (costs up to £0.40 ($0.50))' }));
+    expect((await screen.findByRole('alert')).textContent).toBe('No anthropic key saved. Add it in Settings.');
+
+    fireEvent.change(within(idea).getByLabelText('What is it?'), { target: { value: 'HR' } });
+    fireEvent.click(within(idea).getByRole('button', { name: 'Confirm and continue' }));
+    const features = await screen.findByRole('form', { name: 'Features' });
+    fireEvent.change(within(features).getByLabelText('Feature 1 name'), { target: { value: 'Login' } });
+    fireEvent.click(within(features).getByRole('button', { name: /Ask Claude for ideas/ }));
+    const ideas = await screen.findByRole('region', { name: 'Claude’s ideas' });
+    expect(within(ideas).getByText('Do coaches log in too?')).toBeTruthy();
+    expect(screen.getByRole('status').textContent).toBe('Opus 5.5 · cost £0.02 ($0.02)');
+    // What was typed was saved before asking.
+    expect(shell.projects.get('club-hr')?.features.map((f) => f.name)).toEqual(['Login']);
+
+    fireEvent.click(within(ideas).getByRole('button', { name: 'Add Rota' }));
+    expect((within(features).getByLabelText('Feature 2 name') as HTMLInputElement).value).toBe('Rota');
+    expect(within(ideas).queryByRole('button', { name: 'Add Rota' })).toBeNull();
+    fireEvent.click(within(features).getByRole('button', { name: 'Confirm and continue' }));
+
+    const done = await screen.findByRole('form', { name: 'What “done” means' });
+    expect(screen.queryByRole('region', { name: 'Claude’s ideas' })).toBeNull();
+    fireEvent.change(within(done).getByLabelText(/F-01 Login: done when/), { target: { value: 'A member can sign in' } });
+    fireEvent.click(within(done).getByRole('button', { name: /Ask Claude for ideas/ }));
+    const doneIdeas = await screen.findByRole('region', { name: 'Claude’s ideas' });
+    fireEvent.click(within(doneIdeas).getByRole('button', { name: 'Add “A wrong password shows an error” to F-01' }));
+    expect((within(done).getByLabelText(/F-01 Login: done when/) as HTMLTextAreaElement).value).toBe('A member can sign in\nA wrong password shows an error');
   });
 
   it('needs the desktop app', () => {
