@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import type { Invoke } from '../engine';
 import { listProjects, openProject, type Feature, type ProjectRow } from '../projects';
 import { getSettings } from '../settings';
-import { decideRun, listRuns, rateRun, startBuild, stopBuild, type BuildResult, type BuildRun, type BuildStep, type MakeChannel } from '../build';
+import { CHECK_NAME, decideRun, keepable, listRuns, rateRun, startBuild, stopBuild, type BuildResult, type BuildRun, type BuildStep, type MakeChannel } from '../build';
 
 type Note = { text: string; bad: boolean } | null;
 
@@ -88,7 +88,9 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
       setUsing(r.using);
       setSteps(r.steps);
       setNote(
-        r.tests.passed
+        r.tests.passed && !r.keep.keep
+          ? { text: `Built and the tests pass, but ${r.keep.blocking.map((b) => CHECK_NAME[b] ?? b).join(', ')} failed. Cost: ${r.costText}. It can’t be kept, so Undo it below.`, bad: true }
+          : r.tests.passed
           ? { text: `Done and the tests pass. Cost: ${r.costText}. Check it, then press Keep or Undo below.`, bad: false }
           : { text: `Built, but the tests still fail${r.tests.fixAttempts ? ` after ${r.tests.fixAttempts} fix attempt${r.tests.fixAttempts === 1 ? '' : 's'}` : ''}. Cost: ${r.costText}. It can’t be kept, so Undo it below.`, bad: true },
       );
@@ -196,6 +198,19 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
               <pre className="test-output">{result.tests.output}</pre>
             </details>
           )}
+          {result.checks.length > 0 && (
+            <>
+              <h3>Free checks</h3>
+              <ul className="check-list">
+                {result.checks.map((c) => (
+                  <li key={c.name} className={c.passed ? 'ok' : c.advisory ? 'advice' : 'bad'}>
+                    {CHECK_NAME[c.name] ?? c.name}: {c.passed ? 'passed' : c.advisory ? 'advice (doesn’t stop Keep)' : 'failed'}
+                    {c.detail && !c.passed && <pre className="test-output">{c.detail}</pre>}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
           {result.synced && <p className="muted">Data folder: {result.synced}</p>}
         </div>
       )}
@@ -207,12 +222,12 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
               <li key={r.id} className={`run-row ${r.status}`}>
                 <span className="run-name">
                   {r.feature} · {new Date(r.at).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })} ·{' '}
-                  {r.testsPassed ? 'tests pass' : 'tests fail'} · {STATUS[r.status]}
+                  {!r.testsPassed ? 'tests fail' : keepable(r) ? 'tests and checks pass' : 'a check failed'} · {STATUS[r.status]}
                   {r.status === 'kept' && r.keptInto ? ` into ${r.keptInto}` : ''}
                 </span>
                 {r.status === 'built' && (
                   <span className="run-actions">
-                    <button type="button" disabled={busy || running || !r.testsPassed} onClick={() => void decide(r, true)} aria-label={`Keep ${r.feature}`}>
+                    <button type="button" disabled={busy || running || !keepable(r)} onClick={() => void decide(r, true)} aria-label={`Keep ${r.feature}`}>
                       Keep
                     </button>
                     <button type="button" disabled={busy || running} onClick={() => void decide(r, false)} aria-label={`Undo ${r.feature}`}>

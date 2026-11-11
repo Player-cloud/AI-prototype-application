@@ -28,6 +28,8 @@ export interface BuildDeps {
   now?(): Date;
   /** Runs the project's tests in the copy (8d). Injected for tests; the real one is @aip/checks. */
   runTests?(dir: string): Promise<CheckResult>;
+  /** The free checks after the tests (9b): secrets, audit, checklist rules. */
+  freeChecks?(dir: string, base: string, areas: string[]): Promise<CheckResult[]>;
 }
 
 export interface BuildStep { text: string; refused?: string }
@@ -50,6 +52,10 @@ export interface BuildResult {
   synced: string;
   /** The saved run that Keep, Undo and the rating act on (null without a history file). */
   runId: number | null;
+  /** The free checks (9b). Advice-only ones don't stop Keep. */
+  checks: CheckResult[];
+  /** Whether Keep is allowed, and what stops it. */
+  keep: { keep: boolean; blocking: string[] };
 }
 
 /** The run's limit in dollars: the Settings limit (in £) or what's left this month, whichever is less. */
@@ -111,6 +117,9 @@ export function checkStep(settings: AppSettings, runPath: string, tool: string, 
   if (d.allow) return d;
   return { allow: false, reason: d.askJoshua ? `${d.reason}. Not done; joshua will be asked later.` : d.reason };
 }
+
+/** Plain names for the step list. */
+const CHECK_NAMES: Record<string, string> = { secrets: 'Secret scan', audit: 'Package audit', checklist: 'Checklist rules' };
 
 /** How many times a failing test run is handed back to the model to fix (inside the run's limit). */
 export const FIX_ATTEMPTS = 2;
@@ -231,6 +240,17 @@ export async function buildFeature(
   }
   if (stopped(signal)) throw new Error('Stopped.');
   add({ text: tests.passed ? 'Tests pass' : 'Tests still fail' });
+  add({ text: 'Running free checks' });
+  const freeChecks = deps.freeChecks ?? (await import('@aip/checks')).runFreeChecks;
+  let checks: CheckResult[];
+  try {
+    checks = await freeChecks(run.path, run.base, interview.areas);
+  } catch (err) {
+    checks = [{ name: 'free checks', passed: false, free: true, detail: `Couldn’t run: ${(err as Error).message}` }];
+  }
+  for (const c of checks) add({ text: `${CHECK_NAMES[c.name] ?? c.name}: ${c.passed ? 'passed' : c.advisory ? 'see notes' : 'failed'}` });
+  const { canKeep } = await import('@aip/checks');
+  const keep = canKeep([{ ...tests, name: 'tests' }, ...checks]);
   const synced = await syncAfter(settings, `Build ${p.slug} ${p.feature}`);
   let runId: number | null = null;
   if (p.dbPath) {
@@ -249,6 +269,7 @@ export async function buildFeature(
         testsPassed: tests.passed,
         fixAttempts: fixes,
         summary: summary.slice(0, 2000),
+        checks: checks.map((c) => ({ name: c.name, passed: c.passed, advisory: c.advisory ?? false, detail: c.detail ?? '' })),
       });
     } finally {
       log.close();
@@ -264,6 +285,8 @@ export async function buildFeature(
     costUsd: spentUsd,
     tests: { passed: tests.passed, output: tests.detail ?? '', fixAttempts: fixes },
     synced,
+    checks,
+    keep,
   };
 }
 

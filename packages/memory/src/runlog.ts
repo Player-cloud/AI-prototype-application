@@ -10,6 +10,9 @@ import { DatabaseSync } from 'node:sqlite';
 /** 'built': waiting for Keep or Undo. */
 export type RunStatus = 'built' | 'kept' | 'undone';
 
+/** One free check's result, as the checks package reports it. */
+export interface RunCheck { name: string; passed: boolean; advisory?: boolean; detail?: string }
+
 export interface NewRun {
   at: Date;
   slug: string;
@@ -24,10 +27,13 @@ export interface NewRun {
   testsPassed: boolean;
   fixAttempts: number;
   summary: string;
+  /** The free checks after the tests (step 9b). */
+  checks?: RunCheck[];
 }
 
-export interface Run extends Omit<NewRun, 'at'> {
+export interface Run extends Omit<NewRun, 'at' | 'checks'> {
   id: number;
+  checks: RunCheck[];
   at: string;
   status: RunStatus;
   /** 1–5, or null when not rated yet. */
@@ -59,6 +65,16 @@ interface Row {
   decided_at: string | null;
   merge_commit: string;
   kept_into: string;
+  checks: string;
+}
+
+function parseChecks(raw: string): RunCheck[] {
+  try {
+    const v = JSON.parse(raw) as unknown;
+    return Array.isArray(v) ? (v as RunCheck[]) : [];
+  } catch {
+    return [];
+  }
 }
 
 function toRun(r: Row): Run {
@@ -80,6 +96,7 @@ function toRun(r: Row): Run {
     decidedAt: r.decided_at,
     mergeCommit: r.merge_commit,
     keptInto: r.kept_into,
+    checks: parseChecks(r.checks),
   };
 }
 
@@ -107,17 +124,21 @@ export class RunLog {
       rating INTEGER,
       decided_at TEXT,
       merge_commit TEXT NOT NULL DEFAULT '',
-      kept_into TEXT NOT NULL DEFAULT ''
+      kept_into TEXT NOT NULL DEFAULT '',
+      checks TEXT NOT NULL DEFAULT '[]'
     )`);
+    // Files made before step 9b have no checks column.
+    const cols = db.prepare('PRAGMA table_info(runs)').all() as { name: string }[];
+    if (!cols.some((c) => c.name === 'checks')) db.exec("ALTER TABLE runs ADD COLUMN checks TEXT NOT NULL DEFAULT '[]'");
     return new RunLog(db);
   }
 
   add(r: NewRun): number {
     const res = this.db
       .prepare(
-        'INSERT INTO runs (at, slug, feature, path, branch, base, model, cost_usd, tests_passed, fix_attempts, summary) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        'INSERT INTO runs (at, slug, feature, path, branch, base, model, cost_usd, tests_passed, fix_attempts, summary, checks) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       )
-      .run(r.at.toISOString(), r.slug, r.feature, r.path, r.branch, r.base, r.model, r.costUsd, r.testsPassed ? 1 : 0, r.fixAttempts, r.summary);
+      .run(r.at.toISOString(), r.slug, r.feature, r.path, r.branch, r.base, r.model, r.costUsd, r.testsPassed ? 1 : 0, r.fixAttempts, r.summary, JSON.stringify(r.checks ?? []));
     // Only finished runs are dropped; one waiting for Keep or Undo is never lost.
     this.db
       .prepare("DELETE FROM runs WHERE status != 'built' AND id NOT IN (SELECT id FROM runs ORDER BY id DESC LIMIT ?)")

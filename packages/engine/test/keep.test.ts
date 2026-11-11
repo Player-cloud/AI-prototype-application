@@ -35,13 +35,13 @@ describe('Keep or Undo a build', () => {
   });
 
   /** A finished build: its own copy with the model's (uncommitted) work, saved in the history file. */
-  async function built(feature = 'F-01', testsPassed = true) {
+  async function built(feature = 'F-01', testsPassed = true, checks: { name: string; passed: boolean; advisory?: boolean }[] = []) {
     const branch = `aip/${feature.toLowerCase()}-20261111-193000`;
     const path = join(root, 'club-hr-runs', `${feature}-20261111-193000`);
     git(code, 'worktree', 'add', '-q', '-b', branch, path, 'HEAD');
     await writeFile(join(path, `${feature}.md`), `${feature} page\n`);
     const log = RunLog.open(db);
-    const id = log.add({ at: NOW, slug: 'club-hr', feature, path, branch, base: git(code, 'rev-parse', 'HEAD').trim(), model: 'claude-sonnet-5-5', costUsd: 0.42, testsPassed, fixAttempts: 0, summary: 'Added it.' });
+    const id = log.add({ at: NOW, slug: 'club-hr', feature, path, branch, base: git(code, 'rev-parse', 'HEAD').trim(), model: 'claude-sonnet-5-5', costUsd: 0.42, testsPassed, fixAttempts: 0, summary: 'Added it.', checks });
     log.close();
     return { id, path, branch };
   }
@@ -73,6 +73,16 @@ describe('Keep or Undo a build', () => {
     const r = await call('run_keep', { settings, dbPath: db, id: b.id });
     expect(r.error).toBe('The tests fail, so this build can’t be kept. Undo it, or build the feature again.');
     expect(await exists(join(code, 'F-01.md'))).toBe(false);
+  });
+
+  it('refuses to keep a build whose secret scan or audit failed; advice alone doesn’t block', async () => {
+    const b = await built('F-01', true, [
+      { name: 'secrets', passed: false },
+      { name: 'checklist', passed: false, advisory: true },
+    ]);
+    expect((await call('run_keep', { settings, dbPath: db, id: b.id })).error).toBe('These checks must pass before it can be kept: secrets. Undo it, or build the feature again.');
+    const ok = await built('F-02', true, [{ name: 'checklist', passed: false, advisory: true }]);
+    expect((await call('run_keep', { settings, dbPath: db, id: ok.id })).result.run.status).toBe('kept');
   });
 
   it('refuses while joshua’s copy has uncommitted changes', async () => {

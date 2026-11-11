@@ -25,6 +25,7 @@ const WAITING = {
   status: 'built',
   rating: null,
   keptInto: '',
+  checks: [] as { name: string; passed: boolean; advisory?: boolean; detail?: string }[],
 };
 
 function fakeShell(opts: { fail?: string; runs?: (typeof WAITING)[] } = {}) {
@@ -118,6 +119,11 @@ describe('Build screen', () => {
       tests: { passed: true, output: '3 passed', fixAttempts: 0 },
       synced: 'Saved 1 file. Data repo is up to date on GitHub.',
       runId: 7,
+      checks: [
+        { name: 'secrets', passed: true, detail: 'No keys found in 2 changed files.' },
+        { name: 'checklist', passed: false, advisory: true, detail: 'src/rota.tsx:3 (Accessibility): Every image needs alt text.' },
+      ],
+      keep: { keep: true, blocking: [] },
     });
     expect((await screen.findByRole('status')).textContent).toBe('Done and the tests pass. Cost: £0.33 ($0.42). Check it, then press Keep or Undo below.');
     const result = screen.getByRole('region', { name: 'Build result' });
@@ -126,6 +132,9 @@ describe('Build screen', () => {
     expect(within(result).getByText('All tests pass.')).toBeTruthy();
     expect(within(result).getByText('3 passed')).toBeTruthy();
     expect(within(result).getByText('Data folder: Saved 1 file. Data repo is up to date on GitHub.')).toBeTruthy();
+    expect(within(result).getByText(/^Secret scan: passed/)).toBeTruthy();
+    expect(within(result).getByText(/^Checklist rules: advice \(doesn’t stop Keep\)/)).toBeTruthy();
+    expect(within(result).getByText('src/rota.tsx:3 (Accessibility): Every image needs alt text.')).toBeTruthy();
   });
 
   it('says plainly when the tests still fail after the fix attempts', async () => {
@@ -143,6 +152,8 @@ describe('Build screen', () => {
       tests: { passed: false, output: 'FAIL rota.test.ts', fixAttempts: 2 },
       synced: '',
       runId: 8,
+      checks: [],
+      keep: { keep: false, blocking: ['tests'] },
     });
     expect((await screen.findByRole('alert')).textContent).toBe('Built, but the tests still fail after 2 fix attempts. Cost: £0.79 ($1.00). It can’t be kept, so Undo it below.');
     expect(within(screen.getByRole('region', { name: 'Build result' })).getByText('Tests fail.')).toBeTruthy();
@@ -152,7 +163,7 @@ describe('Build screen', () => {
     const shell = fakeShell({ runs: [WAITING] });
     render(<Build invoke={shell.invoke} makeChannel={shell.makeChannel} />);
     const builds = await screen.findByRole('region', { name: 'Builds' });
-    expect(within(builds).getByText(/F-02 · .* · tests pass · waiting for Keep or Undo/)).toBeTruthy();
+    expect(within(builds).getByText(/F-02 · .* · tests and checks pass · waiting for Keep or Undo/)).toBeTruthy();
     fireEvent.click(within(builds).getByRole('button', { name: 'Keep F-02' }));
     expect((await screen.findByRole('status')).textContent).toBe('Kept F-02 in your copy on main. Nothing was pushed.');
     expect(shell.calls).toContainEqual({ cmd: 'run_decide', args: { id: 7, keep: true } });
@@ -163,6 +174,14 @@ describe('Build screen', () => {
     expect((await screen.findByText('Rated F-02 4/5.')).getAttribute('role')).toBe('status');
     expect(shell.calls).toContainEqual({ cmd: 'run_rate', args: { id: 7, rating: 4 } });
     expect(within(builds).getByRole('button', { name: '4' }).getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('can’t keep a build whose secret scan failed', async () => {
+    const shell = fakeShell({ runs: [{ ...WAITING, checks: [{ name: 'secrets', passed: false }] }] });
+    render(<Build invoke={shell.invoke} makeChannel={shell.makeChannel} />);
+    const keep = (await screen.findByRole('button', { name: 'Keep F-02' })) as HTMLButtonElement;
+    expect(keep.disabled).toBe(true);
+    expect(screen.getByText(/a check failed · waiting for Keep or Undo/)).toBeTruthy();
   });
 
   it('can’t keep a build whose tests fail, only undo it', async () => {

@@ -71,6 +71,8 @@ export async function keepRun(settings: AppSettings, dbPath: string, id: number,
   return withRuns(dbPath, async (log) => {
     const run = waiting(log, id);
     if (!run.testsPassed) throw new Error('The tests fail, so this build can’t be kept. Undo it, or build the feature again.');
+    const blocking = run.checks.filter((c) => !c.passed && !c.advisory).map((c) => c.name);
+    if (blocking.length) throw new Error(`These checks must pass before it can be kept: ${blocking.join(', ')}. Undo it, or build the feature again.`);
     const folder = codeFolderOf(settings, run.slug);
     const status = await checkCodeFolder(folder, g);
     if (!status.clean) throw new Error(`Your copy (${folder}) has changes not committed yet. Commit them or put them aside, then press Keep again.`);
