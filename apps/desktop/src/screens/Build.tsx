@@ -79,7 +79,11 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
       setResult(r);
       setUsing(r.using);
       setSteps(r.steps);
-      setNote({ text: `Done. Cost: ${r.costText}. Keep or Undo comes in the next step of the plan.`, bad: false });
+      setNote(
+        r.tests.passed
+          ? { text: `Done and the tests pass. Cost: ${r.costText}. Keep or Undo comes in the next step of the plan.`, bad: false }
+          : { text: `Built, but the tests still fail${r.tests.fixAttempts ? ` after ${r.tests.fixAttempts} fix attempt${r.tests.fixAttempts === 1 ? '' : 's'}` : ''}. Cost: ${r.costText}. It can’t be kept until they pass.`, bad: true },
+      );
     } catch (err) {
       setNote({ text: (err as Error).message, bad: true });
     } finally {
@@ -157,6 +161,15 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
           <p className="muted">
             Built in {result.run.path} on branch {result.run.branch}. Your own copy wasn’t touched.
           </p>
+          <h3>Tests</h3>
+          <p>{result.tests.passed ? 'All tests pass.' : 'Tests fail.'}</p>
+          {result.tests.output && (
+            <details>
+              <summary>Test output (end)</summary>
+              <pre className="test-output">{result.tests.output}</pre>
+            </details>
+          )}
+          {result.synced && <p className="muted">Data folder: {result.synced}</p>}
         </div>
       )}
       {note && (

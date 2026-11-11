@@ -302,6 +302,13 @@ async fn tool_rate(
     engine_call(&state, "tool_rate", serde_json::json!({ "settings": saved, "tool": tool, "rating": rating, "dbPath": db }))
 }
 
+/// Switches a tool that failed 3 times in a row back on (it's retested on next use), then syncs.
+#[tauri::command]
+async fn tool_switch_on(tool: String, app: tauri::AppHandle, state: tauri::State<'_, Engine>) -> Result<serde_json::Value, String> {
+    let saved = settings::read(&settings_path(&app)?)?;
+    engine_call(&state, "tool_switch_on", serde_json::json!({ "settings": saved, "tool": tool }))
+}
+
 /// Commits data folder changes and syncs them with GitHub (never forces).
 #[tauri::command]
 async fn data_sync(app: tauri::AppHandle, state: tauri::State<'_, Engine>) -> Result<serde_json::Value, String> {
@@ -335,7 +342,7 @@ pub fn run() {
     tauri::Builder::default()
         .manage(Engine(Mutex::new(helper)))
         .manage(Build(Mutex::new(None)))
-        .invoke_handler(tauri::generate_handler![version, engine_status, key_status, key_save, key_remove, test_model, settings_get, settings_save, data_overview, spend_summary, tool_rate, data_sync, gate_rules, history_list, history_undo, project, interview_suggest, interview_review, build_feature, build_stop])
+        .invoke_handler(tauri::generate_handler![version, engine_status, key_status, key_save, key_remove, test_model, settings_get, settings_save, data_overview, spend_summary, tool_rate, tool_switch_on, data_sync, gate_rules, history_list, history_undo, project, interview_suggest, interview_review, build_feature, build_stop])
         .run(tauri::generate_context!())
         .expect("error while running the app");
 }
@@ -363,6 +370,7 @@ mod tests {
         assert_eq!(project_method("interview_save"), Ok("interview_save"));
         assert_eq!(project_method("code_folder_check"), Ok("code_folder_check"));
         assert!(project_method("tool_rate").is_err());
+        assert!(project_method("tool_switch_on").is_err());
         assert!(project_method("ask").is_err());
     }
 

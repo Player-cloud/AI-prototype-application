@@ -66,13 +66,22 @@ describe('build_feature', () => {
   });
 
   /** A fake agent: tries a write in its copy, a push and a write outside, then reports. */
-  function deps(seen: { task?: BuildTask; maxUsd?: number; answers: unknown[] }, withBuild = true): Deps {
+  type Seen = { task?: BuildTask; maxUsd?: number; answers: unknown[]; prompts?: string[]; caps?: number[] };
+  /** opts.tests: what each test run gives (passes when it runs out); opts.fail: the model errors. */
+  function deps(seen: Seen, withBuild = true, opts: { tests?: boolean[]; fail?: string } = {}): Deps {
+    const results = [...(opts.tests ?? [])];
     const adapter: ModelAdapter = {
       provider: 'claude',
       run: async () => ({ text: '', usage: { inputTokens: 0, outputTokens: 0, costUsd: 0 } }),
       ...(withBuild
         ? {
             async build(task: BuildTask) {
+              (seen.prompts ??= []).push(task.prompt);
+              if (opts.fail) throw new Error(opts.fail);
+              if (seen.task) {
+                task.onStep?.('Edit src/fix.ts');
+                return { text: 'Fixed the off-by-one.', usage: { inputTokens: 100, outputTokens: 50, costUsd: 0.1 } };
+              }
               seen.task = task;
               const tries: [string, Record<string, unknown>][] = [
                 ['Write', { file_path: join(task.cwd, 'login.md'), content: 'Login' }],
@@ -92,7 +101,8 @@ describe('build_feature', () => {
     };
     return {
       async makeAdapter(_p, _k, _s, maxUsd) {
-        seen.maxUsd = maxUsd;
+        seen.maxUsd ??= maxUsd;
+        (seen.caps ??= []).push(maxUsd);
         return adapter;
       },
       async pickModel(_p, job) {
@@ -102,6 +112,10 @@ describe('build_feature', () => {
         return 'Sonnet 5.5';
       },
       now: () => NOW,
+      async runTests() {
+        const passed = results.length ? results.shift()! : true;
+        return { name: 'tests', passed, free: true, detail: passed ? '3 passed' : 'FAIL rota.test.ts: expected 2, got 3' };
+      },
     };
   }
 
@@ -135,7 +149,7 @@ describe('build_feature', () => {
     const r = await call('build_feature', { settings, slug: 'club-hr', feature: 'F-01', provider: 'claude', apiKey: FAKE_KEY, dbPath });
     expect(r.error).toBeUndefined();
     const out = r.result;
-    expect(out.using).toBe('Using: Sonnet 5.5, file edits, shell');
+    expect(out.using).toBe('Using: Sonnet 5.5, file edits, shell, tests');
     expect(out.run).toMatchObject({ feature: 'F-01', branch: 'aip/f-01-20261111-170000' });
     expect(out.summary).toBe('Added the login page. Tests pass.');
     expect(out.costText).toBe('£0.33 ($0.42)');
@@ -151,8 +165,13 @@ describe('build_feature', () => {
     expect(out.steps.filter((s: { refused?: string }) => s.refused).map((s: { text: string }) => s.text)).toEqual(['Refused: Bash', 'Refused: Write']);
 
     // The screen saw the Using line first, then each step as it happened.
-    expect(events[0]).toMatchObject({ type: 'using', using: 'Using: Sonnet 5.5, file edits, shell' });
+    expect(events[0]).toMatchObject({ type: 'using', using: 'Using: Sonnet 5.5, file edits, shell, tests' });
     expect(events.slice(1).map((e) => e.text)).toEqual(out.steps.map((s: { text: string }) => s.text));
+
+    // Then the project's tests ran in the copy and passed first time; the data folder sync was tried.
+    expect(out.steps.slice(-2).map((s: { text: string }) => s.text)).toEqual(['Running tests', 'Tests pass']);
+    expect(out.tests).toEqual({ passed: true, output: '3 passed', fixAttempts: 0 });
+    expect(out.synced).toMatch(/^Saved here, but not synced yet: .*not a git clone/);
 
     // The cost counts against the month's budget.
     expect((await call('spend_summary', { settings, dbPath })).result.calls).toBe(1);
@@ -177,5 +196,94 @@ describe('build_feature', () => {
     const r = await call('build_feature', { settings, slug: 'club-hr', feature: 'F-01', provider: 'deepseek', apiKey: 'x', dbPath: null });
     expect(r.error).toBe('Building needs Claude for now. Choose Claude in Settings → Budget and models.');
     expect(git(code, 'worktree', 'list').trim().split('\n')).toHaveLength(1);
+  });
+
+  it('gives failing tests up to 2 fix attempts inside what’s left of the run’s limit', async () => {
+    const seen: Seen = { answers: [] };
+    const settings = { dataFolder: data, codeFolders: { 'club-hr': code } };
+    const call = await plan(deps(seen, true, { tests: [false, false, false] }), settings);
+    const r = await call('build_feature', { settings, slug: 'club-hr', feature: 'F-01', provider: 'claude', apiKey: FAKE_KEY, dbPath: null });
+    const out = r.result;
+    expect(out.tests).toEqual({ passed: false, output: 'FAIL rota.test.ts: expected 2, got 3', fixAttempts: 2 });
+    expect(out.steps.map((s: { text: string }) => s.text).filter((t: string) => !t.startsWith('Write') && !t.startsWith('Bash') && !t.startsWith('Refused'))).toEqual([
+      'Running tests',
+      'Fix attempt 1 of 2',
+      'Edit src/fix.ts',
+      'Running tests',
+      'Fix attempt 2 of 2',
+      'Edit src/fix.ts',
+      'Running tests',
+      'Tests still fail',
+    ]);
+    // Each fix was told the test output, never to skip tests, and capped at what was left.
+    expect(seen.prompts?.[1]).toContain('fix attempt 1 of 2');
+    expect(seen.prompts?.[1]).toContain('Never skip, delete or weaken tests');
+    expect(seen.prompts?.[1]).toContain('FAIL rota.test.ts');
+    const cap = 0.8 / 0.79;
+    expect(seen.caps?.[1]).toBeCloseTo(cap - 0.42);
+    expect(seen.caps?.[2]).toBeCloseTo(cap - 0.52);
+    expect(out.costUsd).toBeCloseTo(0.62);
+    expect(out.summary).toContain('Fix 2: Fixed the off-by-one.');
+  });
+
+  it('stops fixing once the tests pass', async () => {
+    const seen: Seen = { answers: [] };
+    const settings = { dataFolder: data, codeFolders: { 'club-hr': code } };
+    const call = await plan(deps(seen, true, { tests: [false, true] }), settings);
+    const out = (await call('build_feature', { settings, slug: 'club-hr', feature: 'F-01', provider: 'claude', apiKey: FAKE_KEY, dbPath: null })).result;
+    expect(out.tests).toMatchObject({ passed: true, fixAttempts: 1 });
+    expect(out.steps.at(-1).text).toBe('Tests pass');
+  });
+
+  it('switches the build model off after 3 failures in a row, and refuses it until switched back on', async () => {
+    const seen: Seen = { answers: [] };
+    const settings = { dataFolder: data, codeFolders: { 'club-hr': code } };
+    const d = deps(seen, true, { fail: 'Claude is overloaded' });
+    let tick = 0;
+    d.now = () => new Date(NOW.getTime() + 1000 * tick++); // each run gets its own copy
+    const call = await plan(d, settings);
+    const build = () => call('build_feature', { settings, slug: 'club-hr', feature: 'F-01', provider: 'claude', apiKey: FAKE_KEY, dbPath: null });
+    expect((await build()).error).toMatch(/^Claude is overloaded \(Saved here/);
+    expect((await build()).error).toMatch(/^Claude is overloaded \(Saved here/);
+    expect((await build()).error).toMatch(/^Claude is overloaded Sonnet 5.5 has now failed 3 times in a row, so it’s switched off\. Switch it back on in Tools/);
+    const health = JSON.parse(await readFile(join(data, 'tool-health', 'sonnet-5-5.json'), 'utf8'));
+    expect(health.off.reason).toBe('3 failures in a row (last: Claude is overloaded).');
+
+    // Switched off: refused before any copy is made or money spent.
+    const runs = git(code, 'worktree', 'list').trim().split('\n').length;
+    expect((await build()).error).toBe('Sonnet 5.5 is switched off: 3 failures in a row (last: Claude is overloaded). Switch it back on in Tools to use it again.');
+    expect(git(code, 'worktree', 'list').trim().split('\n')).toHaveLength(runs);
+
+    // The Tools screen lists it (it isn't in the ledger) with the flag for its button.
+    await writeFile(join(data, 'ledger.md'), '# Ledger\n\n- Only CLI (oc) | ON | web reading | fewer tokens | free | rating: -\n');
+    const overview = await call('data_overview', { settings });
+    expect(overview.error).toBeUndefined();
+    expect(overview.result.tools.find((t: { name: string }) => t.name === 'Sonnet 5.5')).toMatchObject({
+      status: 'not in the ledger yet',
+      switchedOff: true,
+      health: 'Switched off: 3 failures in a row (last: Claude is overloaded).',
+    });
+
+    // Switching it back on clears the count; the sync fails here (not a git clone) but the file is saved.
+    const on = await call('tool_switch_on', { settings, tool: 'Sonnet 5.5' });
+    expect(on.error).toMatch(/not a git clone/);
+    const after = JSON.parse(await readFile(join(data, 'tool-health', 'sonnet-5-5.json'), 'utf8'));
+    expect(after).toMatchObject({ off: null, consecutiveFailures: 0, retestDue: true });
+    expect((await call('tool_switch_on', { settings, tool: 'Sonnet 5.5' })).error).toBe('Sonnet 5.5 isn’t switched off.');
+  });
+
+  it('doesn’t count a Stop as a failure', async () => {
+    const seen: Seen = { answers: [] };
+    const stop = new AbortController();
+    const settings = { dataFolder: data, codeFolders: { 'club-hr': code } };
+    const d = deps(seen, true, { fail: 'Stopped.' });
+    const make = d.makeAdapter;
+    d.makeAdapter = async (...a) => {
+      const ad = await make(...a);
+      return { ...ad, build: async (t) => { stop.abort(); return ad.build!(t); } };
+    };
+    const call = await plan(d, settings, { signal: stop.signal });
+    expect((await call('build_feature', { settings, slug: 'club-hr', feature: 'F-01', provider: 'claude', apiKey: FAKE_KEY, dbPath: null })).error).toBe('Stopped.');
+    await expect(readFile(join(data, 'tool-health', 'sonnet-5-5.json'), 'utf8')).rejects.toThrow();
   });
 });

@@ -14,6 +14,10 @@ export interface BuildResult {
   summary: string;
   modelName: string;
   costText: string;
+  /** The project's tests after the build and any fix attempts. */
+  tests: { passed: boolean; output: string; fixAttempts: number };
+  /** How the data folder sync went ('' with no data folder). */
+  synced: string;
 }
 
 const plain = (err: unknown) => new Error(err instanceof Error ? err.message : String(err));

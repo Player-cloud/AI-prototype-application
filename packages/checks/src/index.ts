@@ -19,3 +19,5 @@ export function canKeep(results: CheckResult[]): { keep: boolean; blocking: stri
 export function isBigBuild(features: number, touches: { logins?: boolean; payments?: boolean; personalData?: boolean }): boolean {
   return features >= 5 || !!touches.logins || !!touches.payments || !!touches.personalData;
 }
+
+export { KEEP_OUTPUT, packageManager, realExec, runTests, type Exec, type ExecResult } from './tests.js';

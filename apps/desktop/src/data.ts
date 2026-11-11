@@ -55,6 +55,15 @@ export async function rateTool(invoke: Invoke, tool: string, rating: number): Pr
   }
 }
 
+/** Switches a switched-off tool back on; it gets a quick retest next time it's used. */
+export async function switchToolOn(invoke: Invoke, tool: string): Promise<SyncResult> {
+  try {
+    return await invoke<SyncResult>('tool_switch_on', { tool });
+  } catch (err) {
+    throw plain(err);
+  }
+}
+
 export async function syncData(invoke: Invoke): Promise<SyncResult> {
   try {
     return await invoke<SyncResult>('data_sync');

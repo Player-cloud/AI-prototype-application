@@ -3,8 +3,14 @@
  * Using line, then lets the build model (Sonnet for Claude) work in that copy. Every tool call is
  * checked first: it must stay inside the copy, and it goes through the gatekeeper. A run stops at
  * its cost limit (joshua chose £0.80 by default) or what's left of the month's budget.
+ *
+ * Step 8d: after the build the project's own tests run in the copy. If they fail, the model gets
+ * up to 2 fix attempts inside what's left of the run's limit. Each model run goes in the model's
+ * health record; 3 failures in a row switch it off until joshua switches it back on (D-2). The
+ * data folder syncs after the task.
  */
 import { isAbsolute, relative, resolve } from 'node:path';
+import type { CheckResult } from '@aip/checks';
 import type { ModelAdapter, Provider, ToolDecision } from '@aip/models';
 import { readBudget, recordSpend } from './budget.ts';
 import { gate } from './gate.ts';
@@ -20,6 +26,8 @@ export interface BuildDeps {
   pickModel(provider: Provider, job: 'build', settings: AppSettings): Promise<string>;
   modelName(id: string): Promise<string>;
   now?(): Date;
+  /** Runs the project's tests in the copy (8d). Injected for tests; the real one is @aip/checks. */
+  runTests?(dir: string): Promise<CheckResult>;
 }
 
 export interface BuildStep { text: string; refused?: string }
@@ -34,7 +42,12 @@ export interface BuildResult {
   /** What the model said it did. */
   summary: string;
   model: string;
+  /** What every model run in this build cost together. */
   costUsd: number | null;
+  /** The project's tests after the build (and any fix attempts). Tests are never skipped. */
+  tests: { passed: boolean; output: string; fixAttempts: number };
+  /** How the data folder sync went ('' with no data folder). */
+  synced: string;
 }
 
 /** The run's limit in dollars: the Settings limit (in £) or what's left this month, whichever is less. */
@@ -97,6 +110,37 @@ export function checkStep(settings: AppSettings, runPath: string, tool: string, 
   return { allow: false, reason: d.askJoshua ? `${d.reason}. Not done; joshua will be asked later.` : d.reason };
 }
 
+/** How many times a failing test run is handed back to the model to fix (inside the run's limit). */
+export const FIX_ATTEMPTS = 2;
+/** Failures in a row before a tool is switched off (D-2). */
+export const OFF_AFTER = 3;
+/** Less than this left in a run's limit isn't worth a fix attempt. */
+const MIN_FIX_USD = 0.02;
+
+export function fixPrompt(feature: string, attempt: number, testOutput: string): string {
+  return [
+    `The tests fail after building feature ${feature}. This is fix attempt ${attempt} of ${FIX_ATTEMPTS}.`,
+    'Find the cause and fix the code so the tests pass. Never skip, delete or weaken tests to make them pass.',
+    'Stay in this folder. When done, reply with a short plain-words summary of what you fixed.',
+    '',
+    'End of the test output:',
+    testOutput,
+  ].join('\n');
+}
+
+const stopped = (signal?: AbortSignal) => signal?.aborted === true;
+
+/** Commits and syncs the data folder after a task. A failed sync keeps everything saved here. */
+async function syncAfter(settings: AppSettings, message: string): Promise<string> {
+  if (!settings.dataFolder) return '';
+  try {
+    const m = await import('@aip/memory');
+    return (await m.syncDataRepo(settings.dataFolder, message)).summary;
+  } catch (err) {
+    return `Saved here, but not synced yet: ${(err as Error).message}`;
+  }
+}
+
 export async function buildFeature(
   settings: AppSettings,
   p: { slug: string; feature: string; provider: Provider; apiKey: string; dbPath: string | null },
@@ -104,7 +148,7 @@ export async function buildFeature(
   onEvent?: (e: BuildEvent) => void,
   signal?: AbortSignal,
 ): Promise<BuildResult> {
-  if (signal?.aborted) throw new Error('Stopped.');
+  if (stopped(signal)) throw new Error('Stopped.');
   const now = deps.now?.() ?? new Date();
   let leftUsd: number | null = null;
   if (p.dbPath) {
@@ -112,31 +156,102 @@ export async function buildFeature(
     if (b.leftUsd <= 0) throw new Error(`This month’s budget is used up (£${b.spentGbp} of £${b.budgetGbp}). Raise it in Settings, or wait until next month.`);
     leftUsd = b.leftUsd;
   }
-  const adapter = await deps.makeAdapter(p.provider, p.apiKey, settings, runCapUsd(settings, leftUsd));
+  const cap = runCapUsd(settings, leftUsd);
+  const model = await deps.pickModel(p.provider, 'build', settings);
+  const tool = await deps.modelName(model);
+  if (settings.dataFolder) {
+    const m = await import('@aip/memory');
+    const h = await m.readHealth(settings.dataFolder, tool);
+    if (h.off) throw new Error(`${tool} is switched off: ${h.off.reason} Switch it back on in Tools to use it again.`);
+  }
+  const adapter = await deps.makeAdapter(p.provider, p.apiKey, settings, cap);
   if (!adapter.build) throw new Error('Building needs Claude for now. Choose Claude in Settings → Budget and models.');
   const { interview } = await getInterview(settings, p.slug);
   const run = await startRun(settings, p.slug, p.feature, now);
-  const model = await deps.pickModel(p.provider, 'build', settings);
-  const using = usingLine(model, ['file edits', 'shell']);
+  const using = usingLine(model, ['file edits', 'shell', 'tests']);
   onEvent?.({ type: 'using', using, run });
   const steps: BuildStep[] = [];
   const add = (s: BuildStep) => {
     steps.push(s);
     onEvent?.({ type: 'step', ...s });
   };
-  const prompt = buildPrompt(interview, p.feature, specText(interview, new Date(interview.specAt ?? now)));
-  const out = await adapter.build({
+  const task = (prompt: string, a: ModelAdapter) =>
+    a.build!({
+      model,
+      prompt,
+      cwd: run.path,
+      signal,
+      onStep: (text) => add({ text }),
+      async checkTool(name, input) {
+        const d = checkStep(settings, run.path, name, input);
+        if (!d.allow) add({ text: `Refused: ${name}`, refused: d.reason });
+        return d;
+      },
+    });
+
+  let spentUsd = 0;
+  /** One model run: its spend counts, and its success or failure goes in the tool's health record. */
+  const once = async (prompt: string, a: ModelAdapter) => {
+    try {
+      const out = await task(prompt, a);
+      spentUsd += out.usage.costUsd ?? 0;
+      if (p.dbPath) await recordSpend(p.dbPath, { at: now, provider: p.provider, model, job: 'build', ...out.usage });
+      await noteRun(settings, tool, { ok: true }, now);
+      return out.text.trim();
+    } catch (err) {
+      if (stopped(signal)) throw new Error('Stopped.');
+      const off = await noteRun(settings, tool, { ok: false, error: (err as Error).message }, now);
+      const sync = await syncAfter(settings, `Build ${p.slug} ${p.feature}: ${tool} failed`);
+      const more = off ? ` ${tool} has now failed ${OFF_AFTER} times in a row, so it’s switched off. Switch it back on in Tools when you’re ready.` : '';
+      throw new Error(`${(err as Error).message}${more}${sync ? ` (${sync})` : ''}`);
+    }
+  };
+
+  let summary = await once(buildPrompt(interview, p.feature, specText(interview, new Date(interview.specAt ?? now))), adapter);
+
+  const runTests = deps.runTests ?? (await import('@aip/checks')).runTests;
+  add({ text: 'Running tests' });
+  let tests = await runTests(run.path);
+  let fixes = 0;
+  while (!tests.passed && fixes < FIX_ATTEMPTS && !stopped(signal)) {
+    const left = cap - spentUsd;
+    if (left < MIN_FIX_USD) {
+      add({ text: 'No money left in this run’s limit for a fix.' });
+      break;
+    }
+    fixes += 1;
+    add({ text: `Fix attempt ${fixes} of ${FIX_ATTEMPTS}` });
+    const fixer = await deps.makeAdapter(p.provider, p.apiKey, settings, left);
+    const fixed = await once(fixPrompt(p.feature, fixes, tests.detail ?? ''), fixer);
+    if (fixed) summary = `${summary}\n\nFix ${fixes}: ${fixed}`;
+    add({ text: 'Running tests' });
+    tests = await runTests(run.path);
+  }
+  if (stopped(signal)) throw new Error('Stopped.');
+  add({ text: tests.passed ? 'Tests pass' : 'Tests still fail' });
+  const synced = await syncAfter(settings, `Build ${p.slug} ${p.feature}`);
+  return {
+    run,
+    using,
+    steps,
+    summary: summary.slice(0, 2000),
     model,
-    prompt,
-    cwd: run.path,
-    signal,
-    onStep: (text) => add({ text }),
-    async checkTool(tool, input) {
-      const d = checkStep(settings, run.path, tool, input);
-      if (!d.allow) add({ text: `Refused: ${tool}`, refused: d.reason });
-      return d;
-    },
-  });
-  if (p.dbPath) await recordSpend(p.dbPath, { at: now, provider: p.provider, model, job: 'build', ...out.usage });
-  return { run, using, steps, summary: out.text.trim().slice(0, 2000), model, costUsd: out.usage.costUsd };
+    costUsd: spentUsd,
+    tests: { passed: tests.passed, output: tests.detail ?? '', fixAttempts: fixes },
+    synced,
+  };
+}
+
+/**
+ * Records one model run in its health record (only when a data folder is set). Returns true when
+ * this failure switched the tool off: OFF_AFTER failures in a row (D-2). Off never uninstalls.
+ */
+async function noteRun(settings: AppSettings, tool: string, run: { ok: boolean; error?: string }, now: Date): Promise<boolean> {
+  if (!settings.dataFolder) return false;
+  const m = await import('@aip/memory');
+  let h = m.recordRun(await m.readHealth(settings.dataFolder, tool), run, now);
+  const off = !run.ok && !h.off && h.consecutiveFailures >= OFF_AFTER;
+  if (off) h = m.switchOff(h, `${OFF_AFTER} failures in a row (last: ${h.failures.at(-1)?.error ?? 'unknown'}).`, now);
+  await m.writeHealth(settings.dataFolder, h);
+  return off;
 }
