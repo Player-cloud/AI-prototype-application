@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { checkAction } from '../src/index.js';
+import { checkAction, protectRules, type Rule } from '../src/index.js';
 
 describe('checkAction', () => {
   it('allows ordinary commands', () => {
@@ -22,5 +22,26 @@ describe('checkAction', () => {
       expect(d.allow, command).toBe(false);
       if (!d.allow) expect(d.askJoshua, command).toBe(true);
     }
+  });
+});
+
+describe('protect-rules guard', () => {
+  it('never lets the agent change this package or the app’s settings, even with other rules passed in', () => {
+    const none: Rule[] = [];
+    for (const [tool, input] of [
+      ['Edit', { file_path: 'packages/gatekeeper/src/index.ts' }],
+      ['Write', { file_path: 'C:\\Users\\me\\AppData\\Roaming\\app.aiprototype.desktop\\settings.json' }],
+      ['Bash', { command: "sed -i 's/push/x/' packages/gatekeeper/src/index.ts" }],
+      ['PowerShell', { command: 'Remove-Item packages\\gatekeeper -Recurse' }],
+    ] as const) {
+      const d = checkAction(tool, input, none);
+      expect(d, tool).toEqual({ allow: false, reason: 'Gatekeeper (protect-rules): the agent may never change the ask-first rules or the app’s settings', askJoshua: false });
+    }
+  });
+
+  it('lets the agent read the rules, and update rules.md (joshua’s choice, with history and undo)', () => {
+    expect(protectRules('Read', { file_path: 'packages/gatekeeper/src/index.ts' })).toEqual({ allow: true });
+    expect(protectRules('Bash', { command: 'cat packages/gatekeeper/src/index.ts' })).toEqual({ allow: true });
+    expect(protectRules('Edit', { file_path: 'ai-prototype-data/rules.md' })).toEqual({ allow: true });
   });
 });

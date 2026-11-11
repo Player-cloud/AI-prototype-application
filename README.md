@@ -17,7 +17,7 @@ A desktop app (Windows and Linux) where you describe a web app, it plans it with
 
 ## Ask-first rules
 
-Every risky step goes through the engine's `gate`. It uses the rules in `packages/gatekeeper` unchanged, adds a guard so the agent can never edit those rules or the settings file, and adds your own rules from Settings → Ask-first rules (words to watch for, and why). Only you can add or remove your own rules.
+Every risky step goes through the engine's `gate`, which asks `packages/gatekeeper`. The gatekeeper is the one authority: its guard always runs first, so the agent can never change the gatekeeper package or the app's settings, even with an OK. Then come its ask-first rules, then your own from Settings → Ask-first rules (words to watch for, and why). The app may update `rules.md` itself and tell you, with history and undo. Only you can add or remove your own rules.
 
 ## Plan interview
 

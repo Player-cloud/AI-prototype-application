@@ -56,7 +56,7 @@ export interface RuleView {
   id: string;
   reason: string;
   kind: 'never' | 'ask';
-  source: 'gatekeeper' | 'app' | 'yours';
+  source: 'gatekeeper' | 'yours';
   match?: string;
 }
 
