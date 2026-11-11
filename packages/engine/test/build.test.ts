@@ -176,6 +176,9 @@ describe('build_feature', () => {
     expect(out.run).toMatchObject({ feature: 'F-01', branch: 'aip/f-01-20261111-170000' });
     expect(out.summary).toBe('Added the login page. Tests pass.');
     expect(out.costText).toBe('£0.33 ($0.42)');
+    // It needs joshua now: a work item, not posted without a GitHub token (step 10b).
+    expect(out.phone).toBe('Not sent to your phone: add a GitHub token in Settings for that.');
+    expect((await call('work_list', { dbPath })).result).toMatchObject([{ runId: out.runId, title: 'club-hr F-01: built, waiting for Keep or Undo' }]);
     expect(seen.maxUsd).toBeCloseTo(0.8 / 0.79);
 
     // The model worked in the copy, was told the spec, and its bad steps were refused.

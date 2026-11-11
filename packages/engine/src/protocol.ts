@@ -40,6 +40,10 @@
  *  - run_rate: {dbPath, id, rating, settings?} -> joshua's 1–5 rating for a build.
  *    run_keep, run_undo and run_rate also return `learned`: plain notes when the app added, updated
  *    or dropped a habit in habits.md from the evidence (step 9d). Undoable from History.
+ *  - build_feature, run_keep and run_undo also take `githubToken` (optional) and return `phone`: a
+ *    plain note on the phone message. A finished build becomes a work item (and, with a token, an
+ *    issue on the data repo); Keep or Undo closes both (step 10b).
+ *  - work_list: {dbPath} -> open work items for the "Needs you" panel, oldest first.
  *  - github_check: {token, settings} -> {ok, summary}. Free: reads the data repo's issues with the
  *    GitHub token from the password store (step 10a). The token is never put in a reply.
  *  - tool_switch_on: {settings, tool} -> switches a switched-off tool back on (retested on next use)
@@ -62,6 +66,7 @@ import { DEFAULT_SETTINGS, checkSettings, type AppSettings } from './settings.ts
 import { keepRun, listRuns, rateRun, undoRun } from './keep.ts';
 import { learnNow } from './learn.ts';
 import { githubCheck } from './github.ts';
+import { closeBuild, listWork, postBuild } from './notify.ts';
 import { dataOverview, rateAndSync, switchToolOn, syncAfterUndo, syncNow } from './data.ts';
 import { historyList, settingsSaved, undoStart } from './history.ts';
 import { parseSuggestions, suggestPrompt } from './suggest.ts';
@@ -130,6 +135,11 @@ export const COST_UNKNOWN = 'cost unknown (add this model’s price in Settings)
 export function costText(usd: number | null, gbpPerUsd = GBP_PER_USD): string {
   if (usd === null) return COST_UNKNOWN;
   return usd * gbpPerUsd < 0.005 ? 'under £0.01 (under $0.01)' : formatCost(usd, gbpPerUsd);
+}
+
+/** The GitHub token for phone messages, when one is saved (step 10). Never put in a reply. */
+function token(p: Record<string, unknown>): string | undefined {
+  return typeof p.githubToken === 'string' && p.githubToken !== '' ? p.githubToken : undefined;
 }
 
 function str(params: Record<string, unknown>, key: string): string {
@@ -326,7 +336,31 @@ const HANDLERS: Record<string, Handler> = {
       (e) => live.emit?.(e),
       live.signal,
     );
-    return { ...r, modelName: await deps.modelName(r.model), costText: costText(r.costUsd, settings.gbpPerUsd) };
+    const cost = costText(r.costUsd, settings.gbpPerUsd);
+    const dbPath = optionalPath(p, 'dbPath');
+    const phone =
+      dbPath && r.runId !== null
+        ? await postBuild(
+            settings,
+            dbPath,
+            r.runId,
+            {
+              slug: str(p, 'slug'),
+              feature: str(p, 'feature'),
+              testsPassed: r.tests.passed,
+              fixAttempts: r.tests.fixAttempts,
+              blocking: r.keep.blocking,
+              advice: r.checks.filter((c) => !c.passed && c.advisory).map((c) => c.name),
+              costText: cost,
+              screensChanged: r.screensChanged,
+              summary: r.summary,
+            },
+            token(p),
+            deps.now?.() ?? new Date(),
+            deps.fetch,
+          )
+        : '';
+    return { ...r, modelName: await deps.modelName(r.model), costText: cost, phone };
   },
   code_folder_check: (params) => {
     const p = obj(params);
@@ -355,14 +389,16 @@ const HANDLERS: Record<string, Handler> = {
     const settings = checkSettings(p.settings);
     const now = deps.now?.() ?? new Date();
     const r = await keepRun(settings, str(p, 'dbPath'), runId(p), now);
-    return { ...r, learned: await learnNow(settings, str(p, 'dbPath'), (id) => deps.modelName(id), now) };
+    const phone = await closeBuild(settings, str(p, 'dbPath'), r.run.id, r.note, token(p), now, deps.fetch);
+    return { ...r, phone, learned: await learnNow(settings, str(p, 'dbPath'), (id) => deps.modelName(id), now) };
   },
   run_undo: async (params, deps) => {
     const p = obj(params);
     const settings = checkSettings(p.settings);
     const now = deps.now?.() ?? new Date();
     const r = await undoRun(settings, str(p, 'dbPath'), runId(p), now);
-    return { ...r, learned: await learnNow(settings, str(p, 'dbPath'), (id) => deps.modelName(id), now) };
+    const phone = await closeBuild(settings, str(p, 'dbPath'), r.run.id, r.note, token(p), now, deps.fetch);
+    return { ...r, phone, learned: await learnNow(settings, str(p, 'dbPath'), (id) => deps.modelName(id), now) };
   },
   run_rate: async (params, deps) => {
     const p = obj(params);
@@ -371,6 +407,7 @@ const HANDLERS: Record<string, Handler> = {
     const settings = checkSettings(p.settings ?? {});
     return { run, learned: await learnNow(settings, str(p, 'dbPath'), (id) => deps.modelName(id), deps.now?.() ?? new Date()) };
   },
+  work_list: (params) => listWork(str(obj(params), 'dbPath')),
   github_check: (params, deps) => {
     const p = obj(params);
     return githubCheck(str(p, 'token'), checkSettings(p.settings), deps.fetch);

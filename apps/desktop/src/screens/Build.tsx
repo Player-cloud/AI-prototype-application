@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import type { Invoke } from '../engine';
 import { listProjects, openProject, type Feature, type ProjectRow } from '../projects';
 import { getSettings } from '../settings';
-import { CHECK_NAME, decideRun, keepable, listRuns, rateRun, startBuild, stopBuild, type BuildResult, type BuildRun, type BuildStep, type MakeChannel } from '../build';
+import { CHECK_NAME, decideRun, keepable, listRuns, listWork, rateRun, startBuild, stopBuild, type BuildResult, type BuildRun, type BuildStep, type MakeChannel, type WorkItem } from '../build';
 
 type Note = { text: string; bad: boolean } | null;
 
@@ -28,6 +28,7 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
   const [runs, setRuns] = useState<BuildRun[]>([]);
   const [busy, setBusy] = useState(false);
   const [learned, setLearned] = useState<string[]>([]);
+  const [work, setWork] = useState<WorkItem[]>([]);
 
   useEffect(() => {
     if (!invoke) return;
@@ -40,6 +41,9 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
         setLimit(limitText(s.runCapGbp ?? 0.8, s.gbpPerUsd));
         if (done[0]) setSlug(done[0].slug);
       })
+      .catch((err: Error) => live && setNote({ text: err.message, bad: true }));
+    listWork(invoke)
+      .then((w) => live && setWork(w))
       .catch((err: Error) => live && setNote({ text: err.message, bad: true }));
     return () => {
       live = false;
@@ -86,6 +90,7 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
       });
       setResult(r);
       setRuns(await listRuns(invoke, slug));
+      setWork(await listWork(invoke));
       setUsing(r.using);
       setSteps(r.steps);
       setNote(
@@ -110,6 +115,7 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
     try {
       const { text, learned } = await job();
       setRuns(await listRuns(invoke, slug));
+      setWork(await listWork(invoke));
       setNote({ text, bad: false });
       setLearned(learned);
     } catch (err) {
@@ -122,7 +128,7 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
   const decide = (r: BuildRun, keep: boolean) =>
     act(keep ? `Keeping ${r.feature}…` : `Undoing ${r.feature}…`, async () => {
       const d = await decideRun(invoke!, r.id, keep);
-      return { text: d.note, learned: d.learned };
+      return { text: d.phone ? `${d.note} ${d.phone}` : d.note, learned: d.learned };
     });
   const rate = (r: BuildRun, n: number) =>
     act(`Saving ${n}/5…`, async () => ({ text: `Rated ${r.feature} ${n}/5.`, learned: (await rateRun(invoke!, r.id, n)).learned }));
@@ -146,6 +152,19 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
 
   return (
     <section className="card build">
+      {work.length > 0 && (
+        <div className="needs-you" role="region" aria-label="Needs you">
+          <h3>Needs you ({work.length})</h3>
+          <ul>
+            {work.map((w) => (
+              <li key={w.id}>
+                {w.title}
+                <span className="muted"> · {w.issue ? `on your phone as issue #${w.issue}` : 'not on your phone'}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       {projects && projects.length === 0 && (
         <p className="muted">No finished plans yet. Finish a project’s plan interview first, then set its code folder.</p>
       )}
@@ -231,6 +250,7 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
             </>
           )}
           {result.synced && <p className="muted">Data folder: {result.synced}</p>}
+          {result.phone && <p className="muted">Phone: {result.phone}</p>}
         </div>
       )}
       {runs.length > 0 && (

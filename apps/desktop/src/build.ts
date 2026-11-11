@@ -29,6 +29,8 @@ export interface BuildResult {
   pictures: { name: string; path: string; dataUrl: string }[];
   screensChanged: boolean | null;
   picturesNote: string;
+  /** How the phone message went (step 10b). */
+  phone: string;
 }
 
 /** A saved feature build (step 9a). */
@@ -58,7 +60,7 @@ export function keepable(r: BuildRun): boolean {
 export const CHECK_NAME: Record<string, string> = { secrets: 'Secret scan', audit: 'Package audit', checklist: 'Checklist rules', axe: 'Accessibility', 'phone-overflow': 'Phone width', pictures: 'Pictures' };
 
 /** After Keep, Undo or a rating: what happened, and any habit the app learned (step 9d). */
-export interface Decided { run: BuildRun; note: string; learned: string[] }
+export interface Decided { run: BuildRun; note: string; learned: string[]; phone: string }
 export interface Rated { run: BuildRun; learned: string[] }
 
 const plain = (err: unknown) => new Error(err instanceof Error ? err.message : String(err));
@@ -108,6 +110,26 @@ export async function decideRun(invoke: Invoke, id: number, keep: boolean): Prom
 export async function rateRun(invoke: Invoke, id: number, rating: number): Promise<Rated> {
   try {
     return await invoke<Rated>('run_rate', { id, rating });
+  } catch (err) {
+    throw plain(err);
+  }
+}
+
+/** Something that needs joshua (step 10b), with its GitHub issue when it was posted. */
+export interface WorkItem {
+  id: number;
+  at: string;
+  kind: 'build';
+  runId: number;
+  title: string;
+  issue: number;
+  issueUrl: string;
+}
+
+/** The "Needs you" panel: open items, oldest first. */
+export async function listWork(invoke: Invoke): Promise<WorkItem[]> {
+  try {
+    return await invoke<WorkItem[]>('work_list');
   } catch (err) {
     throw plain(err);
   }
