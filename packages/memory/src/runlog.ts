@@ -7,8 +7,40 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
-/** 'built': waiting for Keep or Undo. */
-export type RunStatus = 'built' | 'kept' | 'undone';
+/**
+ * 'running': the build is going now (its row is added at the start, and its id is the build ID).
+ * 'built': finished, waiting for Keep or Undo. 'kept' / 'undone': joshua decided.
+ * 'failed': it threw (model error, cost limit, crash...), see `cause`. 'stopped': joshua pressed Stop.
+ * 'interrupted': the app closed while it was running, so nobody knows how it ended.
+ * Only 'built' can be kept; failed, stopped and interrupted builds stay as a record.
+ */
+export type RunStatus = 'running' | 'built' | 'kept' | 'undone' | 'failed' | 'stopped' | 'interrupted';
+
+/** Why a build failed. Same words as the tools' health records (kept here so memory stays one piece). */
+export type RunCause = 'model' | 'tool' | 'budget' | 'network' | 'provider' | 'setup' | 'stopped' | 'unknown';
+
+/** The row written when a build starts: the build ID is the row's id. */
+export interface StartedRun {
+  at: Date;
+  slug: string;
+  feature: string;
+  path: string;
+  branch: string;
+  base: string;
+  model: string;
+}
+
+/** A build that threw: why, in plain words, and what it cost so far. */
+export interface RunFailure {
+  status: 'failed' | 'stopped';
+  /** Only for 'failed'; a stop has no cause. */
+  cause?: RunCause;
+  /** The plain message. Messages are already cleaned of keys before they get here. */
+  error: string;
+  costUsd: number | null;
+  ms: number | null;
+  at: Date;
+}
 
 /** A picture of the build (step 9c): where it is and its hash, to spot changed screens. */
 export interface RunPicture { name: string; path: string; hash: string }
@@ -40,6 +72,12 @@ export interface NewRun {
 
 export interface Run extends Omit<NewRun, 'at' | 'checks' | 'pictures' | 'ms'> {
   id: number;
+  /** Why it failed; null unless status is 'failed'. */
+  cause: RunCause | null;
+  /** The plain message of a failed, stopped or interrupted build; '' otherwise. */
+  error: string;
+  /** When a failed, stopped or interrupted build ended; null for the rest. */
+  endedAt: string | null;
   ms: number | null;
   checks: RunCheck[];
   pictures: RunPicture[];
@@ -77,6 +115,9 @@ interface Row {
   checks: string;
   pictures: string;
   ms: number | null;
+  cause: RunCause | null;
+  error: string;
+  ended_at: string | null;
 }
 
 function parseList<T>(raw: string): T[] {
@@ -110,11 +151,17 @@ function toRun(r: Row): Run {
     checks: parseList<RunCheck>(r.checks),
     pictures: parseList<RunPicture>(r.pictures),
     ms: r.ms ?? null,
+    cause: r.cause ?? null,
+    error: r.error ?? '',
+    endedAt: r.ended_at ?? null,
   };
 }
 
+/** Builds started by this running program, as "file#id". Any other 'running' row is left over. */
+const LIVE = new Set<string>();
+
 export class RunLog {
-  private constructor(private readonly db: DatabaseSync) {}
+  private constructor(private readonly db: DatabaseSync, private readonly path: string) {}
 
   /** Opens (or creates) the history file. ':memory:' works for tests. */
   static open(path: string): RunLog {
@@ -149,7 +196,72 @@ export class RunLog {
     }
     // ...and files made before CI-4 lack the build time.
     if (!cols.includes('ms')) db.exec('ALTER TABLE runs ADD COLUMN ms INTEGER');
-    return new RunLog(db);
+    // ...and files made before run records lack the cause, the error and the end time.
+    if (!cols.includes('cause')) db.exec('ALTER TABLE runs ADD COLUMN cause TEXT');
+    if (!cols.includes('error')) db.exec("ALTER TABLE runs ADD COLUMN error TEXT NOT NULL DEFAULT ''");
+    if (!cols.includes('ended_at')) db.exec('ALTER TABLE runs ADD COLUMN ended_at TEXT');
+    const log = new RunLog(db, path);
+    log.sweepInterrupted();
+    return log;
+  }
+
+  private key(id: number): string {
+    return `${this.path}#${id}`;
+  }
+
+  /**
+   * A row still 'running' that this program didn't start is a build the app was closed (or crashed)
+   * during. It becomes 'interrupted'. Done whenever the file is opened, so lists never show it as running.
+   */
+  private sweepInterrupted(): void {
+    const rows = this.db.prepare("SELECT id FROM runs WHERE status = 'running'").all() as { id: number }[];
+    const now = new Date().toISOString();
+    for (const { id } of rows) {
+      if (LIVE.has(this.key(id))) continue;
+      this.db
+        .prepare("UPDATE runs SET status = 'interrupted', error = ?, ended_at = ? WHERE id = ? AND status = 'running'")
+        .run('The app was closed while this build was running.', now, id);
+    }
+  }
+
+  private prune(): void {
+    // Only decided or ended runs are dropped; one waiting for Keep or Undo, or still running, is never lost.
+    this.db
+      .prepare("DELETE FROM runs WHERE status NOT IN ('built', 'running') AND id NOT IN (SELECT id FROM runs ORDER BY id DESC LIMIT ?)")
+      .run(KEEP_RUNS);
+  }
+
+  /** Adds the row at the start of a build. Its id is the build ID that its spend rows carry too. */
+  start(r: StartedRun): number {
+    const res = this.db
+      .prepare("INSERT INTO runs (at, slug, feature, path, branch, base, model, tests_passed, fix_attempts, summary, status) VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, '', 'running')")
+      .run(r.at.toISOString(), r.slug, r.feature, r.path, r.branch, r.base, r.model);
+    const id = Number(res.lastInsertRowid);
+    LIVE.add(this.key(id));
+    this.prune();
+    return id;
+  }
+
+  /** The build finished normally: the same row gets everything and waits for Keep or Undo. */
+  finish(id: number, r: Pick<NewRun, 'costUsd' | 'testsPassed' | 'fixAttempts' | 'summary' | 'checks' | 'pictures' | 'ms'>): void {
+    const res = this.db
+      .prepare("UPDATE runs SET cost_usd = ?, tests_passed = ?, fix_attempts = ?, summary = ?, checks = ?, pictures = ?, ms = ?, status = 'built' WHERE id = ? AND status = 'running'")
+      .run(r.costUsd, r.testsPassed ? 1 : 0, r.fixAttempts, r.summary, JSON.stringify(r.checks ?? []), JSON.stringify(r.pictures ?? []), r.ms ?? null, id);
+    LIVE.delete(this.key(id));
+    if (Number(res.changes) !== 1) throw new Error('That build isn’t running.');
+  }
+
+  /** The build threw or was stopped: the same row says why, with the cost so far. */
+  fail(id: number, f: RunFailure): void {
+    this.db
+      .prepare("UPDATE runs SET status = ?, cause = ?, error = ?, cost_usd = ?, ms = ?, ended_at = ? WHERE id = ? AND status = 'running'")
+      .run(f.status, f.status === 'failed' ? (f.cause ?? 'unknown') : null, f.error, f.costUsd, f.ms, f.at.toISOString(), id);
+    LIVE.delete(this.key(id));
+  }
+
+  /** The build's copy of the code was removed (Undo of a failed, stopped or interrupted build). */
+  markCleaned(id: number, at: Date): void {
+    this.db.prepare("UPDATE runs SET decided_at = ? WHERE id = ? AND status IN ('failed', 'stopped', 'interrupted')").run(at.toISOString(), id);
   }
 
   add(r: NewRun): number {
@@ -158,10 +270,7 @@ export class RunLog {
         'INSERT INTO runs (at, slug, feature, path, branch, base, model, cost_usd, tests_passed, fix_attempts, summary, checks, pictures, ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       )
       .run(r.at.toISOString(), r.slug, r.feature, r.path, r.branch, r.base, r.model, r.costUsd, r.testsPassed ? 1 : 0, r.fixAttempts, r.summary, JSON.stringify(r.checks ?? []), JSON.stringify(r.pictures ?? []), r.ms ?? null);
-    // Only finished runs are dropped; one waiting for Keep or Undo is never lost.
-    this.db
-      .prepare("DELETE FROM runs WHERE status != 'built' AND id NOT IN (SELECT id FROM runs ORDER BY id DESC LIMIT ?)")
-      .run(KEEP_RUNS);
+    this.prune();
     return Number(res.lastInsertRowid);
   }
 
@@ -197,7 +306,8 @@ export class RunLog {
   /** joshua's 1–5 rating; can be changed. */
   rate(id: number, rating: number): void {
     if (!Number.isInteger(rating) || rating < 1 || rating > 5) throw new Error('Rating must be a whole number from 1 to 5');
-    const res = this.db.prepare('UPDATE runs SET rating = ? WHERE id = ?').run(rating, id);
+    // A build that failed, stopped or is still going has nothing to rate.
+    const res = this.db.prepare("UPDATE runs SET rating = ? WHERE id = ? AND status IN ('built', 'kept', 'undone')").run(rating, id);
     if (Number(res.changes) !== 1) throw new Error('There’s no such build.');
   }
 

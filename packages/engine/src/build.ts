@@ -319,6 +319,10 @@ export async function buildFeature(
   if (!adapter.build) throw new Error('Building needs Claude for now. Choose Claude in Settings → Budget and models.');
   const { interview } = await getInterview(settings, p.slug);
   const run = await startRun(settings, p.slug, p.feature, now);
+  // Run records: the row is added now, so a build that throws still leaves a record. Its id is the build ID.
+  const buildId = await startRecord(p.dbPath, { at: now, slug: p.slug, feature: p.feature, path: run.path, branch: run.branch, base: run.base, model });
+  let spentUsd = 0;
+  let failCause: FailureCause | null = null;
   const using = usingLine(model, ['file edits', 'shell', 'tests']);
   let advice: string[] = [];
   try {
@@ -326,13 +330,17 @@ export async function buildFeature(
   } catch {
     // The evidence is advice; a build never stops for it.
   }
-  onEvent?.({ type: 'using', using, run, advice });
-  const watch = deps.live === undefined ? (await import('@aip/checks')).watchLive : deps.live;
-  const live = watch ? watch(run.path, (s) => onEvent?.({ type: 'live', ...s })) : null;
+  let live: { stop(): Promise<void> } | null = null;
   let sandbox: { home: string; pnpmStore?: string } | undefined;
   try {
+    onEvent?.({ type: 'using', using, run, advice });
+    const watch = deps.live === undefined ? (await import('@aip/checks')).watchLive : deps.live;
+    live = watch ? watch(run.path, (s) => onEvent?.({ type: 'live', ...s })) : null;
     sandbox = await (deps.sandboxHome ?? makeSandboxHome)(run.branch);
     return await afterStart();
+  } catch (err) {
+    await failRecord(p.dbPath, buildId, err, failCause, spentUsd, now, (deps.now?.() ?? new Date()), stopped(signal));
+    throw err;
   } finally {
     await live?.stop();
     if (sandbox) {
@@ -367,19 +375,19 @@ export async function buildFeature(
         },
       });
 
-    let spentUsd = 0;
     /** One model run: its spend counts, and its success or failure goes in the tool's health record. */
     const once = async (prompt: string, a: ModelAdapter) => {
       try {
         const out = await task(prompt, a);
         spentUsd += out.usage.costUsd ?? 0;
-        if (p.dbPath) await recordSpend(p.dbPath, { at: now, provider: p.provider, model, job: 'build', ...out.usage });
+        if (p.dbPath) await recordSpend(p.dbPath, { at: now, provider: p.provider, model, job: 'build', ...out.usage, buildId });
         await noteRun(settings, runInfo, { ok: true }, now);
         return out.text.trim();
       } catch (err) {
         if (stopped(signal)) throw new Error('Stopped.');
         // Q-3: only the model's own fault counts towards switching it off.
         const cause: FailureCause = failureCause((err as Error).message);
+        failCause = cause;
         const off = await noteRun(settings, runInfo, { ok: false, error: (err as Error).message, cause }, now);
         const notCounted = cause === 'model' ? '' : ` Not counted against ${tool}: ${(await import('@aip/memory')).causeWords(cause)}.`;
         const sync = await syncAfter(settings, `Build ${p.slug} ${p.feature}: ${tool} failed`);
@@ -452,19 +460,11 @@ export async function buildFeature(
     const { canKeep } = await import('@aip/checks');
     const keep = canKeep([{ ...tests, name: 'tests' }, ...checks]);
     const synced = await syncAfter(settings, `Build ${p.slug} ${p.feature}`);
-    let runId: number | null = null;
-    if (p.dbPath) {
+    if (p.dbPath && buildId !== null) {
       const m = await import('@aip/memory');
       const log = m.RunLog.open(p.dbPath);
       try {
-        runId = log.add({
-          at: now,
-          slug: p.slug,
-          feature: p.feature,
-          path: run.path,
-          branch: run.branch,
-          base: run.base,
-          model,
+        log.finish(buildId, {
           costUsd: spentUsd,
           testsPassed: tests.passed,
           fixAttempts: fixes,
@@ -478,7 +478,7 @@ export async function buildFeature(
       }
     }
     return {
-      runId,
+      runId: buildId,
       run,
       using,
       advice,
@@ -498,6 +498,46 @@ export async function buildFeature(
       screensChanged: shots.changed,
       picturesNote: shots.note,
     };
+  }
+}
+
+/** Adds the build's row (status 'running'). Null without a history file. */
+async function startRecord(dbPath: string | null, r: import('@aip/memory').StartedRun): Promise<number | null> {
+  if (!dbPath) return null;
+  const m = await import('@aip/memory');
+  const log = m.RunLog.open(dbPath);
+  try {
+    return log.start(r);
+  } finally {
+    log.close();
+  }
+}
+
+/**
+ * The build threw: its row says 'stopped' (joshua pressed Stop) or 'failed' with the cause, the plain
+ * message and the cost so far. Never throws itself: a problem with the history file must not hide the real error.
+ */
+async function failRecord(dbPath: string | null, id: number | null, err: unknown, cause: FailureCause | null, costUsd: number, startedAt: Date, endedAt: Date, userStopped: boolean): Promise<void> {
+  if (!dbPath || id === null) return;
+  try {
+    const m = await import('@aip/memory');
+    const error = err instanceof Error ? err.message : String(err);
+    const stoppedByUser = userStopped || error.trim() === 'Stopped.';
+    const log = m.RunLog.open(dbPath);
+    try {
+      log.fail(id, {
+        status: stoppedByUser ? 'stopped' : 'failed',
+        cause: cause ?? failureCause(error),
+        error,
+        costUsd,
+        ms: Math.max(0, endedAt.getTime() - startedAt.getTime()),
+        at: endedAt,
+      });
+    } finally {
+      log.close();
+    }
+  } catch {
+    // Best effort.
   }
 }
 

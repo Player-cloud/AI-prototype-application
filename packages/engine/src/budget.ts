@@ -68,7 +68,7 @@ export async function readBudget(dbPath: string, settings: AppSettings, now: Dat
 
 export async function recordSpend(
   dbPath: string,
-  r: { at: Date; provider: string; model: string; job: string; inputTokens: number; outputTokens: number; costUsd: number | null },
+  r: { at: Date; provider: string; model: string; job: string; inputTokens: number; outputTokens: number; costUsd: number | null; buildId?: number | null },
 ): Promise<void> {
   const m = await import('@aip/memory');
   const log = m.SpendLog.open(dbPath);

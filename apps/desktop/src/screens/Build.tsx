@@ -2,11 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import type { Invoke } from '../engine';
 import { listProjects, openProject, type Feature, type ProjectRow } from '../projects';
 import { getSettings } from '../settings';
-import { CHECK_NAME, approvePackages, compareWorkflows, decideAsk, decideRun, keepable, listAsks, listRuns, listWork, needsPackageOk, pollPhone, rateRun, startBuild, stopBuild, type BuildResult, type BuildRun, type AskRequest, type BuildStep, type LiveView, type MakeChannel, type WorkItem, type WorkflowRow } from '../build';
+import { CHECK_NAME, approvePackages, costSoFar, endedWords, endedEarly, compareWorkflows, decideAsk, decideRun, keepable, listAsks, listRuns, listWork, needsPackageOk, pollPhone, rateRun, startBuild, stopBuild, type BuildResult, type BuildRun, type AskRequest, type BuildStep, type LiveView, type MakeChannel, type WorkItem, type WorkflowRow } from '../build';
 
 type Note = { text: string; bad: boolean } | null;
 
-const STATUS: Record<BuildRun['status'], string> = { built: 'waiting for Keep or Undo', kept: 'kept', undone: 'undone' };
+const STATUS: Record<BuildRun['status'], string> = { built: 'waiting for Keep or Undo', kept: 'kept', undone: 'undone', running: 'running', failed: 'failed', stopped: 'stopped', interrupted: 'interrupted' };
 
 /** How often the screen refreshes Builds and Needs you, to show what was done from the phone. */
 const REFRESH_MS = 30_000;
@@ -69,6 +69,7 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
   const [note, setNote] = useState<Note>(null);
   const [runs, setRuns] = useState<BuildRun[]>([]);
   const [busy, setBusy] = useState(false);
+  const [gbpPerUsd, setGbpPerUsd] = useState(0.79);
   const [learned, setLearned] = useState<string[]>([]);
   const [work, setWork] = useState<WorkItem[]>([]);
   const [asks, setAsks] = useState<AskRequest[]>([]);
@@ -85,6 +86,7 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
         const done = rows.filter((r) => r.finished);
         setProjects(done);
         setLimit(limitText(s.runCapGbp ?? 0.8, s.gbpPerUsd));
+        setGbpPerUsd(s.gbpPerUsd);
         if (done[0]) setSlug(done[0].slug);
       })
       .catch((err: Error) => live && setNote({ text: err.message, bad: true }));
@@ -194,6 +196,8 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
       );
     } catch (err) {
       setNote({ text: (err as Error).message, bad: true });
+      // A build that failed or was stopped still left a record: show it.
+      setRuns(await listRuns(invoke, slug).catch(() => runs));
     } finally {
       setRunning(false);
     }
@@ -423,9 +427,19 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
               <li key={r.id} className={`run-row ${r.status}`}>
                 <span className="run-name">
                   {r.feature} · {new Date(r.at).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })} ·{' '}
-                  {!r.testsPassed ? 'tests fail' : keepable(r) ? 'tests and checks pass' : 'a check failed'} · {STATUS[r.status]}
+                  {endedEarly(r) || r.status === 'running'
+                    ? `${endedWords(r)} · cost so far ${costSoFar(r.costUsd, gbpPerUsd)}`
+                    : `${!r.testsPassed ? 'tests fail' : keepable(r) ? 'tests and checks pass' : 'a check failed'} · ${STATUS[r.status]}`}
                   {r.status === 'kept' && r.keptInto ? ` into ${r.keptInto}` : ''}
+                  {endedEarly(r) && r.error && r.status !== 'stopped' ? <span className="muted"> ({r.error})</span> : null}
                 </span>
+                {endedEarly(r) && !r.decidedAt && (
+                  <span className="run-actions">
+                    <button type="button" disabled={busy || running} onClick={() => void decide(r, false)} aria-label={`Clear the copy of ${r.feature} build ${r.id}`}>
+                      Remove its copy
+                    </button>
+                  </span>
+                )}
                 {r.status === 'built' && (
                   <span className="run-actions">
                     {needsPackageOk(r) && (
@@ -441,7 +455,7 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
                     </button>
                   </span>
                 )}
-                {r.status !== 'undone' && (
+                {(r.status === 'built' || r.status === 'kept') && (
                   <span className="rating" role="group" aria-label={`Rate ${r.feature} build ${r.id}`}>
                     {[1, 2, 3, 4, 5].map((n) => (
                       <button key={n} type="button" disabled={busy} aria-pressed={r.rating === n} onClick={() => void rate(r, n)}>
