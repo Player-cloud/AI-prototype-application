@@ -130,6 +130,16 @@ export function runCapUsd(settings: AppSettings, leftUsd: number | null): number
   return leftUsd === null ? cap : Math.min(cap, leftUsd);
 }
 
+/** Files this feature touched in earlier kept builds (the project map), as a short hint. Never fails a build. */
+async function featureHint(settings: AppSettings, slug: string, feature: string): Promise<string> {
+  try {
+    const { readMap, mapHint } = await import('./project-map.ts');
+    return settings.dataFolder ? mapHint((await readMap(settings, slug)).features[feature]) : '';
+  } catch {
+    return '';
+  }
+}
+
 export function buildPrompt(iv: Interview, feature: string, spec: string): string {
   const f = iv.features.find((x) => x.id === feature);
   return [
@@ -397,7 +407,7 @@ export async function buildFeature(
     };
 
     const prompt =
-      buildPrompt(interview, p.feature, specText(interview, new Date(interview.specAt ?? now))) + (await answersFor(settings, p.slug)) + (await projectGuidance(settings, p.slug)) + (await guidance(settings, rulesFirst));
+      buildPrompt(interview, p.feature, specText(interview, new Date(interview.specAt ?? now))) + (await answersFor(settings, p.slug)) + (await projectGuidance(settings, p.slug)) + (await featureHint(settings, p.slug, p.feature)) + (await guidance(settings, rulesFirst));
     let summary = await once(prompt, adapter);
 
     const runTests = deps.runTests ?? (await import('@aip/checks')).runTests;
