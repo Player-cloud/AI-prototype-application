@@ -2,6 +2,8 @@
  * Step 8d: runs a project's own tests in a build's copy of the code. Uses the package manager the
  * project uses (from its lock file), installs packages first if the copy has none, and keeps the
  * end of the output for the report and for fix attempts. Tests must pass; they're never skipped.
+ * The install never runs the packages' own scripts (--ignore-scripts): a package the build added
+ * could otherwise run anything on joshua's PC. The tests themselves still run as normal.
  */
 import { execFile } from 'node:child_process';
 import { access, readFile } from 'node:fs/promises';
@@ -10,6 +12,9 @@ import type { CheckResult } from './index.js';
 
 export interface ExecResult { code: number; output: string }
 export type Exec = (cmd: string, args: string[], cwd: string, timeoutMs: number) => Promise<ExecResult>;
+
+/** The install arguments: the same for pnpm, npm and yarn. No package scripts run. */
+export const INSTALL_ARGS = ['install', '--ignore-scripts'];
 
 /** Longest output kept (the end of it, where test runners put their summary). */
 export const KEEP_OUTPUT = 3000;
@@ -69,7 +74,7 @@ export async function runTests(dir: string, exec: Exec = realExec): Promise<Chec
   if (!pkg.scripts?.test) return { name: 'tests', passed: false, free: true, detail: 'package.json has no "test" script. Add tests and a test script.' };
   const pm = await packageManager(dir);
   if (!(await exists(join(dir, 'node_modules')))) {
-    const install = await exec(pm, ['install'], dir, TEN_MINUTES);
+    const install = await exec(pm, INSTALL_ARGS, dir, TEN_MINUTES);
     if (install.code !== 0) return { name: 'tests', passed: false, free: true, detail: `Installing packages failed:\n${tail(install.output)}` };
   }
   const r = await exec(pm, ['test'], dir, TEN_MINUTES);

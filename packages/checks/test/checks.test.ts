@@ -53,7 +53,7 @@ describe('runTests', () => {
         return { code: 0, output: 'Tests 3 passed' };
       };
       expect(await runTests(dir, pass)).toEqual({ name: 'tests', passed: true, free: true, detail: 'Tests 3 passed' });
-      expect(ran).toEqual(['npm install', 'npm test']);
+      expect(ran).toEqual(['npm install --ignore-scripts', 'npm test']);
 
       await mkdir(join(dir, 'node_modules'));
       ran.length = 0;
@@ -74,6 +74,50 @@ describe('runTests', () => {
       await rm(dir, { recursive: true, force: true });
     }
   });
+
+  it('installs without running package scripts, for every package manager', async () => {
+    const { mkdtemp, writeFile, rm } = await import('node:fs/promises');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const { runTests } = await import('../src/index.js');
+    for (const [lock, pm] of [['pnpm-lock.yaml', 'pnpm'], ['yarn.lock', 'yarn'], ['package-lock.json', 'npm'], [null, 'pnpm']] as const) {
+      const dir = await mkdtemp(join(tmpdir(), 'aip-checks-'));
+      try {
+        await writeFile(join(dir, 'package.json'), '{"scripts": {"test": "vitest run"}}');
+        if (lock) await writeFile(join(dir, lock), '');
+        const ran: string[][] = [];
+        await runTests(dir, async (cmd, args) => {
+          ran.push([cmd, ...args]);
+          return { code: 0, output: '' };
+        });
+        expect(ran[0]).toEqual([pm, 'install', '--ignore-scripts']);
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    }
+  });
+
+  it('really installs without running a package’s postinstall script', async () => {
+    const { mkdtemp, mkdir, writeFile, rm, access } = await import('node:fs/promises');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const { realExec, INSTALL_ARGS } = await import('../src/index.js');
+    const dir = await mkdtemp(join(tmpdir(), 'aip-checks-'));
+    try {
+      await mkdir(join(dir, 'dep'));
+      const marker = join(dir, 'dep', 'MARKER.txt');
+      await writeFile(join(dir, 'dep', 'package.json'), JSON.stringify({ name: 'dep', version: '1.0.0', scripts: { postinstall: 'node -e "require(\'fs\').writeFileSync(\'MARKER.txt\',\'ran\')"' } }));
+      await writeFile(join(dir, 'package.json'), JSON.stringify({ name: 'app', version: '1.0.0', dependencies: { dep: 'file:./dep' } }));
+      const r = await realExec('npm', [...INSTALL_ARGS, '--offline', '--no-audit', '--no-fund'], dir, 60_000);
+      expect(r.code, r.output).toBe(0);
+      await access(join(dir, 'node_modules', 'dep')); // it really installed
+      const exists = await access(marker).then(() => true, () => false);
+      const exists2 = await access(join(dir, 'node_modules', 'dep', 'MARKER.txt')).then(() => true, () => false);
+      expect(exists || exists2).toBe(false);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }, 90_000);
 
   it('really runs a command and reports its exit code', async () => {
     const { realExec } = await import('../src/index.js');
