@@ -1,16 +1,30 @@
 # Current-state audit
 
-**Date:** 2026-11-11
-**Repo:** `Player-cloud/AI-prototype-application`, branch `main` at `c2b3fcf` (merge of PR #14, step 6b). Working tree was clean before this audit. No newer commits on any branch.
-**Data repo:** `Player-cloud/ai-prototype-data`, `main` at `89d0744` (merge of PR #1). Clean.
+**Date:** 2026-11-12
+**Repo:** `Player-cloud/AI-prototype-application`, branch `main` at `99ac216` (merge of PR #56). The previous version of this audit described `c2b3fcf` (11 Nov, step 6b).
+**Data repo:** `Player-cloud/ai-prototype-data`. Not visible from here. Anything below that comes from it is marked "given" (told to this audit by joshua's records, not re-read).
 **Authority:** the Claude Doc "AI-prototype-application: full plan" (10 Nov 2026). Where anything below differs from it, the plan wins.
 **Related:** [System architecture](SYSTEM_ARCHITECTURE.md) · [Product requirements](PRODUCT_REQUIREMENTS.md)
 
-This file is read-only evidence. It says what the code does today, not what it should do. Labels used:
+This file is read-only evidence. It says what the code does today, not what it should do. Every status below was checked by reading the code. A merged PR alone never counts as "done".
 
-- **Fact:** seen in code, tests, CI or git history.
-- **Inference:** a conclusion drawn from facts.
-- **Unknown:** could not be checked from here.
+## Evidence labels (the same in all three docs)
+
+| Label | Means |
+| --- | --- |
+| **Verified** | Code + tests + real-use evidence |
+| **Implemented** | Code + unit tests, no real-use proof yet |
+| **Partial** | Some of it is built; the rest is not |
+| **Missing** | Not in the code |
+| **Planned** | In the roadmap, not started |
+
+**Real-use evidence that exists (given, from the private data repo):**
+
+- The first real build, Club HR F-01, passed on 12 Nov (cost £0.09 / $0.11).
+- The free tests (CI-3) for secretlint, axe-core, playwright and checklist-rules passed on one computer.
+- The environment check (CI-2) ran on one computer.
+- Update look-up (CI-6) ran, and 9 updates were OK'd.
+- **No real-use record yet:** the phone flows, the live view, CI-4, CI-5, CI-7, CI-8.
 
 ---
 
@@ -19,173 +33,216 @@ This file is read-only evidence. It says what the code does today, not what it s
 | Area | Where |
 | --- | --- |
 | Tree, manifests, lockfile | `package.json`, `pnpm-workspace.yaml`, `pnpm-lock.yaml`, `tsconfig*.json`, `vitest.config.ts` |
-| Rust shell | `apps/desktop/src-tauri/src/{lib,engine,keys,settings}.rs`, `capabilities/default.json` |
-| Screens | `apps/desktop/src/**` |
-| Engine | `packages/engine/src/*` (protocol, gate, budget, data, history, settings, money) |
-| Models | `packages/models/src/*` (claude, openai-compatible) |
+| Rust shell | `apps/desktop/src-tauri/src/{lib,engine,keys,settings}.rs` |
+| Screens | `apps/desktop/src/**` (Projects, Build, Tools, Capability Centre, Settings; Needs you and History panels) |
+| Engine | `packages/engine/src/*` |
+| Models | `packages/models/src/*` (claude, openai-compatible, causes) |
 | Tools | `packages/tools/src/index.ts` |
-| Memory | `packages/memory/src/*` (data-repo, spend, history, sync) |
-| Checks | `packages/checks/src/index.ts` |
+| Memory | `packages/memory/src/*` |
+| Checks | `packages/checks/src/*` |
 | Gatekeeper | `packages/gatekeeper/src/index.ts` (read only) |
-| Tests | about 153 TypeScript tests in 27 files (counted by `it(`/`test(`), 16 Rust `#[test]`s |
-| CI | `.github/workflows/ci.yml`; GitHub Actions runs on `main` |
-| Docs | `README.md`, `CLAUDE.md`, `apps/desktop/README.md`, `templates/web-app/README.md` |
-| Data repo | `ledger.md`, `habits.md`, `rules.md`, `tools/*.md`, `trials/*.md` |
-| History | `git log` (PRs #1–#14), project memory notes on build status |
+| CI | `.github/workflows/ci.yml`, `.github/workflows/shell.yml` |
+| History | `git log origin/main` (PRs #1 to #56) |
 
-**Not done (and why):**
-- `pnpm check` was **not run here**. `node_modules` is absent and installing packages was out of bounds for this task. Test evidence comes from CI instead.
-- CI for the latest merge (`c2b3fcf`, PR #14) was **still running** at audit time. The run for PR #13's merge (`45c18bd`) passed.
-- The app was not launched. Real-PC evidence comes from build notes (joshua's Windows laptop, 2026-11-10).
+**Test counts (run on 12 Nov at `99ac216`):**
+
+- `pnpm install --frozen-lockfile && pnpm test`: **605 TypeScript tests passed, in 68 files, 0 failed.** The first run, straight after install, failed with "Failed to resolve entry for package @aip/tools", because the packages' compiled output didn't exist yet. After `pnpm typecheck` (which builds it) all 68 files ran. CI and `pnpm check` run typecheck first, so this only matters for a fresh checkout.
+- **22 Rust tests** (`#[test]`: engine.rs 8, keys.rs 6, lib.rs 5, settings.rs 3). Counted, not run here: there is no Rust toolchain in this environment.
+- The audit of 11 Nov counted about 153 TypeScript tests in 27 files and 16 Rust tests.
+
+**Not done here:** the app was not launched. Real-use evidence comes only from the given list above.
 
 ## 2. Where the architecture and PRD live
 
-- **Fact:** this repo had **no** `docs/` folder, no architecture document and no PRD. The plan lives in the Claude Doc. The README has a short layout table.
-- **Fact:** the old repo `Player-cloud/aPP-claude` has `docs/spec/SYSTEM_ARCHITECTURE.md` and `FUNCTIONAL_REQUIREMENTS.md` (27 Oct 2026). They describe the old Electron app. **They are superseded** by the 10 Nov plan and were not edited.
-- **Decision taken:** create `docs/SYSTEM_ARCHITECTURE.md` and `docs/PRODUCT_REQUIREMENTS.md` here, using joshua's drafts as the starting point. They sit under the plan and don't compete with it. There is no older copy in this repo to merge with.
+- The plan lives in the Claude Doc. This repo holds `docs/SYSTEM_ARCHITECTURE.md` and `docs/PRODUCT_REQUIREMENTS.md` under it, plus this audit. They don't compete with the plan.
+- The old repo `Player-cloud/aPP-claude` (`docs/spec/*`, 27 Oct 2026) describes the old Electron app. It is superseded and not edited.
 
 ## 3. V1 progress (eleven steps)
 
-Statuses: Not started · In progress · Implemented but unverified · Verified complete · Blocked · Unknown.
+### Step 1. Tool trials (cloud): **Verified**
+- **Evidence:** `ai-prototype-data/trials/*` and 25 ledger lines with 10 tool cards (given). Trials were screening runs (1 to 3 per job).
+- **Still open:** the EGM ledger line in the data repo (D-1) can't be checked from here. Desktop Commander, Claude in Chrome and computer use were "NOT TESTED".
+- **D-2 baseline and stale rule:** now in code (CI-1, see §4). The code marks a tool's old results stale when its version changes and clears the mark on a good run.
 
-### Step 1. Tool trials (cloud): **Verified complete** (with gaps)
-- **Evidence:** `ai-prototype-data/trials/round-1…4*.md`, `trials/pc-checks-2026-11-10.md`; 25 ledger lines and 10 tool cards. joshua's decisions R1–R11 are recorded in project notes. Cost about $1.93 (≈ £1.52).
-- **Gaps (facts):** `ledger.md` has EGM twice: "EGM | TRIAL NEXT … not run yet" and "EGM review | ON for big builds … 10/10, $1.45". Desktop Commander, Claude in Chrome and computer use are "NOT TESTED". All trials were screening runs (1–3 runs per job).
-- **Remaining:** tidy the EGM line (D-1 decided: "ON for big builds"; the data repo still needs the edit). Per D-2, step 1 also owns the baseline and the "update → stale, re-test on next use" rule. The rule is already written in `rules.md`, but no code applies it yet.
+### Step 2. Repo setup: **Partial**
+- Setup itself is Verified: pnpm 10 monorepo, `CLAUDE.md`, typecheck, tests, secretlint, `pnpm audit`.
+- **CI is not running.** GitHub Actions jobs were not started from 11 Nov 19:12 UTC because of account billing. Branch protection isn't available on a private repo on the free plan, so checks can't be made required. Until Actions runs again the only gate is the local `pnpm check`, and everything merged since then has no CI result.
+- PR #49 repaired the workflow (see §4.2), but the repair has not run on GitHub yet.
 
-### Step 2. Repo setup: **Verified complete**
-- **Evidence:** pnpm 10 monorepo (`packageManager: pnpm@10.34.9`), `CLAUDE.md`, CI matrix `ubuntu-latest` + `windows-latest` running typecheck, tests, secretlint, `pnpm audit` and `cargo test`. PR #1 merged, and later CI runs are green.
+### Step 3. Window and screens: **Verified**
+- Tauri 2 shell, React rail (Projects, Build, Tools, Capability Centre, Settings), engine helper over JSON lines, keys in the OS password store (Windows Credential Manager, Linux Secret Service). Confirmed on joshua's Windows laptop on 10 Nov.
+- Bundling Node into the installer is still deferred.
 
-### Step 3. Window and screens: **Verified complete**
-- **Evidence:** Tauri 2 shell (`lib.rs`), React rail with Projects / Build / Tools / Settings (`screens.ts`), engine helper started by `engine.rs` (JSON lines over stdin/stdout), keys in the OS password store (`keys.rs`, `keyring` crate: Windows Credential Manager, Linux Secret Service). Rust tests in CI on both systems. Confirmed on joshua's Windows laptop on 2026-11-10 (Engine badge, key saved).
-- **Note:** Projects and Build are placeholders ("arrives in build step 7/8"), which is correct for now. Bundling Node into the installer is deferred.
+### Step 4. Model adapter: **Verified** for Claude; **Implemented** for OpenAI and DeepSeek
+- Claude: Agent SDK, tools allowed when building, cost cap, allow-listed environment. Used in the real build.
+- OpenAI and DeepSeek: one plain `fetch` adapter, one turn, no tools. `adapter.build` exists only for Claude, so **building needs Claude** (the engine says so). Real-key runs: no record.
 
-### Step 4. Model adapter: **Implemented but unverified** for OpenAI/DeepSeek; **Verified** for Claude
-- **Evidence:** `models/src/claude.ts` (Agent SDK, safe env allow-list, own `CLAUDE_CONFIG_DIR`, cost cap), `models/src/openai-compatible.ts` (one `fetch` adapter for both), `pickModel` per job. Claude **Test connection** worked on joshua's laptop.
-- **Gaps (facts):**
-  - The Claude adapter runs **one turn with no tools** (`tools: [], maxTurns: 1`). The agent loop with tools comes in step 8.
-  - The plan says other models "likely" use the Vercel AI SDK. The code uses plain `fetch` with no extra package. That's an allowed choice ("likely"), but the shared tool loop for non-Claude models doesn't exist yet.
-  - OpenAI/DeepSeek default model names are marked "unverified defaults". Real-key runs are **Unknown**.
+### Step 5. Memory and data repo: **Implemented**
+- Built and tested: summaries first, ledger, habits, rules and cards load; spend and change history in `history.sqlite`; ratings; git sync that never forces and refuses key-shaped text; tool health records (D-2); evaluation, experiment, update, environment and project-tool records.
+- The `Using:` line is now used: `build.ts` shows it at the start of each build.
+- Sync after each task is wired (`syncAfter` in `build.ts`, after Keep, Undo and ratings too).
+- Parts exercised in real use through CI-2, CI-3 and CI-6 runs (records saved and synced from one computer). The ledger rating and habit learning have no real-use record.
+- **Missing:** `[[links]]` aren't in the data repo notes, so graph-following isn't used in practice. The app does **not** write `rules.md` at all (see §4.1, D-3).
 
-### Step 5. Memory and data repo: **Implemented but unverified** (core parts), some parts **Not started**
-- **Done (facts):** `loadDataRepo` reads ledger, habits, rules and cards. `firstRead` gives summaries first. `related()` follows `[[links]]`. Spend records go to `history.sqlite` (`SpendLog`). The budget stop is in `engine/budget.ts`. Ratings write to `ledger.md` (`setRating`). Git sync never forces and refuses key-shaped text (`syncDataRepo`). The Tools page shows real data.
-- **Not yet (facts):**
-  - `usingLine()` exists in `engine/src/index.ts` but nothing calls it outside tests. No task runs yet.
-  - "Sync after each task" isn't wired because there are no tasks. Sync runs after a rating, after an undo, or from the Sync button.
-  - Nothing writes `habits.md` ("habits it notices") yet.
-  - Per D-2, step 5 also stores tool health, failure history, stale evidence and re-test results. **None of that exists yet**, so step 5 has leftover work even though its PRs are merged.
-  - The data repo notes don't contain `[[links]]` yet, so graph-following isn't used in practice.
-- **Verification:** sync was tested only against a **test** remote, not joshua's real data repo.
+### Step 6. Gatekeeper and undo: **Implemented**, with the gatekeeper now in the path of every build tool call
+- `packages/gatekeeper` now holds the protect-rules guard (`protectRules`, always first), six ask/never rules, 14 shell rules, and a shell allow-list in log-only mode. See §4.1.
+- `engine/gate.ts` only adds joshua's own Settings rules.
+- Every tool call of a build goes through it (hook plus `canUseTool`, §4.1).
+- Undo: the `changes` table (keeps 200) gives one-click Undo/Redo for settings, data-folder files and project tool choices. CI-8 added a check that the undo really worked.
+- Gaps: no real-use record of the rules refusing something in a live build. There is still no switch to turn a tool on and off as an undoable change (switching a model back on is a separate button). Project files are undone by dropping the build's copy.
 
-### Step 6. Gatekeeper and undo: **Implemented but unverified**
-- **Done (facts):** `packages/gatekeeper` holds 6 rules (key files, push, bulk delete, deploy, outside service, global install), unchanged. `engine/gate.ts` adds a `protect-rules` guard (the agent can't edit the gatekeeper or settings) plus joshua's own rules from Settings. Settings shows the rules. The `changes` table in `history.sqlite` (`ChangeLog`, keeps 200) gives one-click Undo/Redo for settings and data-folder files, and refuses if something changed since.
-- **Gaps (facts):**
-  - `gate()` is reachable only through the `gate_check` method. **No agent action runs through it yet**, because there is no tool-using agent until step 8. The trial version (a PreToolUse hook) isn't wired in this repo.
-  - "Undo for tools" (switching a tool on or off) has no control yet, because there's no tool on/off switch. "Undo for files" covers data-folder files only. Project files will be covered by worktrees (step 8).
-  - CI for PR #14 was still running at audit time. Real-window checks used a test data repo only.
+### Step 7. Plan interview: **Implemented** (the part used by the real build is **Verified**)
+- Seven stages, spec and done files written to `projects/<slug>/` (7a). Claude's suggestions with the "plan" job (7b). Plan review, and three fresh-eyes reviews for big builds (7c). The app can make a new code folder for a project.
+- The real build of F-01 needed a finished plan and done file, so the interview and spec path is in real use. The suggestions (7b) and reviews (7c) have no separate real-use record.
 
-### Step 7. Plan interview: **Not started**
-- **Evidence:** the Projects screen placeholder says "arrives in build step 7". There is no spec or done-file code, and `projects/` in the data repo holds only `.gitkeep`. `checks.isBigBuild()` exists (5+ features, or logins/payments/personal data) and is ready for the fresh-eyes rule.
+### Step 8. Build loop: **Verified** for one real build; fix attempts and switch-off are **Implemented**
+- Each feature builds in its own git worktree (8a), by the build model with every step checked (8b), a live step list and Stop (8c), then the project's tests with up to 2 fix attempts and the 3-failures switch-off (8d).
+- Real use: F-01 passed on 12 Nov. No record of a fix attempt, a Stop, or a switch-off in real use.
+- Failed builds are **not** saved as run records (a failed model run throws before the run is written). See §5.
 
-### Step 8. Build loop: **Not started**
-- **Evidence:** no worktree code (`grep worktree` finds nothing), no live step list, no fix-attempt counter.
+### Step 9. Check, preview and report: **Verified** for tests, free checks and pictures; Keep, Undo, rating and learning are **Implemented**
+- Free checks after each build: secrets, audit, **new packages** (needs joshua's OK), checklist rules (advice). Desktop and phone pictures with the browser already on the PC, axe and phone width (advice).
+- The first real run found two bugs in the pictures and the audit for npm projects; they were fixed (PR #35). That is real-use evidence for those parts.
+- Keep (merge into joshua's own copy, never a push), Undo, 1 to 5 rating per build, habit learning (9d, only the app's own section of `habits.md`, with history and Undo): code and tests, no real-use record given.
+- V2 B (honest report): the summary's claims are set beside the app's own results. Implemented, no real-use record.
 
-### Step 9. Check, preview and report: **Not started** (building blocks only)
-- **Evidence:** `checks.canKeep()` (blocks Keep unless every check passed and tests ran) and `FREE_CHECKS` list. No Playwright, axe or screenshot runner. No report, Keep/Undo or per-task rating screen. The existing 1–5 rating is **per tool** on the Tools page, not per task.
+### Step 10. Phone messages: **Implemented**
+- GitHub token in the password store (10a), work items and issues on the data repo plus the Needs you panel (10b), Keep, Undo and rating from the phone (10c). V2 D: start a build from the phone, the model's questions, pictures on the phone.
+- No real-use record yet for any phone flow.
 
-### Step 10. Phone messages: **Not started**
-- **Evidence:** no GitHub issue, notification or work-item code.
+### Step 11. First real run: **Partial**
+- Club HR F-01 built and passed on 12 Nov (£0.09 / $0.11). Which computer it ran on isn't in the given evidence.
+- Not shown yet: every one of the eight task steps with real evidence, and the Linux check (needs a Linux machine).
 
-### Step 11. First real run: **Not started**
-- Depends on steps 7–10. A Linux check needs a Linux machine (open item).
+### V2 work since step 6b
 
-**Summary:** steps 1–3 verified, step 4 verified for Claude, steps 5–6 built but only partly verified, steps 7–11 not started. **The eleven-step order can be kept as it is.** Nothing found needs a new step.
+| Item | Label | Note |
+| --- | --- | --- |
+| V2 A, live view (#36) | **Implemented** | Runs the build copy's own page on 127.0.0.1. No real-use record. |
+| V2 B, honest report (#37) | **Implemented** | See step 9. |
+| CI-1 stable IDs, versions, stale (#38) | **Implemented** | Card file name is the ID. |
+| CI-2 compatibility per computer (#39) | **Verified** | Ran on one computer. A second computer isn't compared yet. |
+| CI-3 repeatable free tests (#40) | **Verified** | secretlint, axe-core, playwright, checklist-rules passed on one computer. |
+| CI-4 workflow comparisons (#41) | **Implemented** | Advice only. No real-use record. |
+| CI-5 experiments (#42) | **Implemented** | Saved as proposals. No real-use record. |
+| CI-6 update look-up (#45) | **Verified** | Ran; 9 updates OK'd. The app never installs one. |
+| CI-7 tools per project, docs reading (#46) | **Implemented** | No real-use record. |
+| CI-8 going back, checking it worked (#47) | **Implemented** | No real-use record. |
+| Phone D (#43, #44) | **Implemented** | No real-use record. |
+| Capability Centre (#48) | **Implemented** | Shows real records only. No real-use record. |
 
-## 4. Existing systems and who owns them
+**Summary:** steps 1, 3, 4 (Claude), the build path of 7, 8 and 9, and CI-2, CI-3, CI-6 have real-use evidence. Phone flows, live view, CI-4, CI-5, CI-7 and CI-8 have none. Step 2's CI is stopped.
 
-"Owner" means the one place that should hold the job from now on.
+## 4. What was built after the first audit
 
-| Job | Exists today? | Where | Owner from now on |
+### 4.1 Gatekeeper and build-agent safety (Phase 0, PRs #49 to #56)
+
+These were the audit's first fixes, all merged on 12 Nov.
+
+| PR | What it does | Label |
+| --- | --- | --- |
+| #49 | CI repair: Ubuntu pinned to `ubuntu-24.04` (not `latest`), job time limits, the Rust shell job moved to its own workflow that runs only when `apps/desktop/src-tauri` changes | **Implemented** (not run on GitHub yet) |
+| #50 | Build agent sandbox: its own empty home folder, no git login, `git push` blocked through `GIT_CONFIG_*` settings that beat the repo's own config. Local commits still work | **Implemented** |
+| #51 | A PreToolUse hook on every build tool call (blocks if the check fails), beside `canUseTool`, plus a real-path check that follows links for file paths | **Implemented** |
+| #52 | Installs for tests run with `--ignore-scripts` | **Implemented** |
+| #53 | New packages a build adds need joshua's OK before Keep (the "New packages" check, and "Approve new packages") | **Implemented** |
+| #54 | Gatekeeper shell rules: 14 enforced ask/never rules, plus an allow-list of known build programs in **log-only mode** (`SHELL_ALLOW_LIST_ENFORCED = false`). Approved by joshua (Q-2) | **Implemented** (allow-list **Partial**: logs only) |
+| #55 | Ask rules really ask: a refused ask-first step goes to Needs you with the exact command; Allow once or No; single use, good for 24 hours; both recorded in History | **Implemented** |
+| #56 | Q-3: only the model's own failures count towards the 3-failure switch-off. Causes: model, budget, network, provider, setup, stopped, unknown. Only "model" (and a tool's own fault) counts | **Implemented** |
+
+**Gatekeeper, as it is now (corrects the 11 Nov audit):**
+
+- The protect-rules guard now lives in `packages/gatekeeper` (`protectRules`). `checkAction` always runs it first, whatever rules are passed in. `engine/gate.ts` only adds joshua's own ask-first rules from Settings. (D-3 is done in code.)
+- `rules.md` is **not** guarded (D-3, Option A). The app doesn't write `rules.md` yet. `habits.md` writes (the app's own section only) keep history, can be undone, and joshua is told.
+- Tests: `packages/gatekeeper/test` (273 lines) and engine gate and build tests cover the rules. No real-use record of a refusal yet.
+
+**Approved engine actions (done by the engine itself, outside the Gatekeeper, by design):**
+
+1. Data-repo commit and push after tasks (F3): `syncDataRepo` pulls with rebase, then pushes, never forces, and refuses key-shaped text.
+2. GitHub issues for phone messages, with the fine-grained token from the password store (Issues on the data repo only).
+3. `pnpm outdated` look-ups (CI-6). Only package names go to the registry. Nothing is installed.
+4. Package installs with `--ignore-scripts` for tests.
+5. The live dev server and the picture server on 127.0.0.1 only.
+
+**Still open:**
+
+- The shell allow-list only logs. joshua flips the switch after 3 real builds.
+- Windows is untested for the sandbox environment and for links and junctions.
+- The real-path check covers file paths only. A shell command gets the word check, plus the link-making shell rule.
+
+### 4.2 CI
+
+- `ci.yml` (typecheck, tests, secretlint, `pnpm audit`, on `ubuntu-24.04` and `windows-latest`, 20-minute limit) and `shell.yml` (Rust `cargo test` on both, only when the shell changes, 30-minute limit).
+- **No GitHub Actions job has started since 11 Nov 19:12 UTC (account billing).** Branch protection can't be used on a private repo on the free plan, so the checks can't be required. Until Actions runs again, the only gate is `pnpm check` on the computer that pushes. CI-green is not evidence for anything after step 9a.
+
+## 5. Existing systems and who owns them
+
+| Job | Exists? | Where | Owner from now on |
 | --- | --- | --- | --- |
-| Tool/capability registry | Yes, basic | `ledger.md` (status, job, evidence, cost, rating) + `tools/<name>.md` (what, use when, cost), joined by name in `memory/data-repo.ts` | **memory** (storage) with card format in **tools** |
-| Model selection | Yes | `models/index.ts` `CLAUDE_MODEL_BY_JOB`, `pickModel`; called by engine | **engine** decides; **models** holds per-provider defaults |
-| Tool selection, lazy loading | Partly | `tools.summaryLine`, `memory.firstRead`; Claude runs with no tools | **engine** (pick) + **tools** (runners) |
-| Tool trials / evaluation | Yes, by hand | `ai-prototype-data/trials/*.md` | **memory** stores results; runs go through **checks** later |
-| Agent orchestration | No | (step 8) | **engine** only |
-| Memory, ledger, habits, rules, graph | Yes, read + rating write | `packages/memory` | **memory** |
-| User ratings | Per tool only | `memory/sync.ts setRating` → `ledger.md` | **memory** (task rating to be added in step 9) |
-| Keep/Undo decision | Rule only | `checks.canKeep` | **checks** (rule) + **engine** (flow) + **memory** (record) |
-| Token and cost records | Yes | `models` report usage → `engine/budget.ts recordSpend` → `memory/spend.ts` (`spend` table) | as today |
-| Budget stop | Yes | `engine/budget.ts readBudget`, `rulesWin` (30% rule) | **engine** |
-| £/$ conversion | Yes, fixed rate in Settings | `engine/money.ts`, `settings.gbpPerUsd` (default 0.79) | **engine** |
-| Compatibility checks | No | — | **checks** (later) |
-| Dependency risk | Yes, free checks | CI `pnpm audit`, secretlint | **checks** |
-| Tool conflicts / duplicates | No | — | **memory** data, **checks** test (later) |
-| Security and permissions | Yes | `packages/gatekeeper` rules + `engine/gate.ts` guard + extra rules | **gatekeeper** = rule source; **engine/gate.ts** = the one place rules are applied |
-| Key protection | Yes, at several points | OS keyring (`keys.rs`), env allow-list + `redact` (models), key-shape check before sync (memory), secretlint (CI) | each point stays where it is (defence in depth, not duplication) |
-| Workflow execution | No | (step 8) | **engine** |
-| Test execution and reports | CI only, for this repo | vitest + CI | **checks** for built projects (step 9) |
-| Version tracking | No | — | **memory** (later) |
-| Update watching | No | — (post-V1 in the plan) | later |
-| Undo and recovery | Yes for settings/data files | `memory/history.ts ChangeLog`, `engine/history.ts` | **memory** (store) + **engine** (flow); worktrees add project-file undo in step 8 |
-| Project context, specs | No | `ai-prototype-data/projects/` is empty | **memory** stores, **engine** uses (step 7) |
+| Tool/capability registry | **Implemented** | `ledger.md` + `tools/<name>.md`, joined by the card file name as a stable ID (CI-1) | **memory** (storage), card format in **tools** |
+| Model selection | **Verified** | `CLAUDE_MODEL_BY_JOB`, `pickModel`; build model is Sonnet | **engine** decides; **models** holds defaults |
+| Tool selection, lazy loading | **Partial** | The engine picks one build model; tools per project are chosen by joshua (CI-7) | **engine** + **tools** |
+| Tool trials / evaluation | **Verified** (CI-3, one computer) | `checks/evals.ts`, results in `evaluations/` | **checks** runs, **memory** stores |
+| Agent orchestration | **Verified** (one build) | `engine/build.ts` | **engine** only |
+| Memory, ledger, habits, rules, graph | **Implemented** | `packages/memory` | **memory** |
+| User ratings | **Implemented** | per tool (`ledger.md`) and per build (`runs`) | **memory** |
+| Keep/Undo decision | **Implemented** | `checks.canKeep` + `engine/keep.ts` + `runs` table | **checks** rule, **engine** flow, **memory** record |
+| Token and cost records | **Verified** | `spend` table | as before |
+| Budget stop | **Implemented** | `engine/budget.ts` (£20, 30% rule, run limit £0.80 default) | **engine** |
+| £/$ conversion | **Implemented** | fixed rate in Settings (0.79 default) | **engine** |
+| Compatibility checks | **Verified** (one computer) | `checks/environment.ts` (CI-2) | **checks** + **memory** |
+| Dependency risk | **Implemented** | audit, secretlint, new-packages check | **checks** |
+| Tool conflicts / duplicates | **Partial** | duplicates and clashes listed in the data overview (CI-2); no test of a clash | **memory** data, **checks** test |
+| Security and permissions | **Implemented** | see §4.1 | **gatekeeper** = rule source; **engine** applies |
+| Key protection | **Verified** (keys), **Implemented** (rest) | OS keyring, env allow-list, sandbox home, key-shape check before sync, secretlint | each point stays where it is |
+| Workflow execution | **Verified** (one build) | `engine/build.ts` | **engine** |
+| Test execution and reports | **Verified** | `checks/tests.ts` for built projects | **checks** |
+| Version tracking | **Implemented** | tool health records (CI-1) | **memory** |
+| Update watching | **Verified** | CI-6 look-up; joshua installs by hand | **checks** finds, **memory** stores |
+| Undo and recovery | **Implemented** | `ChangeLog`, worktrees, CI-8 checks | **memory** + **engine** |
+| Project context, specs | **Verified** (F-01) | `projects/<slug>/` | **memory** stores, **engine** uses |
+| Run records | **Partial** | `runs` table: one row per *finished* build. Failed builds aren't saved; no build ID shared by the steps | **memory** |
 
-### 4.1 Overlaps and conflicts found
+### 5.1 Overlaps and conflicts found
 
-1. **Two places say which model does which job.** `models/src/index.ts` (`CLAUDE_MODEL_BY_JOB`) and `rules.md` ("Models" section) both state it. Today they agree. *Proposal:* code stays the runtime default and `rules.md` stays the human-readable copy. A future change to one must update the other. Not a V1 blocker.
-2. **The job list is written twice.** `JOBS` in `engine/src/protocol.ts` and in `models/src/openai-compatible.ts` (the `Job` type itself lives in models). Small code tidy-up for a later PR; this task changes no code.
-3. **Provider display names are written twice** (`engine/protocol.ts` and `engine/history.ts`). Cosmetic.
-4. **The registry has two halves joined by a fuzzy name match.** Ledger lines and tool cards are matched by "one name contains the other" (`sameTool`). It works for the 25 tools today but has no stable ID. Any future capability evidence should key on a stable name (the card file name) rather than add a new registry.
-5. **The gatekeeper is split across two places** *(resolved by D-3: the guard moves into the gatekeeper)*. Rule *content* is in `packages/gatekeeper`. The *protect-rules guard* and joshua's own rules are applied in `engine/gate.ts`. The engine still uses the gatekeeper's rules unchanged. *Open decision:* whether the protect-rules guard should one day move into `packages/gatekeeper`. Only joshua can make that change.
-6. **The gatekeeper isn't yet in the path of any agent action.** No agent uses tools yet. Step 8 must route every tool call through `gate()` (e.g. as the Agent SDK `canUseTool`/PreToolUse hook). This is already step 6/8 scope, not a new requirement.
-7. **The EGM ledger line contradicts itself** (see step 1). *Resolved by D-1.*
-8. **Some plan principles have no named build step:** "3 failures in a row → switch off", "tool update → results stale, re-test", and "app writes habits it notices". They're core principles in the plan but none of the eleven steps names them. *Resolved by D-2*: split across steps 1, 5, 8 and 9 (see §6).
-9. **The £/$ rate is fixed.** The plan says "with the day's conversion rate". The code uses a rate set in Settings (default 0.79) because live rate lookups would be a new outside service. Reports should show the rate used. This is a known gap, not a new system.
-10. **The old Electron spec docs** (`aPP-claude/docs/spec/*`) are superseded. They're left as they are and will be archived with that repo.
+1. **Two places say which model does which job** (`CLAUDE_MODEL_BY_JOB` and `rules.md`). They agreed on 11 Nov. Not re-checked against the data repo.
+2. **The job list is written twice** (`engine/protocol.ts` and `models`). Small tidy-up.
+3. **Provider display names are written twice.** Cosmetic.
+4. **The registry's fuzzy name match** now has a stable ID (the card file name, CI-1). Resolved.
+5. **The gatekeeper split across two places.** Resolved by D-3 (see §4.1).
+6. **The gatekeeper not in the path of any agent action.** Resolved: every build tool call goes through it.
+7. **The EGM ledger line** (D-1): can't be checked from here.
+8. **Principles with no build step** (3 failures, stale on update, habits). Resolved by D-2; all three are in code.
+9. **The £/$ rate is fixed** (Settings, default 0.79) because a live lookup would be a new outside service. Reports show the rate used.
+10. **The old Electron spec docs** are superseded.
 
-No duplicate engine, database, test runner or approval authority was found. `history.sqlite` is the one local database (tables `spend` and `changes`).
-
-## 5. What this means for step 7 and later
-
-- **Step 7 scope and order are unchanged.** The doc updates add nothing to step 7.
-- Step 7 should store the spec and done files under `ai-prototype-data/projects/<name>/`, using the existing memory and sync code rather than a new store.
-- Step 8 is where three existing pieces get wired in: `gate()` on every agent tool call, `usingLine()` at the start of each run, and sync after each task.
-- Step 9 needs a per-task record that links spend rows to a run (model, tools, tests, Keep/Undo, rating). The plan's learning order needs it. It belongs as a table in the existing `history.sqlite`, owned by memory, not as a new database.
+No duplicate engine, database, test runner or approval authority was found. `history.sqlite` is the one local database. Its tables are now `spend`, `changes`, `runs`, `work_items`, `asks` and `ask_approvals`.
 
 ## 6. Decisions for joshua
 
-- **D-1. Decided (joshua, 2026-11-11):** EGM is "ON for big builds". Still to do: edit `ledger.md` in the data repo so the "EGM | TRIAL NEXT" line no longer contradicts it. Not done here, because this task changes no data files.
-- **D-2. Decided (joshua, 2026-11-11):** spread over steps 1, 5, 8 and 9, no 12th step.
+- **D-1. Decided (11 Nov):** EGM is "ON for big builds". The data repo's ledger edit can't be confirmed from here.
+- **D-2. Decided (11 Nov):** the stale rule, tool health, 3-failures switch-off and habit learning are spread over steps 1, 5, 8 and 9. All four are now in code (CI-1, `memory/health.ts`, `engine/build.ts`, `engine/learn.ts`). Switching off never uninstalls.
+- **D-3. Decided (11 Nov), done in code:** the protect-rules guard moved into `packages/gatekeeper` (`protectRules`). Scope (Option A): it protects the gatekeeper package and `settings.json`. `rules.md` isn't guarded; the app may update it and tell joshua, with history and Undo. The app doesn't write `rules.md` yet. Habits writes already have history, Undo and a notice.
+- **D-4. Decided (11 Nov):** docs PRs are separate from code PRs.
+- **Q-2. Approved (12 Nov):** shell rules in the gatekeeper (enforced ask rules; allow-list in log-only mode until joshua flips it). Done in #54.
+- **Q-3. Approved (12 Nov):** only the model's own failures count towards the 3-failure switch-off. Done in #56.
+- **Q-4. Approved (12 Nov).** The wording of this decision is not in the code or git log, so it is not restated here. It needs to be copied in from the plan.
+- **Q-5. Approved (12 Nov), for later (Phase 3):** narrow self-maintenance. Nothing is built.
 
-| Step | Its part |
-| --- | --- |
-| 1 Tool trials | The first test and reliability baseline for each tool. When a tool updates, its earlier results are marked stale and a re-test is due on next use. |
-| 5 Memory and data repo | Saves tool health, failure history, stale evidence, re-test results and habits; updates tool cards and the data repo records. |
-| 8 Build loop | Enforces "3 failures in a row": switch the tool off, tell joshua, and never pick it again until he chooses retry, re-enable or uninstall. Switching off never uninstalls. |
-| 9 Check, preview and report | After Keep/Undo and the rating, learns: spots repeated preferences, updates `habits.md` once there's enough evidence, and tells joshua. |
+## 7. Next
 
-Owners: **engine** enforces failure handling and skips switched-off tools; **tools** runs tools and notices health and version or config changes; **memory** owns tool records, stale evidence, habits and learning history. `rules.md` stays above `habits.md`, except below 30% of the monthly budget (P-03). No new system, registry or service.
+The roadmap puts Phase 1 next. It adds three things:
 
-  Because steps 1 and 5 are already merged, their new parts need follow-up PRs. The build thread plans these as one small follow-up PR before step 8.
-- **D-3. Decided (joshua, 2026-11-11):** move the protect-rules guard into `packages/gatekeeper`. The gatekeeper becomes the single authority for protected changes and approval rules. The agent can't change or get around them, and rule changes only happen with joshua's approval through Settings. This is a **code change in joshua's package**. His message is the approval for it. It goes in its own PR, separate from these docs, and is handled by the build thread. **Scope (joshua, Option A):** the guard keeps protecting the gatekeeper package and `settings.json`. The app may still update `rules.md` itself and tell him afterwards, as the plan says. Every `rules.md` change is recorded in the change history and can be undone. The existing `changes` table already handles data-folder files, but nothing writes `rules.md` yet.
-- **D-4. Decided (joshua, 2026-11-11):** keep these docs uncommitted while he reviews them. No PR until he approves. The docs PR stays separate from any code change.
+1. **Run records:** a build ID, a record for every build including failed ones, and the cause of each failure.
+2. **Findings:** one shape for check results, with trust levels.
+3. **Project map:** feature to files to tests.
 
-## 7. Documentation validation report
+Phase 0 (the safety fixes in §4.1) is done in code. The two open items there (allow-list log-only, Windows untested) stay on the list.
 
-Checked by reading the documents against the plan and the code, and by a one-off script (not added to the repo) that checks links, section anchors, requirement IDs and the step list.
+## 8. Documentation validation report
 
-- Links and anchors between the three docs: **0 broken**.
-- Requirement headings in the PRD: **22 IDs, no duplicates** (V1-01…11, CAP-V1-01…05, CAP-01…06). Table IDs: P-01…13, EVAL-01…07, SUP-A…I, NFR-01…07, SEC-01…07, EVD-01…06, UI-01…03.
-- Step names in the PRD (§4) and architecture (§11) match the plan word for word, in the same order.
-
-- V1 has exactly eleven steps, same order and wording as the plan: **yes** (PRD §4, architecture §11).
-- The eight-step task flow is unchanged: **yes** (architecture §7).
-- Plan interview stages unchanged (7 stages, all questions per stage in one message): **yes**.
-- Fresh-eyes/paid reviews only on big builds (5+ features, logins, payments, personal data): **yes**.
-- £20 budget, may rise to £40, 30% rule, 2 fix attempts, 3-failures rule, one feature per worktree, tests never cut, Keep/Undo, 1–5 rating: **all kept**.
-- No second engine, gatekeeper, registry, memory or database is introduced: **yes**. Every new responsibility names an existing package as owner.
-- Every post-V1 system is labelled `Post-V1` or `Proposed`: **yes**.
-- Nothing unverified is described as done: statuses come from §3 of this audit.
-- The architecture and PRD give the same owner for each job: checked by reading (architecture §12–14, PRD §5–7).
-- No markdown linter or link checker exists in the repo, so none was run and none was installed. `pnpm check` was not run (see §1). These are Markdown-only changes, so they don't affect typecheck or tests. The secret scan covers `**/*` and will scan them in CI.
-- Git diff: only the new `docs/` folder (3 files). No source, config, gatekeeper, data repo or user files changed. Nothing committed or pushed.
+- This update was written by reading the three docs against the code and `git log origin/main`. Each status in §3 and §4 comes from code read in this pass.
+- Evidence labels are the same in all three docs.
+- V1 still has eleven steps, in the plan's order. The eight-step task flow is unchanged.
+- No markdown linter or link checker exists in the repo. Links between the docs and anchors were kept by hand.
+- Only files under `docs/` changed. No source, config, gatekeeper or data repo file was touched. Nothing was pushed.
