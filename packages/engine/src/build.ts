@@ -387,7 +387,7 @@ export async function buildFeature(
         sandbox,
         onStep: (text) => add({ text }),
         async checkTool(name, input) {
-          const d = await checkStep(settings, run.path, name, input, p.dbPath ? { slug: p.slug, feature: p.feature, branch: run.branch, dbPath: p.dbPath, onAllowed: () => add({ text: `Allowed once by joshua: ${name}` }) } : undefined);
+          const d = await checkStep(settings, run.path, name, input, p.dbPath ? { slug: p.slug, feature: p.feature, branch: run.branch, dbPath: p.dbPath, now: deps.now?.(), onAllowed: () => add({ text: `Allowed once by joshua: ${name}` }) } : undefined);
           if (!d.allow) add({ text: `Refused: ${name}`, refused: d.reason });
           // The shell allow-list is on trial: allowed, but joshua can see what enforcing it would change.
           else if (d.note) add({ text: `Would ask joshua under the new shell list: ${d.note}` });
