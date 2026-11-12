@@ -59,6 +59,10 @@ function fakeShell(opts: { map?: Record<string, unknown>; fail?: string; runs?: 
       runs = runs.map((r) => (r.id === args?.id ? { ...r, status: keep ? 'kept' : 'undone', keptInto: keep ? 'main' : '' } : r));
       return { run: runs[0], note: keep ? 'Kept F-02 in your copy on main. Nothing was pushed.' : 'Undone: F-02’s build was removed. Your copy wasn’t touched.', learned: [], phone: 'Closed issue #12 on your phone.' } as T;
     }
+    if (cmd === 'run_revert') {
+      runs = runs.map((r) => (r.id === args?.id ? { ...r, status: 'reverted' } : r));
+      return { run: runs[0], note: 'Undid F-02: a new commit on main reverses it. Nothing was pushed and no history was rewritten.', learned: [] } as T;
+    }
     if (cmd === 'deps_approve') {
       runs = runs.map((r) => (r.id === args?.id ? { ...r, findings: r.findings.map((f) => (f.check === 'dependencies' ? { check: 'dependencies', level: 'pass' as const, title: 'New packages: approved by joshua', detail: 'Approved by joshua on 2026-11-12: left-pad ^1.3.0', source: 'rule' as const } : f)) } : r));
       return { run: runs[0], note: 'Approved the new packages for F-02: left-pad ^1.3.0.', keep: { keep: true, blocking: [] } } as T;
@@ -394,6 +398,38 @@ describe('Build screen', () => {
     // The app says what it learned from the rating.
     const learned = screen.getByRole('region', { name: 'What the app learned' });
     expect(within(learned).getByText('New habit: Sonnet builds are usually kept (kept 5 of 5): keep using it for builds.')).toBeTruthy();
+  });
+
+  it('undoes a kept build only after an inline Are you sure, and shows the result note', async () => {
+    const shell = fakeShell({ runs: [{ ...WAITING, status: 'kept', keptInto: 'main' }] });
+    render(<Build invoke={shell.invoke} makeChannel={shell.makeChannel} />);
+    const builds = await screen.findByRole('region', { name: 'Builds' });
+    // Nothing is offered on a waiting build, and nothing is sent before the confirm.
+    fireEvent.click(within(builds).getByRole('button', { name: 'Undo this kept build F-02 build 7' }));
+    expect(within(builds).getByText('Are you sure? This adds a new commit that reverses it.')).toBeTruthy();
+    expect(shell.calls.some((c) => c.cmd === 'run_revert')).toBe(false);
+    // No backs out.
+    fireEvent.click(within(builds).getByRole('button', { name: 'No, keep F-02' }));
+    expect(within(builds).queryByText(/Are you sure/)).toBeNull();
+    expect(shell.calls.some((c) => c.cmd === 'run_revert')).toBe(false);
+    // Yes sends it.
+    fireEvent.click(within(builds).getByRole('button', { name: 'Undo this kept build F-02 build 7' }));
+    fireEvent.click(within(builds).getByRole('button', { name: 'Yes, undo kept F-02' }));
+    expect((await screen.findByRole('status')).textContent).toBe('Undid F-02: a new commit on main reverses it. Nothing was pushed and no history was rewritten.');
+    expect(shell.calls).toContainEqual({ cmd: 'run_revert', args: { id: 7 } });
+    await waitFor(() => expect(within(builds).getByText(/kept, then undone/)).toBeTruthy());
+    expect(within(builds).queryByRole('button', { name: /Undo this kept build/ })).toBeNull();
+  });
+
+  it('shows the plain reason when undoing a kept build is refused', async () => {
+    const shell = fakeShell({ runs: [{ ...WAITING, status: 'kept', keptInto: 'main' }] });
+    const refuse: Invoke = ((cmd: string, args?: Record<string, unknown>) =>
+      cmd === 'engine' && args?.method === 'run_revert' ? Promise.reject(new Error('Your copy (/code) has changes not committed yet. Nothing was changed.')) : shell.invoke(cmd, args)) as Invoke;
+    render(<Build invoke={refuse} makeChannel={shell.makeChannel} />);
+    const builds = await screen.findByRole('region', { name: 'Builds' });
+    fireEvent.click(within(builds).getByRole('button', { name: 'Undo this kept build F-02 build 7' }));
+    fireEvent.click(within(builds).getByRole('button', { name: 'Yes, undo kept F-02' }));
+    expect((await screen.findByRole('alert')).textContent).toBe('Your copy (/code) has changes not committed yet. Nothing was changed.');
   });
 
   it('shows a command a rule asked about in Needs you, with Allow once and No', async () => {

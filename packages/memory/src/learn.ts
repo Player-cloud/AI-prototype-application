@@ -42,7 +42,7 @@ export function learnHabits(runs: Run[], nameOf: (model: string) => string): Lea
   const out: Learned[] = [];
 
   // 1. Each build model: is it usually kept, or often undone?
-  const decided = runs.filter((r) => r.status === 'kept' || r.status === 'undone');
+  const decided = runs.filter((r) => r.status === 'kept' || r.status === 'undone' || r.status === 'reverted');
   for (const model of [...new Set(decided.map((r) => r.model))]) {
     const mine = decided.filter((r) => r.model === model);
     if (mine.length < MIN_BUILDS) continue;

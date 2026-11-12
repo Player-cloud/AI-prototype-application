@@ -5,11 +5,13 @@
  * checked out, never a push), then removes the build's copy. It's refused when the tests fail or
  * his copy has changes not committed yet, and nothing changes when the merge would clash.
  * Undo removes the build's copy and branch; his own copy is never touched.
+ * Undo a kept build adds a new commit that reverses the merge (git revert). History is never
+ * rewritten, reset or pushed.
  */
 import type { Run } from '@aip/memory';
 import type { AppSettings } from './settings.ts';
 import { checkCodeFolder, codeFolderOf, type Git } from './runs.ts';
-import { updateMapAfterKeep } from './project-map.ts';
+import { updateMapAfterKeep, updateMapAfterRevert } from './project-map.ts';
 
 export type RunRow = Run;
 
@@ -79,6 +81,7 @@ const NOT_WAITING: Record<Run['status'], string> = {
   built: '',
   kept: 'That build was already kept.',
   undone: 'That build was already undone.',
+  reverted: 'That kept build was already undone.',
   running: 'That build is still running.',
   failed: 'That build failed, so it can’t be kept.',
   stopped: 'That build was stopped, so it can’t be kept.',
@@ -169,4 +172,76 @@ export async function undoRun(settings: AppSettings, dbPath: string, id: number,
     log.decide(id, 'undone', now);
     return { run: log.get(id)!, note: `Undone: ${run.feature}’s build was removed. Your copy wasn’t touched.${left}` };
   });
+}
+
+/** The files a kept merge changed, for the project map. */
+async function keptFiles(g: Git, folder: string, commit: string, parents: number): Promise<string[]> {
+  const from = parents > 1 ? `${commit}^1` : `${commit}^`;
+  return (await g(['diff', '--name-only', '-z', '--no-renames', from, commit], folder)).split('\0').filter(Boolean);
+}
+
+/**
+ * Undo a kept build: a NEW commit in joshua's copy reverses the merge Keep made. Nothing is reset,
+ * forced, rewritten or pushed. Refused, with nothing changed, when the build isn't kept, his copy
+ * has changes not committed yet, the kept commit isn't in the branch he has checked out, or the
+ * reversal clashes with later work (it is aborted and the clashing files are named).
+ */
+export async function revertKept(settings: AppSettings, dbPath: string, id: number, now: Date, git?: Git): Promise<KeepResult> {
+  const g = await gitOf(git);
+  const { revertRecorded } = await import('./history.ts');
+  const result = await withRuns(dbPath, async (log) => {
+    const run = log.get(id);
+    if (!run) throw new Error('There’s no such build.');
+    if (run.status !== 'kept') throw new Error(run.status === 'reverted' ? NOT_WAITING.reverted : 'Only a kept build can be undone this way.');
+    const commit = run.mergeCommit;
+    if (!/^[0-9a-f]{7,64}$/i.test(commit)) throw new Error('The app has no record of which commit kept this build, so it can’t be reversed safely. Nothing was changed.');
+    const folder = codeFolderOf(settings, run.slug);
+    const status = await checkCodeFolder(folder, g);
+    if (!status.clean) throw new Error(`Your copy (${folder}) has changes not committed yet. Commit them or put them aside, then press Undo this kept build again. Nothing was changed.`);
+    if (status.branch === 'HEAD') throw new Error('Your copy isn’t on a branch. Check out a branch, then try again. Nothing was changed.');
+    const notThere = `The commit that kept ${run.feature} isn’t in the history of ${status.branch}, so it can’t be reversed here. Check out the branch it was kept into${run.keptInto ? ` (${run.keptInto})` : ''}. Nothing was changed.`;
+    try {
+      await g(['cat-file', '-e', `${commit}^{commit}`], folder);
+      await g(['merge-base', '--is-ancestor', commit, 'HEAD'], folder);
+    } catch {
+      throw new Error(notThere);
+    }
+    const subject = (await g(['log', '-1', '--format=%s', commit], folder)).trim();
+    if (!subject.startsWith(`Keep ${run.feature} (build `)) throw new Error(notThere);
+    const parents = (await g(['rev-list', '--parents', '-n', '1', commit], folder)).trim().split(/\s+/).length - 1;
+    const changed = await keptFiles(g, folder, commit, parents);
+    const before = (await g(['rev-parse', 'HEAD'], folder)).trim();
+    try {
+      await g(['revert', '--no-edit', ...(parents > 1 ? ['-m', '1'] : []), commit], folder);
+    } catch (err) {
+      let clash: string[] = [];
+      try {
+        clash = (await g(['diff', '--name-only', '--diff-filter=U'], folder)).split(/\r?\n/).filter(Boolean);
+      } catch {
+        // can't list them: the plain message below still says nothing changed
+      }
+      try {
+        await g(['revert', '--abort'], folder);
+      } catch {
+        // nothing to abort
+      }
+      const why = clash.length ? `these files clash with later changes: ${clash.join(', ')}` : (err as Error).message.split('\n')[0];
+      throw new Error(`Couldn’t undo ${run.feature}: ${why}. Nothing was changed.`);
+    }
+    const revertCommit = (await g(['rev-parse', 'HEAD'], folder)).trim();
+    if (revertCommit === before) throw new Error(`Couldn’t undo ${run.feature}: git made no new commit. Nothing was changed.`);
+    log.markReverted(id);
+    return { run, folder, status, commit, revertCommit, changed };
+  });
+  const { run, folder, status, commit, revertCommit, changed } = result;
+  // History and map are best-effort from here: the revert already happened and the status is saved.
+  let extra = '';
+  try {
+    await revertRecorded(dbPath, `Undid kept build: ${run.feature}`, folder, commit, revertCommit, now);
+  } catch (err) {
+    extra += ` The change history wasn’t updated (${(err as Error).message.split('\n')[0]}).`;
+  }
+  extra += await updateMapAfterRevert(settings, run.slug, { feature: run.feature, changed, at: now }, folder);
+  const done = await withRuns(dbPath, (log) => log.get(id)!);
+  return { run: done, note: `Undid ${run.feature}: a new commit on ${status.branch} reverses it. Nothing was pushed and no history was rewritten.${extra}` };
 }

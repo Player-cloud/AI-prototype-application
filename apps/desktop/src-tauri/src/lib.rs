@@ -114,7 +114,7 @@ async fn settings_save(
 /// else is refused. Only plain pass-throughs belong here. Nothing that touches keys, writes the
 /// settings, spends money or runs a build (those keep their own commands), and nothing the phone
 /// path uses on its own.
-const ENGINE_METHODS: [&str; 33] = [
+const ENGINE_METHODS: [&str; 34] = [
     "spend_summary",
     "gate_rules",
     "settings_check",
@@ -148,6 +148,7 @@ const ENGINE_METHODS: [&str; 33] = [
     "interview_confirm",
     "code_folder_check",
     "code_folder_create",
+    "run_revert",
 ];
 
 fn engine_method(method: &str) -> Result<&'static str, String> {
@@ -481,7 +482,13 @@ mod tests {
         for m in old {
             assert_eq!(engine_method(m), Ok(m), "{m} was lost");
         }
-        assert_eq!(old.len(), ENGINE_METHODS.len());
+        assert_eq!(old.len() + 1, ENGINE_METHODS.len(), "only run_revert was added since");
+    }
+
+    #[test]
+    fn undo_a_kept_build_is_allowed_and_needs_no_token() {
+        // It only runs git revert in joshua's own copy: no key, no money, no push.
+        assert_eq!(engine_method("run_revert"), Ok("run_revert"));
     }
 
     #[test]

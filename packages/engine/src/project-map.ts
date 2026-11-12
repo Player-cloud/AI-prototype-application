@@ -7,7 +7,8 @@
  * Writing the map is best-effort: a map problem never fails a Keep.
  *
  * Undo: only a build that is still waiting can be undone, and it never reached the map, so there
- * is nothing to take out. Files of a kept build leave the map when they leave the project.
+ * is nothing to take out. Files of a kept build leave the map when they leave the project, and
+ * when a kept build is reversed its feature loses the files the reversal changed.
  */
 import { lstat, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -127,6 +128,34 @@ export async function updateMapAfterKeep(
     const exists = (p: string) => lstat(join(codeFolder, ...p.split('/'))).then(() => true, () => false);
     const next = await refreshMap(await readMap(settings, slug), { feature: build.feature, title, buildId: build.buildId, keptAt: build.keptAt.toISOString(), changed: build.changed }, exists);
     await writeMap(settings, slug, next);
+    return '';
+  } catch (err) {
+    return ` The project map wasn’t updated (${(err as Error).message.split('\n')[0]}).`;
+  }
+}
+
+/**
+ * After a kept build is reversed: its feature loses the files the revert changed, files gone from
+ * the project leave every feature, and a feature left with no files is dropped. Never throws;
+ * returns a plain note ('' when nothing needs saying).
+ */
+export async function updateMapAfterRevert(settings: AppSettings, slug: string, build: { feature: string; changed: string[]; at: Date }, codeFolder: string): Promise<string> {
+  if (!settings.dataFolder) return '';
+  try {
+    const map = await readMap(settings, slug);
+    const exists = (p: string) => lstat(join(codeFolder, ...p.split('/'))).then(() => true, () => false);
+    const changed = new Set<string>();
+    for (const raw of build.changed) {
+      const c = await cleanPath(raw);
+      if (c) changed.add(c);
+    }
+    const features: Record<string, FeatureEntry> = {};
+    for (const [id, e] of Object.entries(map.features)) {
+      const files: string[] = [];
+      for (const f of e.files) if ((id !== build.feature || !changed.has(f)) && (await exists(f))) files.push(f);
+      if (files.length || id !== build.feature) features[id] = { ...e, files, tests: files.filter(isTestPath) };
+    }
+    await writeMap(settings, slug, { version: MAP_VERSION, updatedAt: build.at.toISOString(), features });
     return '';
   } catch (err) {
     return ` The project map wasn’t updated (${(err as Error).message.split('\n')[0]}).`;

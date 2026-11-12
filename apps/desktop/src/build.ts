@@ -97,7 +97,7 @@ export interface BuildRun {
   testsPassed: boolean;
   fixAttempts: number;
   summary: string;
-  status: 'running' | 'built' | 'kept' | 'undone' | 'failed' | 'stopped' | 'interrupted';
+  status: 'running' | 'built' | 'kept' | 'undone' | 'reverted' | 'failed' | 'stopped' | 'interrupted';
   rating: number | null;
   keptInto: string;
   /** Why a failed build failed; null for the rest. */
@@ -205,6 +205,15 @@ export async function listRuns(invoke: Invoke, slug: string): Promise<BuildRun[]
 export async function decideRun(invoke: Invoke, id: number, keep: boolean): Promise<Decided> {
   try {
     return await invoke<Decided>('run_decide', { id, keep });
+  } catch (err) {
+    throw plain(err);
+  }
+}
+
+/** Undo a kept build: adds a new commit that reverses it (never rewrites history, never pushes). */
+export async function revertRun(invoke: Invoke, id: number): Promise<{ run: BuildRun; note: string; learned: string[] }> {
+  try {
+    return await engine(invoke, 'run_revert', { id });
   } catch (err) {
     throw plain(err);
   }
