@@ -32,7 +32,7 @@ const avg = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
 
 /** "file:line (Area): says" lines from a checklist check's detail. */
 function checklistSays(run: Run): string[] {
-  const c = run.checks.find((x) => x.name === 'checklist' && !x.passed);
+  const c = run.findings.find((x) => x.check === 'checklist' && x.level !== 'pass');
   if (!c?.detail) return [];
   return [...new Set(c.detail.split('\n').map((l) => /\(([^)]+)\): (.+)$/.exec(l)).filter(Boolean).map((m) => `${m![1]}: ${m![2]}`))];
 }

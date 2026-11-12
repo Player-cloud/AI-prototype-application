@@ -45,8 +45,69 @@ export interface RunFailure {
 /** A picture of the build (step 9c): where it is and its hash, to spot changed screens. */
 export interface RunPicture { name: string; path: string; hash: string }
 
-/** One free check's result, as the checks package reports it. */
+/** One free check's result in the OLD shape. Rows saved before Findings hold these; they still read. */
 export interface RunCheck { name: string; passed: boolean; advisory?: boolean; detail?: string }
+
+/**
+ * One finding: the one shape for every check result (the same as `Finding` in the checks package;
+ * memory doesn't depend on that package, so the shape is written here too and a test keeps them equal).
+ */
+export interface RunFinding {
+  check: string;
+  level: 'pass' | 'info' | 'warn' | 'block';
+  title: string;
+  detail?: string;
+  file?: string;
+  line?: number;
+  source: 'tool' | 'model' | 'rule';
+}
+
+const LEVELS: readonly string[] = ['pass', 'info', 'warn', 'block'];
+const SOURCES: readonly string[] = ['tool', 'model', 'rule'];
+const OLD_TITLES: Record<string, string> = {
+  tests: 'Tests', secrets: 'Secret scan', audit: 'Package audit', dependencies: 'New packages', checklist: 'Checklist rules',
+  axe: 'Accessibility', 'phone-overflow': 'Phone width', pictures: 'Pictures', 'free checks': 'Free checks',
+};
+
+/**
+ * The converter for rows saved before Findings: an old check becomes a finding. Passed is 'pass';
+ * failed and not advice-only is 'block' (so the same builds stay blocked); advice that didn't run
+ * is 'info'; other advice is 'warn'. Same rules as `toFinding` in the checks package.
+ */
+export function findingOfOldCheck(c: RunCheck): RunFinding {
+  const name = OLD_TITLES[c.name] ?? c.name;
+  const detail = c.detail ? { detail: c.detail } : {};
+  const source = c.name === 'dependencies' || c.name === 'checklist' ? 'rule' : 'tool';
+  if (c.passed) return { check: c.name, level: 'pass', title: `${name}: passed`, ...detail, source };
+  if (!c.advisory) return { check: c.name, level: 'block', title: c.name === 'dependencies' ? `${name}: need your OK before Keep` : `${name}: failed`, ...detail, source };
+  if (/^(Not run|No pictures)/.test(c.detail ?? '')) return { check: c.name, level: 'info', title: `${name}: not run`, ...detail, source };
+  return { check: c.name, level: 'warn', title: `${name}: advice (doesn’t stop Keep)`, ...detail, source };
+}
+
+/** What a saved row holds: findings, old checks, or a mix. Anything unreadable is left out. */
+export function findingsFromStored(raw: unknown): RunFinding[] {
+  if (!Array.isArray(raw)) return [];
+  const out: RunFinding[] = [];
+  for (const v of raw) {
+    if (typeof v !== 'object' || v === null) continue;
+    const r = v as Record<string, unknown>;
+    if (typeof r.level === 'string' && typeof r.check === 'string') {
+      if (!LEVELS.includes(r.level)) continue;
+      out.push({
+        check: r.check,
+        level: r.level as RunFinding['level'],
+        title: typeof r.title === 'string' ? r.title : r.check,
+        ...(typeof r.detail === 'string' ? { detail: r.detail } : {}),
+        ...(typeof r.file === 'string' ? { file: r.file } : {}),
+        ...(typeof r.line === 'number' ? { line: r.line } : {}),
+        source: SOURCES.includes(r.source as string) ? (r.source as RunFinding['source']) : 'tool',
+      });
+    } else if (typeof r.name === 'string' && typeof r.passed === 'boolean') {
+      out.push(findingOfOldCheck({ name: r.name, passed: r.passed, ...(r.advisory === true ? { advisory: true } : {}), ...(typeof r.detail === 'string' ? { detail: r.detail } : {}) }));
+    }
+  }
+  return out;
+}
 
 export interface NewRun {
   at: Date;
@@ -62,7 +123,9 @@ export interface NewRun {
   testsPassed: boolean;
   fixAttempts: number;
   summary: string;
-  /** The free checks after the tests (step 9b). */
+  /** The free checks after the tests (step 9b), as findings. */
+  findings?: RunFinding[];
+  /** The same in the old shape: still accepted, and saved as findings. */
   checks?: RunCheck[];
   /** Desktop and phone pictures (step 9c). */
   pictures?: RunPicture[];
@@ -70,7 +133,7 @@ export interface NewRun {
   ms?: number | null;
 }
 
-export interface Run extends Omit<NewRun, 'at' | 'checks' | 'pictures' | 'ms'> {
+export interface Run extends Omit<NewRun, 'at' | 'checks' | 'findings' | 'pictures' | 'ms'> {
   id: number;
   /** Why it failed; null unless status is 'failed'. */
   cause: RunCause | null;
@@ -79,7 +142,8 @@ export interface Run extends Omit<NewRun, 'at' | 'checks' | 'pictures' | 'ms'> {
   /** When a failed, stopped or interrupted build ended; null for the rest. */
   endedAt: string | null;
   ms: number | null;
-  checks: RunCheck[];
+  /** The free checks' findings. Rows saved with the old checks are converted when read. */
+  findings: RunFinding[];
   pictures: RunPicture[];
   at: string;
   status: RunStatus;
@@ -129,6 +193,11 @@ function parseList<T>(raw: string): T[] {
   }
 }
 
+/** What goes in the `checks` column (its name is older than Findings): findings, always in the new shape. */
+function savedFindings(r: { findings?: RunFinding[]; checks?: RunCheck[] }): RunFinding[] {
+  return findingsFromStored([...(r.findings ?? []), ...(r.checks ?? [])]);
+}
+
 function toRun(r: Row): Run {
   return {
     id: r.id,
@@ -148,7 +217,7 @@ function toRun(r: Row): Run {
     decidedAt: r.decided_at,
     mergeCommit: r.merge_commit,
     keptInto: r.kept_into,
-    checks: parseList<RunCheck>(r.checks),
+    findings: findingsFromStored(parseList<unknown>(r.checks)),
     pictures: parseList<RunPicture>(r.pictures),
     ms: r.ms ?? null,
     cause: r.cause ?? null,
@@ -243,10 +312,10 @@ export class RunLog {
   }
 
   /** The build finished normally: the same row gets everything and waits for Keep or Undo. */
-  finish(id: number, r: Pick<NewRun, 'costUsd' | 'testsPassed' | 'fixAttempts' | 'summary' | 'checks' | 'pictures' | 'ms'>): void {
+  finish(id: number, r: Pick<NewRun, 'costUsd' | 'testsPassed' | 'fixAttempts' | 'summary' | 'findings' | 'checks' | 'pictures' | 'ms'>): void {
     const res = this.db
       .prepare("UPDATE runs SET cost_usd = ?, tests_passed = ?, fix_attempts = ?, summary = ?, checks = ?, pictures = ?, ms = ?, status = 'built' WHERE id = ? AND status = 'running'")
-      .run(r.costUsd, r.testsPassed ? 1 : 0, r.fixAttempts, r.summary, JSON.stringify(r.checks ?? []), JSON.stringify(r.pictures ?? []), r.ms ?? null, id);
+      .run(r.costUsd, r.testsPassed ? 1 : 0, r.fixAttempts, r.summary, JSON.stringify(savedFindings(r)), JSON.stringify(r.pictures ?? []), r.ms ?? null, id);
     LIVE.delete(this.key(id));
     if (Number(res.changes) !== 1) throw new Error('That build isn’t running.');
   }
@@ -269,7 +338,7 @@ export class RunLog {
       .prepare(
         'INSERT INTO runs (at, slug, feature, path, branch, base, model, cost_usd, tests_passed, fix_attempts, summary, checks, pictures, ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       )
-      .run(r.at.toISOString(), r.slug, r.feature, r.path, r.branch, r.base, r.model, r.costUsd, r.testsPassed ? 1 : 0, r.fixAttempts, r.summary, JSON.stringify(r.checks ?? []), JSON.stringify(r.pictures ?? []), r.ms ?? null);
+      .run(r.at.toISOString(), r.slug, r.feature, r.path, r.branch, r.base, r.model, r.costUsd, r.testsPassed ? 1 : 0, r.fixAttempts, r.summary, JSON.stringify(savedFindings(r)), JSON.stringify(r.pictures ?? []), r.ms ?? null);
     this.prune();
     return Number(res.lastInsertRowid);
   }
@@ -297,9 +366,9 @@ export class RunLog {
     if (Number(res.changes) !== 1) throw new Error('That build was already kept or undone.');
   }
 
-  /** Replaces a waiting run's saved checks (joshua approved new packages). Only a run still waiting. */
-  setChecks(id: number, checks: RunCheck[]): void {
-    const res = this.db.prepare("UPDATE runs SET checks = ? WHERE id = ? AND status = 'built'").run(JSON.stringify(checks), id);
+  /** Replaces a waiting run's saved findings (joshua approved new packages). Only a run still waiting. */
+  setFindings(id: number, findings: RunFinding[]): void {
+    const res = this.db.prepare("UPDATE runs SET checks = ? WHERE id = ? AND status = 'built'").run(JSON.stringify(findings), id);
     if (Number(res.changes) !== 1) throw new Error('That build was already kept or undone.');
   }
 

@@ -1,5 +1,5 @@
 /** What the Tools screen shows: the data repo's tools, habits and rules, read through the memory package. */
-import type { ToolHealth, ToolState } from '@aip/memory';
+import type { ToolHealth, ToolState, Trust } from '@aip/memory';
 import type { AppSettings } from './settings.ts';
 import { fileChanged, isInside, undoLabel } from './history.ts';
 import { readEnvironments } from './environment.ts';
@@ -35,6 +35,8 @@ export interface ToolRow {
   stale: boolean;
   failuresInRow: number;
   switchedOff: boolean;
+  /** How far joshua can rely on it: unknown, checked (passed its health check), or trusted (his say-so). */
+  trust: Trust;
 }
 
 export type DataOverview =
@@ -135,6 +137,7 @@ export async function dataOverview(settings: AppSettings): Promise<DataOverview>
       stale: healthOf(t).stale,
       failuresInRow: healthOf(t).consecutiveFailures,
       switchedOff: healthOf(t).off !== null,
+      trust: healthOf(t).trust,
     })),
     habits: repo.habits,
     ruleCount: repo.rules.length,
@@ -182,6 +185,30 @@ export async function switchToolOn(settings: AppSettings, tool: string) {
   if (!before.off) throw new Error(`${tool} isn’t switched off.`);
   await m.writeHealth(folder, m.switchOn(before));
   return m.syncDataRepo(folder, `Switch ${tool} back on`);
+}
+
+/**
+ * joshua's explicit trust action (the only way a tool becomes 'trusted'). Raising is allowed only
+ * from 'checked'; lowering ('Stop trusting') is allowed from anywhere. Then syncs the data repo.
+ * Nothing else calls `setTrust`: scores, ratings and health numbers never reach here.
+ */
+export async function setToolTrust(settings: AppSettings, tool: string, trust: string) {
+  const folder = folderOf(settings);
+  const m = await import('@aip/memory');
+  if (!(m.TRUST_LEVELS as readonly string[]).includes(trust)) throw new Error('Trust must be unknown, checked or trusted.');
+  const before = await m.readHealth(folder, tool, await idOf(folder, tool));
+  const after = m.setTrust(before, trust as Trust);
+  if (after !== before) await m.writeHealth(folder, after);
+  // The change is saved either way; a failed sync is said, not thrown, so the button still shows the new level.
+  let sync = '';
+  if (after !== before) {
+    try {
+      sync = (await m.syncDataRepo(folder, `Trust level of ${tool}: ${after.trust}`)).summary;
+    } catch (err) {
+      sync = `Saved here, but not synced yet: ${(err as Error).message}`;
+    }
+  }
+  return { trust: after.trust, sync };
 }
 
 /** Records one use of a tool: success, or failure with its error. Saved in the data folder. */

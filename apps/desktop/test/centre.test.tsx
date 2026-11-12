@@ -20,6 +20,7 @@ const row = (name: string, lifecycle: CentreRow['lifecycle'], extra: Partial<Cen
   computers: '',
   health: '',
   rating: 'Not rated',
+  trust: 'unknown',
   ...extra,
 });
 
@@ -36,8 +37,10 @@ const DATA: CentreData = {
   recommendations: ['axe-core changed since it was tested. Run its free test in Tools.'],
 };
 
-const shell = (answer: CentreData | string) =>
-  (async <T,>(cmd: string) => {
+const shell = (answer: CentreData | string, calls: { cmd: string; args?: Record<string, unknown> }[] = []) =>
+  (async <T,>(cmd: string, args?: Record<string, unknown>) => {
+    calls.push({ cmd, args });
+    if (cmd === 'tool_trust') return { trust: args?.trust, sync: '' } as T;
     if (cmd !== 'capability_centre') throw `unexpected ${cmd}`;
     if (typeof answer === 'string') throw answer;
     return answer as T;
@@ -72,5 +75,57 @@ describe('Capability Centre (UI-01)', () => {
   it('needs the desktop app', () => {
     render(<Centre invoke={null} />);
     expect(screen.getByText(/needs the desktop app/)).toBeTruthy();
+  });
+
+  describe('trust', () => {
+    const TRUST: CentreData = {
+      ...DATA,
+      rows: [
+        row('new-tool', 'not tested', { trust: 'unknown' }),
+        row('secretlint', 'in use', { trust: 'checked' }),
+        row('axe-core', 'in use', { trust: 'trusted' }),
+      ],
+      counts: { 'in use': 2, stale: 0, 'on trial': 0, 'not tested': 1, 'switched off': 0, retired: 0 },
+    };
+    const item = (name: string) => screen.getByText(name).closest('li') as HTMLElement;
+
+    it('shows each tool’s trust, with Trust this tool only for a checked tool and Stop trusting only for a trusted one', async () => {
+      render(<Centre invoke={shell(TRUST)} />);
+      await screen.findByRole('list', { name: 'Capabilities' });
+      expect(within(item('new-tool')).getByText(/^Not checked yet/)).toBeTruthy();
+      expect(within(item('new-tool')).queryByRole('button', { name: /trust/i })).toBeNull();
+      expect(within(item('secretlint')).getByText(/^Checked: it passed its health check/)).toBeTruthy();
+      expect(within(item('secretlint')).getByRole('button', { name: 'Trust this tool' })).toBeTruthy();
+      expect(within(item('secretlint')).queryByRole('button', { name: 'Stop trusting' })).toBeNull();
+      expect(within(item('axe-core')).getByText('Trusted by you.')).toBeTruthy();
+      expect(within(item('axe-core')).getByRole('button', { name: 'Stop trusting' })).toBeTruthy();
+      expect(within(item('axe-core')).queryByRole('button', { name: 'Trust this tool' })).toBeNull();
+    });
+
+    it('pressing Trust this tool asks the engine to trust it, then shows Stop trusting; pressing that goes back to checked', async () => {
+      const calls: { cmd: string; args?: Record<string, unknown> }[] = [];
+      render(<Centre invoke={shell(TRUST, calls)} />);
+      await screen.findByRole('list', { name: 'Capabilities' });
+      // Nothing is sent just by looking.
+      expect(calls.filter((c) => c.cmd === 'tool_trust')).toEqual([]);
+      fireEvent.click(within(item('secretlint')).getByRole('button', { name: 'Trust this tool' }));
+      await within(item('secretlint')).findByRole('button', { name: 'Stop trusting' });
+      expect(calls).toContainEqual({ cmd: 'tool_trust', args: { tool: 'secretlint', trust: 'trusted' } });
+      fireEvent.click(within(item('secretlint')).getByRole('button', { name: 'Stop trusting' }));
+      await within(item('secretlint')).findByRole('button', { name: 'Trust this tool' });
+      expect(calls).toContainEqual({ cmd: 'tool_trust', args: { tool: 'secretlint', trust: 'checked' } });
+    });
+
+    it('says plainly when the engine refuses', async () => {
+      const refusing = (async <T,>(cmd: string) => {
+        if (cmd === 'tool_trust') throw 'secretlint hasn’t passed its health check yet.';
+        return TRUST as T;
+      }) as Invoke;
+      render(<Centre invoke={refusing} />);
+      await screen.findByRole('list', { name: 'Capabilities' });
+      fireEvent.click(within(item('secretlint')).getByRole('button', { name: 'Trust this tool' }));
+      expect((await screen.findByRole('alert')).textContent).toBe('secretlint hasn’t passed its health check yet.');
+      expect(within(item('secretlint')).getByRole('button', { name: 'Trust this tool' })).toBeTruthy();
+    });
   });
 });

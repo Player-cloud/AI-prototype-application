@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { Build, limitText } from '../src/screens/Build';
-import type { BuildEvent, MakeChannel } from '../src/build';
+import type { BuildEvent, Finding, MakeChannel } from '../src/build';
 import type { Invoke } from '../src/engine';
 
 afterEach(cleanup);
@@ -25,7 +25,7 @@ const WAITING = {
   status: 'built',
   rating: null,
   keptInto: '',
-  checks: [] as { name: string; passed: boolean; advisory?: boolean; detail?: string }[],
+  findings: [] as Finding[],
 };
 
 function fakeShell(opts: { fail?: string; runs?: (typeof WAITING)[]; asks?: { id: number; at: string; slug: string; feature: string; branch: string; tool: string; input: string; reason: string }[] } = {}) {
@@ -58,7 +58,7 @@ function fakeShell(opts: { fail?: string; runs?: (typeof WAITING)[]; asks?: { id
       return { run: runs[0], note: keep ? 'Kept F-02 in your copy on main. Nothing was pushed.' : 'Undone: F-02’s build was removed. Your copy wasn’t touched.', learned: [], phone: 'Closed issue #12 on your phone.' } as T;
     }
     if (cmd === 'deps_approve') {
-      runs = runs.map((r) => (r.id === args?.id ? { ...r, checks: r.checks.map((c) => (c.name === 'dependencies' ? { name: 'dependencies', passed: true, detail: 'Approved by joshua on 2026-11-12: left-pad ^1.3.0' } : c)) } : r));
+      runs = runs.map((r) => (r.id === args?.id ? { ...r, findings: r.findings.map((f) => (f.check === 'dependencies' ? { check: 'dependencies', level: 'pass' as const, title: 'New packages: approved by joshua', detail: 'Approved by joshua on 2026-11-12: left-pad ^1.3.0', source: 'rule' as const } : f)) } : r));
       return { run: runs[0], note: 'Approved the new packages for F-02: left-pad ^1.3.0.', keep: { keep: true, blocking: [] } } as T;
     }
     if (cmd === 'ask_list') return asks as T;
@@ -170,9 +170,9 @@ describe('Build screen', () => {
       tests: { passed: true, output: '3 passed', fixAttempts: 0 },
       synced: 'Saved 1 file. Data repo is up to date on GitHub.',
       runId: 7,
-      checks: [
-        { name: 'secrets', passed: true, detail: 'No keys found in 2 changed files.' },
-        { name: 'checklist', passed: false, advisory: true, detail: 'src/rota.tsx:3 (Accessibility): Every image needs alt text.' },
+      findings: [
+        { check: 'secrets', level: 'pass', title: 'Secret scan: passed', detail: 'No keys found in 2 changed files.', source: 'tool' },
+        { check: 'checklist', level: 'warn', title: 'Checklist rules: advice (doesn’t stop Keep)', detail: 'src/rota.tsx:3 (Accessibility): Every image needs alt text.', source: 'rule' },
       ],
       keep: { keep: true, blocking: [] },
       pictures: [
@@ -209,6 +209,44 @@ describe('Build screen', () => {
     expect([...qs.querySelectorAll('li')].map((li) => li.textContent)).toEqual(['Should the rota start on Monday? I used Monday.']);
   });
 
+  it('shows the findings grouped by level, worst first, with plain titles', async () => {
+    const shell = fakeShell();
+    render(<Build invoke={shell.invoke} makeChannel={shell.makeChannel} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Build F-01 (costs up to £0.80 ($1.01))' }));
+    shell.done({
+      run: RUN,
+      using: 'Using: Sonnet 5.5',
+      steps: [],
+      summary: 'Done.',
+      claims: [],
+      modelName: 'Sonnet 5.5',
+      costText: '£0.33 ($0.42)',
+      tests: { passed: true, output: '3 passed', fixAttempts: 0 },
+      synced: '',
+      runId: 9,
+      findings: [
+        { check: 'secrets', level: 'pass', title: 'Secret scan: passed', source: 'tool' },
+        { check: 'audit', level: 'info', title: 'Package audit: not run', detail: 'Not run: no internet.', source: 'tool' },
+        { check: 'checklist', level: 'warn', title: 'Checklist rules: advice (doesn’t stop Keep)', detail: 'a.tsx:1 (Security): Use https:// links.', source: 'rule' },
+        { check: 'dependencies', level: 'block', title: 'New packages: need your OK before Keep', detail: 'New: left-pad ^1.3.0', source: 'rule' },
+      ],
+      keep: { keep: false, blocking: ['dependencies'] },
+      pictures: [],
+      screensChanged: null,
+      picturesNote: '',
+      phone: '',
+    });
+    const result = await screen.findByRole('region', { name: 'Build result' });
+    const groups = [...result.querySelectorAll('[role="group"].finding-group')];
+    expect(groups.map((g) => g.getAttribute('aria-label'))).toEqual(['Stops Keep', 'Advice (doesn’t stop Keep)', 'Notes', 'Passed']);
+    expect(within(groups[0] as HTMLElement).getByText(/^New packages: need your OK before Keep/)).toBeTruthy();
+    expect(within(groups[1] as HTMLElement).getByText('a.tsx:1 (Security): Use https:// links.')).toBeTruthy();
+    expect(within(groups[2] as HTMLElement).getByText(/^Package audit: not run/)).toBeTruthy();
+    // A pass shows only its title.
+    expect(within(groups[3] as HTMLElement).getByText('Secret scan: passed')).toBeTruthy();
+    expect(within(groups[3] as HTMLElement).queryByText('No keys found')).toBeNull();
+  });
+
   it('reloads a plain page in the live view as the build changes it', async () => {
     const shell = fakeShell();
     render(<Build invoke={shell.invoke} makeChannel={shell.makeChannel} />);
@@ -238,7 +276,7 @@ describe('Build screen', () => {
       tests: { passed: false, output: 'FAIL rota.test.ts', fixAttempts: 2 },
       synced: '',
       runId: 8,
-      checks: [],
+      findings: [],
       keep: { keep: false, blocking: ['tests'] },
       pictures: [],
       screensChanged: null,
@@ -297,7 +335,7 @@ describe('Build screen', () => {
   });
 
   it('can’t keep a build whose secret scan failed', async () => {
-    const shell = fakeShell({ runs: [{ ...WAITING, checks: [{ name: 'secrets', passed: false }] }] });
+    const shell = fakeShell({ runs: [{ ...WAITING, findings: [{ check: 'secrets', level: 'block', title: 'Secret scan: failed', source: 'tool' }] }] });
     render(<Build invoke={shell.invoke} makeChannel={shell.makeChannel} />);
     const keep = (await screen.findByRole('button', { name: 'Keep F-02' })) as HTMLButtonElement;
     expect(keep.disabled).toBe(true);
@@ -305,7 +343,7 @@ describe('Build screen', () => {
   });
 
   it('shows Approve new packages only while new packages block Keep, and Keep works after it', async () => {
-    const waiting = { ...WAITING, checks: [{ name: 'dependencies', passed: false, detail: 'New: left-pad ^1.3.0 (dependencies in package.json)\nNew packages need your OK before Keep.' }] };
+    const waiting = { ...WAITING, findings: [{ check: 'dependencies', level: 'block' as const, title: 'New packages: need your OK before Keep', detail: 'New: left-pad ^1.3.0 (dependencies in package.json)\nNew packages need your OK before Keep.', source: 'rule' as const }] };
     const shell = fakeShell({ runs: [waiting] });
     render(<Build invoke={shell.invoke} makeChannel={shell.makeChannel} />);
     const keep = (await screen.findByRole('button', { name: 'Keep F-02' })) as HTMLButtonElement;
@@ -323,7 +361,7 @@ describe('Build screen', () => {
     await screen.findByRole('button', { name: 'Keep F-02' });
     expect(screen.queryByRole('button', { name: /Approve new packages/ })).toBeNull();
     a.unmount();
-    const failing = fakeShell({ runs: [{ ...WAITING, testsPassed: false, checks: [{ name: 'dependencies', passed: false, detail: 'New: a 1' }] }] });
+    const failing = fakeShell({ runs: [{ ...WAITING, testsPassed: false, findings: [{ check: 'dependencies', level: 'block', title: 'New packages: need your OK before Keep', detail: 'New: a 1', source: 'rule' }] }] });
     render(<Build invoke={failing.invoke} makeChannel={failing.makeChannel} />);
     await screen.findByRole('button', { name: 'Keep F-02' });
     expect(screen.queryByRole('button', { name: /Approve new packages/ })).toBeNull();

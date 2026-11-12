@@ -7,6 +7,7 @@
  * stay separate: nothing is added up into one grade, and joshua's rating is kept apart.
  * Recommendations only point at a next step; the Centre changes nothing.
  */
+import type { Trust } from '@aip/memory';
 import type { AppSettings } from './settings.ts';
 import { dataOverview, type ToolRow } from './data.ts';
 import { ENOUGH_BUILDS, compareWorkflows, workflowAdvice, type WorkflowRow } from './workflows.ts';
@@ -33,6 +34,8 @@ export interface CentreRow {
   health: string;
   /** joshua's rating, kept apart from everything else. */
   rating: string;
+  /** How far the tool is trusted. Only joshua can make it 'trusted'; no score changes it. */
+  trust: Trust;
 }
 
 export type Centre =
@@ -92,12 +95,13 @@ export async function capabilityCentre(
       computers: t.byComputer,
       health: t.health,
       rating: t.rating && t.rating !== '-' ? `${t.rating} / 5` : 'Not rated',
+      trust: t.trust,
     };
   });
   // A build model with builds but no ledger line or health record still shows.
   for (const [id, w] of byId) {
     if (rows.some((r) => r.id === id)) continue;
-    rows.push({ id, name: w.name, kind: 'model', version: w.model, lifecycle: 'in use', why: 'Used for builds; not in the ledger yet.', tests: 'Not tested: no free test for it yet.', regression: '', builds: w.text, computers: '', health: '', rating: 'Not rated' });
+    rows.push({ id, name: w.name, kind: 'model', version: w.model, lifecycle: 'in use', why: 'Used for builds; not in the ledger yet.', tests: 'Not tested: no free test for it yet.', regression: '', builds: w.text, computers: '', health: '', rating: 'Not rated', trust: 'unknown' });
   }
 
   const counts = Object.fromEntries(LIFECYCLES.map((l) => [l, rows.filter((r) => r.lifecycle === l).length])) as Record<Lifecycle, number>;

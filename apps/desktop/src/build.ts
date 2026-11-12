@@ -9,8 +9,26 @@ export interface BuildStep { text: string; refused?: string }
 export interface LiveView { url: string | null; note: string; reloads: boolean }
 export type BuildEvent = { type: 'using'; using: string; run: RunInfo; advice?: string[] } | ({ type: 'step' } & BuildStep) | ({ type: 'live' } & LiveView);
 
-/** One free check (9b). Advice-only checks don't stop Keep. */
-export interface Check { name: string; passed: boolean; advisory?: boolean; detail?: string }
+/**
+ * One finding: the one shape for every check result. Only 'block' stops Keep; 'warn' is advice,
+ * 'info' is a note (or a check that couldn't run), 'pass' found nothing.
+ */
+export type FindingLevel = 'pass' | 'info' | 'warn' | 'block';
+export interface Finding { check: string; level: FindingLevel; title: string; detail?: string; file?: string; line?: number; source: 'tool' | 'model' | 'rule' }
+
+/** Worst first: what stops Keep, then advice, then notes, then what passed. */
+export const LEVEL_ORDER: readonly FindingLevel[] = ['block', 'warn', 'info', 'pass'];
+export const LEVEL_HEADING: Record<FindingLevel, string> = {
+  block: 'Stops Keep',
+  warn: 'Advice (doesn’t stop Keep)',
+  info: 'Notes',
+  pass: 'Passed',
+};
+
+/** The findings of one level, in the order found. */
+export function findingsAt(findings: Finding[], level: FindingLevel): Finding[] {
+  return findings.filter((f) => f.level === level);
+}
 
 /** Something the model's summary claims, beside what the app found (V2 B). null: the app didn't check it. */
 export interface Claim { topic: string; agrees: boolean | null; note: string }
@@ -34,7 +52,7 @@ export interface BuildResult {
   synced: string;
   /** The saved build that Keep, Undo and the rating act on. */
   runId: number | null;
-  checks: Check[];
+  findings: Finding[];
   keep: { keep: boolean; blocking: string[] };
   /** Desktop and phone pictures (9c). */
   pictures: { name: string; path: string; dataUrl: string }[];
@@ -66,7 +84,7 @@ export interface BuildRun {
   error?: string;
   /** Set once the unfinished build's copy was removed. */
   decidedAt?: string | null;
-  checks: Check[];
+  findings: Finding[];
 }
 
 /** Why a build failed, in plain words (the same words as the tools' health records). */
@@ -104,7 +122,7 @@ export function endedWords(r: BuildRun): string {
 
 /** True when nothing stops Keep: tests pass and no blocking check failed. */
 export function keepable(r: BuildRun): boolean {
-  return r.testsPassed && !r.checks.some((c) => !c.passed && !c.advisory);
+  return r.testsPassed && !r.findings.some((f) => f.level === 'block');
 }
 
 export const CHECK_NAME: Record<string, string> = { secrets: 'Secret scan', audit: 'Package audit', dependencies: 'New packages', checklist: 'Checklist rules', axe: 'Accessibility', 'phone-overflow': 'Phone width', pictures: 'Pictures' };
@@ -171,7 +189,7 @@ export async function decideRun(invoke: Invoke, id: number, keep: boolean): Prom
 
 /** True when the only thing stopping Keep is new packages waiting for joshua's OK. */
 export function needsPackageOk(r: BuildRun): boolean {
-  return r.status === 'built' && r.testsPassed && r.checks.some((c) => c.name === 'dependencies' && !c.passed && !c.advisory);
+  return r.status === 'built' && r.testsPassed && r.findings.some((f) => f.check === 'dependencies' && f.level === 'block');
 }
 
 /** joshua's OK for the new packages a build added. After this, Keep is allowed (if nothing else blocks). */

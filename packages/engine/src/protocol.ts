@@ -89,6 +89,9 @@
  *    (later calls give back the same one).
  *  - github_check: {token, settings} -> {ok, summary}. Free: reads the data repo's issues with the
  *    GitHub token from the password store (step 10a). The token is never put in a reply.
+ *  - tool_trust: {settings, tool, trust} -> joshua's explicit trust action: 'trusted' (only from 'checked'),
+ *    or 'checked' / 'unknown' to stop trusting. The only way a tool becomes trusted. Reached only from
+ *    the desktop's Trust button; the phone can't call it.
  *  - tool_switch_on: {settings, tool} -> switches a switched-off tool back on (retested on next use)
  *    and syncs the data repo.
  *  - cancel: {id} -> stops that running request (answered at once, not queued).
@@ -121,7 +124,7 @@ import { learnNow } from './learn.ts';
 import { githubCheck } from './github.ts';
 import { closeBuild, listWork, postBuild, publishPictures } from './notify.ts';
 import { pollReplies } from './replies.ts';
-import { dataOverview, rateAndSync, switchToolOn, syncAfterUndo, syncNow } from './data.ts';
+import { dataOverview, rateAndSync, setToolTrust, switchToolOn, syncAfterUndo, syncNow } from './data.ts';
 import { historyList, settingsSaved, undoCheck, undoStart } from './history.ts';
 import { parseSuggestions, suggestPrompt } from './suggest.ts';
 import { stageOf } from './interview.ts';
@@ -455,7 +458,7 @@ const HANDLERS: Record<string, Handler> = {
               testsPassed: r.tests.passed,
               fixAttempts: r.tests.fixAttempts,
               blocking: r.keep.blocking,
-              advice: r.checks.filter((c) => !c.passed && c.advisory).map((c) => c.name),
+              advice: r.findings.filter((f) => f.level === 'warn' || f.level === 'info').map((f) => f.check),
               costText: cost,
               screensChanged: r.screensChanged,
               summary: r.summary,
@@ -563,6 +566,10 @@ const HANDLERS: Record<string, Handler> = {
   github_check: (params, deps) => {
     const p = obj(params);
     return githubCheck(str(p, 'token'), checkSettings(p.settings), deps.fetch);
+  },
+  tool_trust: (params) => {
+    const p = obj(params);
+    return setToolTrust(checkSettings(p.settings), str(p, 'tool'), str(p, 'trust'));
   },
   tool_switch_on: (params) => {
     const p = obj(params);

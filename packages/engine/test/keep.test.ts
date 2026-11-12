@@ -96,10 +96,12 @@ describe('Keep or Undo a build', () => {
     expect(ok.error).toBeUndefined();
     expect(ok.result.keep).toEqual({ keep: true, blocking: [] });
     expect(ok.result.note).toBe('Approved the new packages for F-01: left-pad ^1.3.0 (dependencies in package.json), zod ~3.0.0 (devDependencies in package.json).');
-    const stored = ok.result.run.checks.find((c: { name: string }) => c.name === 'dependencies');
+    const stored = ok.result.run.findings.find((f: { check: string }) => f.check === 'dependencies');
     expect(stored).toEqual({
-      name: 'dependencies',
-      passed: true,
+      check: 'dependencies',
+      level: 'pass',
+      title: 'New packages: approved by joshua',
+      source: 'rule',
       detail: 'Approved by joshua on 2026-11-11: left-pad ^1.3.0 (dependencies in package.json); zod ~3.0.0 (devDependencies in package.json)',
     });
     // It is in the change history, and can't be "undone" there.

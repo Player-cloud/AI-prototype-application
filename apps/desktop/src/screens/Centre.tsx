@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { Invoke } from '../engine';
-import { LIFECYCLES, getCentre, type Centre as CentreData, type Lifecycle } from '../data';
+import { LIFECYCLES, getCentre, setTrust, type Centre as CentreData, type Lifecycle, type Trust } from '../data';
 
 const LABEL: Record<Lifecycle, string> = {
   'in use': 'In use',
@@ -11,6 +11,12 @@ const LABEL: Record<Lifecycle, string> = {
   retired: 'Retired',
 };
 
+const TRUST_WORDS: Record<Trust, string> = {
+  unknown: 'Not checked yet. It becomes “checked” by itself once it passes its health check.',
+  checked: 'Checked: it passed its health check. Only you can trust it.',
+  trusted: 'Trusted by you.',
+};
+
 /**
  * UI-01: the Capability Centre. Every line comes from a real record; where there isn't one it
  * says so. Scores are never added up into one grade, and it changes nothing.
@@ -19,6 +25,7 @@ export function Centre({ invoke }: { invoke: Invoke | null }) {
   const [data, setData] = useState<CentreData | null>(null);
   const [error, setError] = useState('');
   const [filter, setFilter] = useState<Lifecycle | 'all'>('all');
+  const [trustError, setTrustError] = useState('');
 
   useEffect(() => {
     if (!invoke) return;
@@ -35,6 +42,17 @@ export function Centre({ invoke }: { invoke: Invoke | null }) {
   if (error) return <section className="card"><p className="key-note bad" role="alert">{error}</p></section>;
   if (!data) return <section className="card"><p className="muted">Reading your records…</p></section>;
   if (!data.configured) return <section className="card"><p className="muted">Set your data folder in Settings first: the Centre is built from the records kept there.</p></section>;
+
+  // joshua's button. Scores, ratings and health never change trust; only this does.
+  const changeTrust = async (id: string, name: string, trust: Trust) => {
+    setTrustError('');
+    try {
+      await setTrust(invoke, name, trust);
+      setData((d) => (d && d.configured ? { ...d, rows: d.rows.map((r) => (r.id === id ? { ...r, trust } : r)) } : d));
+    } catch (err) {
+      setTrustError((err as Error).message);
+    }
+  };
 
   const rows = filter === 'all' ? data.rows : data.rows.filter((r) => r.lifecycle === filter);
   return (
@@ -61,9 +79,10 @@ export function Centre({ invoke }: { invoke: Invoke | null }) {
         ) : (
           <p className="muted">Nothing to do: the records don’t point to anything.</p>
         )}
-        <p className="muted">Suggestions only. Nothing is installed, switched or changed from here.</p>
+        <p className="muted">Suggestions only. Nothing is installed or switched from here; only the trust buttons below change anything, and only when you press them.</p>
       </div>
 
+      {trustError && <p className="key-note bad" role="alert">{trustError}</p>}
       <ul className="tool-list" aria-label="Capabilities">
         {rows.map((r) => (
           <li key={r.id}>
@@ -104,6 +123,20 @@ export function Centre({ invoke }: { invoke: Invoke | null }) {
               )}
               <dt>Your rating</dt>
               <dd>{r.rating}</dd>
+              <dt>Trust</dt>
+              <dd>
+                <span className={`trust ${r.trust}`}>{TRUST_WORDS[r.trust]}</span>{' '}
+                {r.trust === 'checked' && (
+                  <button type="button" onClick={() => void changeTrust(r.id, r.name, 'trusted')}>
+                    Trust this tool
+                  </button>
+                )}
+                {r.trust === 'trusted' && (
+                  <button type="button" onClick={() => void changeTrust(r.id, r.name, 'checked')}>
+                    Stop trusting
+                  </button>
+                )}
+              </dd>
             </dl>
           </li>
         ))}

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Invoke } from '../engine';
 import { listProjects, openProject, type Feature, type ProjectRow } from '../projects';
 import { getSettings } from '../settings';
-import { CHECK_NAME, approvePackages, costSoFar, endedWords, endedEarly, compareWorkflows, decideAsk, decideRun, keepable, listAsks, listRuns, listWork, needsPackageOk, pollPhone, rateRun, startBuild, stopBuild, type BuildResult, type BuildRun, type AskRequest, type BuildStep, type LiveView, type MakeChannel, type WorkItem, type WorkflowRow } from '../build';
+import { CHECK_NAME, LEVEL_HEADING, LEVEL_ORDER, approvePackages, findingsAt, costSoFar, endedWords, endedEarly, compareWorkflows, decideAsk, decideRun, keepable, listAsks, listRuns, listWork, needsPackageOk, pollPhone, rateRun, startBuild, stopBuild, type BuildResult, type BuildRun, type AskRequest, type BuildStep, type LiveView, type MakeChannel, type WorkItem, type WorkflowRow } from '../build';
 
 type Note = { text: string; bad: boolean } | null;
 
@@ -402,17 +402,27 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
               ))}
             </div>
           )}
-          {result.checks.length > 0 && (
+          {result.findings.length > 0 && (
             <>
               <h3>Free checks</h3>
-              <ul className="check-list">
-                {result.checks.map((c) => (
-                  <li key={c.name} className={c.passed ? 'ok' : c.advisory ? 'advice' : 'bad'}>
-                    {CHECK_NAME[c.name] ?? c.name}: {c.passed ? 'passed' : c.advisory ? 'advice (doesn’t stop Keep)' : 'failed'}
-                    {c.detail && !c.passed && <pre className="test-output">{c.detail}</pre>}
-                  </li>
-                ))}
-              </ul>
+              {LEVEL_ORDER.map((level) => {
+                const at = findingsAt(result.findings, level);
+                if (at.length === 0) return null;
+                return (
+                  <div key={level} className={`finding-group ${level}`} role="group" aria-label={LEVEL_HEADING[level]}>
+                    <h4>{LEVEL_HEADING[level]} ({at.length})</h4>
+                    <ul className="check-list">
+                      {at.map((f, i) => (
+                        <li key={`${f.check}-${i}`} className={level === 'pass' ? 'ok' : level === 'block' ? 'bad' : level === 'warn' ? 'advice' : 'note'}>
+                          {f.title}
+                          {f.file && <span className="muted"> ({f.file}{f.line ? `:${f.line}` : ''})</span>}
+                          {f.detail && level !== 'pass' && <pre className="test-output">{f.detail}</pre>}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                );
+              })}
             </>
           )}
           {result.synced && <p className="muted">Data folder: {result.synced}</p>}
