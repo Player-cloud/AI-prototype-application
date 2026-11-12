@@ -185,3 +185,35 @@ export function savedPercent(first: number, all: number): string {
   if (all <= 0 || first >= all) return '0%';
   return `${Math.round((1 - first / all) * 100)}%`;
 }
+
+/** UI-01: the Capability Centre's states, in the order shown. */
+export type Lifecycle = 'in use' | 'stale' | 'switched off' | 'retired' | 'on trial' | 'not tested';
+export const LIFECYCLES: readonly Lifecycle[] = ['in use', 'stale', 'on trial', 'not tested', 'switched off', 'retired'];
+
+export interface CentreRow {
+  id: string;
+  name: string;
+  kind: string;
+  version: string | null;
+  lifecycle: Lifecycle;
+  why: string;
+  tests: string;
+  regression: string;
+  builds: string;
+  computers: string;
+  health: string;
+  rating: string;
+}
+
+export type Centre =
+  | { configured: false }
+  | { configured: true; rows: CentreRow[]; counts: Record<Lifecycle, number>; comparisons: string[]; recommendations: string[] };
+
+/** UI-01: every capability from real records only (free, read-only). */
+export async function getCentre(invoke: Invoke): Promise<Centre> {
+  try {
+    return await invoke<Centre>('capability_centre');
+  } catch (err) {
+    throw plain(err);
+  }
+}

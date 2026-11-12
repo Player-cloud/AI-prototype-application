@@ -26,6 +26,9 @@
  *    `pnpm outdated`, installs nothing), keeps them in the data folder's updates.json and syncs.
  *  - update_decide: {settings, package, to, ok} -> joshua's OK or no on one update. Nothing is
  *    installed: an OK gives back the command for joshua to run himself.
+ *  - capability_centre: {settings, dbPath?} -> UI-01: every capability's lifecycle, free test results,
+ *    real-build evidence, computers and health, with comparisons and recommendations. Built only
+ *    from real records ("Not tested" where there are none). Free; changes nothing.
  *  - project_tools: {settings, slug} -> CI-7: the project's approved tools (null until chosen), which
  *    tools the app suggests for it and why, and its own rules. Free; changes nothing.
  *  - project_tools_approve: {settings, slug, tools, dbPath?} -> saves joshua's choice of tools for
@@ -100,6 +103,7 @@ import { runRepeatExperiment } from './experiments.ts';
 import { setupPhone } from './phone.ts';
 import { checkUpdates, decideUpdateNow } from './updates.ts';
 import { approveProjectTools, projectTools } from './project-tools.ts';
+import { capabilityCentre } from './centre.ts';
 import type { CheckResult } from '@aip/checks';
 import type { Job, ModelAdapter, Provider } from '@aip/models';
 import { formatCost } from './money.ts';
@@ -341,6 +345,17 @@ const HANDLERS: Record<string, Handler> = {
     const p = obj(params);
     if (typeof p.ok !== 'boolean') throw new Error('Say OK or no.');
     return decideUpdateNow(checkSettings(p.settings), str(p, 'package'), str(p, 'to'), p.ok, deps.now?.() ?? new Date());
+  },
+  capability_centre: async (params, deps) => {
+    const p = obj(params);
+    const settings = checkSettings(p.settings);
+    let buildModel: string | null = null;
+    try {
+      buildModel = await deps.pickModel(settings.provider, 'build', settings);
+    } catch {
+      // no build model chosen: no build suggestion
+    }
+    return capabilityCentre(settings, { dbPath: optionalPath(p, 'dbPath'), nameOf: (id) => deps.modelName(id), buildModel });
   },
   project_tools: (params) => {
     const p = obj(params);
