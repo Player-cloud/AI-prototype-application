@@ -288,8 +288,19 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
       {running && <p className="muted">Building…</p>}
       {result && (
         <div className="review" role="region" aria-label="Build result">
-          <h3>What changed</h3>
-          <p>{result.summary || 'No summary.'}</p>
+          <h3>What the model says it did</h3>
+          <p className="muted">Its own words. Only the tests and checks below were checked by the app.</p>
+          <blockquote className="model-says">{result.summary || 'No summary.'}</blockquote>
+          {(result.claims ?? []).length > 0 && (
+            <ul className="claim-list" aria-label="The model’s claims, checked by the app">
+              {result.claims.map((c) => (
+                <li key={c.topic} className={c.agrees === true ? 'ok' : c.agrees === false ? 'bad' : 'unchecked'}>
+                  <span aria-hidden="true">{c.agrees === true ? '✓' : c.agrees === false ? '✗' : '?'} </span>
+                  {c.topic}: {c.note}
+                </li>
+              ))}
+            </ul>
+          )}
           <p className="muted">
             Built in {result.run.path} on branch {result.run.branch}. Your own copy wasn’t touched.
           </p>

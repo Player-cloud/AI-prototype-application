@@ -185,6 +185,8 @@ describe('build_feature', () => {
     expect(out.using).toBe('Using: Sonnet 5.5, file edits, shell, tests');
     expect(out.run).toMatchObject({ feature: 'F-01', branch: 'aip/f-01-20261111-170000' });
     expect(out.summary).toBe('Added the login page. Tests pass.');
+    // V2 B: the summary's claims beside what the app found itself.
+    expect(out.claims).toEqual([{ topic: 'Tests', agrees: true, note: 'The app checked this itself: passed.' }]);
     expect(out.costText).toBe('£0.33 ($0.42)');
     // It needs joshua now: a work item, not posted without a GitHub token (step 10b).
     expect(out.phone).toBe('Not sent to your phone: add a GitHub token in Settings for that.');

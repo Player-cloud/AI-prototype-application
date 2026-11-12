@@ -12,11 +12,16 @@ export type BuildEvent = { type: 'using'; using: string; run: RunInfo } | ({ typ
 /** One free check (9b). Advice-only checks don't stop Keep. */
 export interface Check { name: string; passed: boolean; advisory?: boolean; detail?: string }
 
+/** Something the model's summary claims, beside what the app found (V2 B). null: the app didn't check it. */
+export interface Claim { topic: string; agrees: boolean | null; note: string }
+
 export interface BuildResult {
   run: RunInfo;
   using: string;
   steps: BuildStep[];
+  /** The model's own words; not checked by the app. */
   summary: string;
+  claims: Claim[];
   modelName: string;
   costText: string;
   /** The project's tests after the build and any fix attempts. */

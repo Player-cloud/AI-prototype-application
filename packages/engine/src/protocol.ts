@@ -33,8 +33,10 @@
  *  - build_feature: {settings, slug, feature, provider, apiKey, dbPath} -> builds one feature in its own
  *    copy of the code (Sonnet for Claude). Every tool call stays in the copy and goes through the
  *    gatekeeper. Stops at the run's cost limit. Then runs the project's tests, with up to 2 fix
- *    attempts inside the limit. Returns the run, the Using line, steps, tests, sync note and cost.
- *    While it runs, event lines {"id", "event"} come first: {type:"using"}, then {type:"step"} each.
+ *    attempts inside the limit. Returns the run, the Using line, steps, tests, sync note and cost,
+ *    plus `claims`: what the model's summary claims beside what the app's own checks found (V2 B).
+ *    While it runs, event lines {"id", "event"} come first: {type:"using"}, then {type:"step"} each,
+ *    and {type:"live"} for the live view of the build's page (V2 A).
  *    A model that fails 3 runs in a row is switched off (D-2) and refused until switched back on.
  *  - run_list: {dbPath, slug?} -> saved feature builds, newest first (waiting, kept or undone, rating).
  *  - run_keep: {settings, dbPath, id} -> merges a build whose tests pass into joshua's own copy (never
@@ -86,6 +88,7 @@ import { MAX_CALL_USD, readBudget, recordSpend } from './budget.ts';
 import { gate, listRules } from './gate.ts';
 import { checkCodeFolder, codeFolderOf, createCodeFolder } from './runs.ts';
 import { buildFeature } from './build.ts';
+import { claimLines } from './claims.ts';
 
 export const ENGINE_VERSION = '0.0.1';
 
@@ -361,6 +364,7 @@ const HANDLERS: Record<string, Handler> = {
               costText: cost,
               screensChanged: r.screensChanged,
               summary: r.summary,
+              claims: claimLines(r.claims),
             },
             token(p),
             deps.now?.() ?? new Date(),

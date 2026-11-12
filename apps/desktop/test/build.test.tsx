@@ -141,7 +141,11 @@ describe('Build screen', () => {
       run: RUN,
       using: 'Using: Sonnet 5.5, file edits, shell',
       steps: [{ text: 'Write src/rota.tsx' }, { text: 'Running tests' }, { text: 'Tests pass' }],
-      summary: 'Added the rota page.',
+      summary: 'Added the rota page. Ran eslint and the tests pass.',
+      claims: [
+        { topic: 'Tests', agrees: true, note: 'The app checked this itself: passed.' },
+        { topic: 'Lint', agrees: null, note: 'The app doesn’t check this itself, so only the model says so.' },
+      ],
       modelName: 'Sonnet 5.5',
       costText: '£0.33 ($0.42)',
       tests: { passed: true, output: '3 passed', fixAttempts: 0 },
@@ -162,7 +166,14 @@ describe('Build screen', () => {
     });
     expect((await screen.findByRole('status')).textContent).toBe('Done and the tests pass. Cost: £0.33 ($0.42). Check it, then press Keep or Undo below.');
     const result = screen.getByRole('region', { name: 'Build result' });
-    expect(within(result).getByText('Added the rota page.')).toBeTruthy();
+    // V2 B: the model's own words, kept apart from what the app checked.
+    expect(within(result).getByRole('heading', { name: 'What the model says it did' })).toBeTruthy();
+    expect(within(result).getByText('Added the rota page. Ran eslint and the tests pass.')).toBeTruthy();
+    const claims = within(result).getByRole('list', { name: 'The model’s claims, checked by the app' });
+    expect([...claims.querySelectorAll('li')].map((li) => [li.className, li.textContent])).toEqual([
+      ['ok', '✓ Tests: The app checked this itself: passed.'],
+      ['unchecked', '? Lint: The app doesn’t check this itself, so only the model says so.'],
+    ]);
     expect(within(result).getByText(/on branch aip\/f-02-20261111-170000\. Your own copy wasn’t touched\./)).toBeTruthy();
     expect(within(result).getByText('All tests pass.')).toBeTruthy();
     expect(within(result).getByText('3 passed')).toBeTruthy();

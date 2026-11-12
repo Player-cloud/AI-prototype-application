@@ -14,6 +14,7 @@ import { isAbsolute, relative, resolve } from 'node:path';
 import type { CheckResult, LiveState, Picture, PicturesResult } from '@aip/checks';
 import type { ModelAdapter, Provider, ToolDecision } from '@aip/models';
 import { readBudget, recordSpend } from './budget.ts';
+import { compareClaims, type Claim } from './claims.ts';
 import { gate } from './gate.ts';
 import { guidance } from './learn.ts';
 import { usingLine } from './using.ts';
@@ -50,8 +51,10 @@ export interface BuildResult {
   run: StartedRun;
   using: string;
   steps: BuildStep[];
-  /** What the model said it did. */
+  /** What the model said it did. Not checked by the app: see `claims`. */
   summary: string;
+  /** What the summary claims, beside what the app's own tests and checks found (V2 B). */
+  claims: Claim[];
   model: string;
   /** What every model run in this build cost together. */
   costUsd: number | null;
@@ -336,6 +339,7 @@ export async function buildFeature(
       using,
       steps,
       summary: summary.slice(0, 2000),
+      claims: compareClaims(summary, [{ ...tests, name: 'tests' }, ...checks]),
       model,
       costUsd: spentUsd,
       tests: { passed: tests.passed, output: tests.detail ?? '', fixAttempts: fixes },
