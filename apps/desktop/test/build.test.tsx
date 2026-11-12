@@ -359,4 +359,22 @@ describe('Build screen', () => {
     render(<Build invoke={null} makeChannel={null} />);
     expect(screen.getByText('Building needs the desktop app.')).toBeTruthy();
   });
+  it('lists failed, stopped and interrupted builds with the cause and cost so far, and no Keep button', async () => {
+    const ended = { ...WAITING, testsPassed: false, summary: '' };
+    const shell = fakeShell({
+      runs: [
+        { ...ended, id: 12, status: 'failed', cause: 'budget', error: 'Stopped: this run would have gone over its cost limit.', costUsd: 0.5 } as never,
+        { ...ended, id: 11, status: 'stopped', cause: null, error: 'Stopped.', costUsd: 0 } as never,
+        { ...ended, id: 10, status: 'interrupted', cause: null, error: 'The app was closed while this build was running.', costUsd: null } as never,
+      ],
+    });
+    render(<Build invoke={shell.invoke} makeChannel={shell.makeChannel} />);
+    const list = await screen.findByRole('region', { name: 'Builds' });
+    expect(within(list).getByText(/failed: the run hit its cost limit · cost so far £0\.40 \(\$0\.50\)/)).toBeTruthy();
+    expect(within(list).getByText(/stopped: you stopped it · cost so far £0\.00 \(\$0\.00\)/)).toBeTruthy();
+    expect(within(list).getByText(/interrupted: the app was closed while it was running · cost so far cost not recorded/)).toBeTruthy();
+    expect(within(list).queryByRole('button', { name: /^Keep/ })).toBeNull();
+    expect(within(list).queryByRole('group', { name: /^Rate/ })).toBeNull();
+    expect(within(list).getAllByRole('button', { name: /^Clear the copy of/ })).toHaveLength(3);
+  });
 });

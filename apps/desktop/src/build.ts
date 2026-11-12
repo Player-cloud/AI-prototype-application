@@ -57,10 +57,49 @@ export interface BuildRun {
   testsPassed: boolean;
   fixAttempts: number;
   summary: string;
-  status: 'built' | 'kept' | 'undone';
+  status: 'running' | 'built' | 'kept' | 'undone' | 'failed' | 'stopped' | 'interrupted';
   rating: number | null;
   keptInto: string;
+  /** Why a failed build failed; null for the rest. */
+  cause?: 'model' | 'tool' | 'budget' | 'network' | 'provider' | 'setup' | 'stopped' | 'unknown' | null;
+  /** The plain message of a failed, stopped or interrupted build. */
+  error?: string;
+  /** Set once the unfinished build's copy was removed. */
+  decidedAt?: string | null;
   checks: Check[];
+}
+
+/** Why a build failed, in plain words (the same words as the tools' health records). */
+export function causeText(cause: BuildRun['cause']): string {
+  switch (cause) {
+    case 'model': return 'the model got it wrong';
+    case 'tool': return 'the tool failed';
+    case 'budget': return 'the run hit its cost limit';
+    case 'network': return 'the internet connection dropped';
+    case 'provider': return 'the provider was busy or down';
+    case 'setup': return 'the API key or credit needs attention';
+    case 'stopped': return 'you stopped it';
+    default: return 'the cause isn’t clear';
+  }
+}
+
+/** True for a build that ended without finishing: it has a record, but can't be kept. */
+export function endedEarly(r: BuildRun): boolean {
+  return r.status === 'failed' || r.status === 'stopped' || r.status === 'interrupted';
+}
+
+/** What the build cost so far, "£0.05 ($0.06)", or "cost not recorded". */
+export function costSoFar(usd: number | null, gbpPerUsd: number): string {
+  if (usd === null) return 'cost not recorded';
+  return `£${(usd * gbpPerUsd).toFixed(2)} ($${usd.toFixed(2)})`;
+}
+
+/** The plain line for a failed, stopped, interrupted or running build. */
+export function endedWords(r: BuildRun): string {
+  if (r.status === 'running') return 'still running (or the app was closed)';
+  if (r.status === 'stopped') return 'stopped: you stopped it';
+  if (r.status === 'interrupted') return 'interrupted: the app was closed while it was running';
+  return `failed: ${causeText(r.cause ?? 'unknown')}`;
 }
 
 /** True when nothing stops Keep: tests pass and no blocking check failed. */

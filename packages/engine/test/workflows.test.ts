@@ -15,6 +15,8 @@ const stats = (model: string, kept: number, undone: number, extra: Partial<Workf
   kept,
   undone,
   waiting: 0,
+  failed: 0,
+  notCounted: 0,
   testsFirstTime: kept,
   defects: undone,
   safetyFailures: 0,
@@ -28,6 +30,13 @@ const stats = (model: string, kept: number, undone: number, extra: Partial<Workf
 });
 
 describe('workflow comparisons feed the engine’s picks (CI-4)', () => {
+  it('shows failed builds, counted only for the model’s fault, and doesn’t change the advice', () => {
+    expect(workflowText(stats('a', 2, 0, { failed: 1, notCounted: 2 }), 'Sonnet 5.5', 0.79)).toContain('1 failed (the model’s or tool’s fault), 2 ended early for another reason (not counted)');
+    // Only failures: it is not "untested".
+    expect(workflowAdvice('a', [stats('a', 0, 0, { failed: 1, testsFirstTime: 0, defects: 0 })], nameOf, 0.79)[0]).toMatch(/^Evidence: Sonnet 5.5: no build kept or undone yet, 1 failed/);
+    expect(workflowAdvice('a', [stats('a', 1, 3, { failed: 5 }), stats('b', 4, 0)], nameOf, 0.79)).toHaveLength(2);
+  });
+
   it('says plainly when a way of building is untested, or only a first look', () => {
     expect(workflowAdvice('a', [], nameOf, 0.79)).toEqual(['No builds with Sonnet 5.5 yet, so this way of building is untested.']);
     expect(workflowAdvice('a', [stats('a', 1, 0), stats('b', 5, 0)], nameOf, 0.79)).toEqual([

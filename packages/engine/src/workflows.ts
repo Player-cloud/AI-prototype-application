@@ -30,6 +30,8 @@ export function workflowText(s: WorkflowStats, name: string, gbpPerUsd: number):
     s.finished ? `${s.kept} of ${s.finished} builds kept` : 'no build kept or undone yet',
     s.undone ? `${s.undone} undone` : '',
     s.waiting ? `${s.waiting} waiting` : '',
+    s.failed ? `${s.failed} failed (the model’s or tool’s fault)` : '',
+    s.notCounted ? `${s.notCounted} ended early for another reason (not counted)` : '',
     `tests passed first time in ${s.testsFirstTime} of ${s.finished + s.waiting}`,
     `${s.defects} problem${s.defects === 1 ? '' : 's'} found by the app’s checks`,
     s.safetyFailures ? `the secret scan found something in ${s.safetyFailures}` : '',
@@ -48,7 +50,7 @@ export function workflowText(s: WorkflowStats, name: string, gbpPerUsd: number):
 export function workflowAdvice(current: string, stats: WorkflowStats[], nameOf: (id: string) => string, gbpPerUsd: number): string[] {
   const mine = stats.find((s) => s.model === current);
   const name = nameOf(current);
-  if (!mine || mine.finished + mine.waiting === 0) return [`No builds with ${name} yet, so this way of building is untested.`];
+  if (!mine || mine.finished + mine.waiting + mine.failed + mine.notCounted === 0) return [`No builds with ${name} yet, so this way of building is untested.`];
   const out = [`Evidence: ${workflowText(mine, name, gbpPerUsd)}`];
   if (mine.finished < ENOUGH_BUILDS) return out;
   const better = stats

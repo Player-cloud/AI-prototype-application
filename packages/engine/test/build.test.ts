@@ -7,6 +7,8 @@ import type { BuildTask, ModelAdapter } from '@aip/models';
 import { checkStep, runCapUsd, staysInside, staysInsideReal } from '../src/build.ts';
 import { checkSettings } from '../src/settings.ts';
 import { handleLine, type Deps, type Live } from '../src/protocol.ts';
+import { RunLog } from '@aip/memory';
+import { DatabaseSync } from 'node:sqlite';
 
 // Obviously fake test value, not a real key.
 const FAKE_KEY = 'sk-ant-test-0000000000000000';
@@ -633,5 +635,103 @@ describe('build_feature', () => {
     const call = await plan(d, settings, { signal: stop.signal });
     expect((await call('build_feature', { settings, slug: 'club-hr', feature: 'F-01', provider: 'claude', apiKey: FAKE_KEY, dbPath: null })).error).toBe('Stopped.');
     await expect(readFile(join(data, 'tool-health', 'sonnet-5-5.json'), 'utf8')).rejects.toThrow();
+  });
+  describe('run records', () => {
+    const rows = (dbPath: string) => {
+      const log = RunLog.open(dbPath);
+      try {
+        return log.list();
+      } finally {
+        log.close();
+      }
+    };
+    const spendRows = (dbPath: string) => {
+      const db = new DatabaseSync(dbPath);
+      try {
+        return db.prepare('SELECT build_id, job FROM spend ORDER BY id').all() as { build_id: number | null; job: string }[];
+      } finally {
+        db.close();
+      }
+    };
+    const setup = async (opts: Parameters<typeof deps>[2] = {}, live: Live = {}) => {
+      const settings = { dataFolder: data, codeFolders: { 'club-hr': code } };
+      const d = deps({ answers: [] }, true, opts);
+      const call = await plan(d, settings, live);
+      const dbPath = join(root, 'history.sqlite');
+      const build = () => call('build_feature', { settings, slug: 'club-hr', feature: 'F-01', provider: 'claude', apiKey: FAKE_KEY, dbPath });
+      return { d, build, dbPath };
+    };
+
+    it('adds the row when the build starts and fills in the same row when it finishes', async () => {
+      const { d, build, dbPath } = await setup();
+      let during: ReturnType<typeof rows> = [];
+      const pictures = d.pictures!;
+      d.pictures = async (...a) => {
+        during = rows(dbPath);
+        return pictures(...a);
+      };
+      const r = await build();
+      expect(r.error).toBeUndefined();
+      expect(during).toHaveLength(1);
+      expect(during[0]).toMatchObject({ status: 'running', feature: 'F-01', costUsd: null, summary: '' });
+      const after = rows(dbPath);
+      expect(after).toHaveLength(1);
+      expect(after[0]).toMatchObject({ id: during[0]!.id, status: 'built', cause: null, error: '', testsPassed: true, summary: 'Added the login page. Tests pass.' });
+      expect(r.result.runId).toBe(during[0]!.id);
+      // Every spend row of the build carries the build ID.
+      expect(spendRows(dbPath)).toEqual([{ build_id: during[0]!.id, job: 'build' }]);
+    });
+
+    it('a model failure leaves a failed row with cause "model", the message and the cost so far', async () => {
+      const { build, dbPath } = await setup({ fail: 'The model ended without an answer.' });
+      const r = await build();
+      expect(r.error).toContain('ended without an answer');
+      const [row] = rows(dbPath);
+      expect(rows(dbPath)).toHaveLength(1);
+      expect(row).toMatchObject({ status: 'failed', cause: 'model', feature: 'F-01', costUsd: 0 });
+      expect(row!.error).toContain('ended without an answer');
+      expect(row!.endedAt).not.toBeNull();
+      expect(row!.ms).not.toBeNull();
+    });
+
+    it('a cost-limit failure is cause "budget"', async () => {
+      const { build, dbPath } = await setup({ fail: 'Stopped: this run would have gone over its cost limit.' });
+      expect((await build()).error).toBeDefined();
+      expect(rows(dbPath)[0]).toMatchObject({ status: 'failed', cause: 'budget' });
+    });
+
+    it('keeps the cost of earlier runs when a fix attempt fails, and links their spend rows', async () => {
+      const { d, build, dbPath } = await setup({ tests: [false] });
+      const make = d.makeAdapter;
+      let calls = 0;
+      d.makeAdapter = async (...a) => {
+        const ad = await make(...a);
+        return { ...ad, build: async (t) => (++calls > 1 ? Promise.reject(new Error('The model ended without an answer.')) : ad.build!(t)) };
+      };
+      expect((await build()).error).toBeDefined();
+      const [row] = rows(dbPath);
+      expect(row).toMatchObject({ status: 'failed', cause: 'model' });
+      expect(row!.costUsd).toBeCloseTo(0.42);
+      expect(spendRows(dbPath)).toEqual([{ build_id: row!.id, job: 'build' }]);
+    });
+
+    it('a Stop by joshua leaves a stopped row with no cause', async () => {
+      const stop = new AbortController();
+      const { d, build, dbPath } = await setup({ fail: 'Stopped.' }, { signal: stop.signal });
+      const make = d.makeAdapter;
+      d.makeAdapter = async (...a) => {
+        const ad = await make(...a);
+        return { ...ad, build: async (t) => { stop.abort(); return ad.build!(t); } };
+      };
+      expect((await build()).error).toBe('Stopped.');
+      expect(rows(dbPath)[0]).toMatchObject({ status: 'stopped', cause: null, error: 'Stopped.' });
+    });
+
+    it('leaves no row when it fails before a copy was made', async () => {
+      const { d, build, dbPath } = await setup();
+      d.makeAdapter = async () => ({ provider: 'claude', run: async () => ({ text: '', usage: { inputTokens: 0, outputTokens: 0, costUsd: 0 } }) });
+      expect((await build()).error).toContain('Building needs Claude');
+      expect(rows(dbPath)).toEqual([]);
+    });
   });
 });

@@ -70,9 +70,19 @@ export function rateRun(dbPath: string, id: number, rating: number): Promise<Run
 function waiting(log: import('@aip/memory').RunLog, id: number): Run {
   const run = log.get(id);
   if (!run) throw new Error('There’s no such build.');
-  if (run.status !== 'built') throw new Error(`That build was already ${run.status === 'kept' ? 'kept' : 'undone'}.`);
+  if (run.status !== 'built') throw new Error(NOT_WAITING[run.status]);
   return run;
 }
+
+const NOT_WAITING: Record<Run['status'], string> = {
+  built: '',
+  kept: 'That build was already kept.',
+  undone: 'That build was already undone.',
+  running: 'That build is still running.',
+  failed: 'That build failed, so it can’t be kept.',
+  stopped: 'That build was stopped, so it can’t be kept.',
+  interrupted: 'That build was interrupted, so it can’t be kept.',
+};
 
 /** Removes the build's copy and, when asked, its branch. Problems here don't undo a Keep. */
 async function tidy(g: Git, folder: string, run: Run, dropBranch: 'merged' | 'force'): Promise<string> {
@@ -133,7 +143,17 @@ export async function keepRun(settings: AppSettings, dbPath: string, id: number,
 export async function undoRun(settings: AppSettings, dbPath: string, id: number, now: Date, git?: Git): Promise<KeepResult> {
   const g = await gitOf(git);
   return withRuns(dbPath, async (log) => {
-    const run = waiting(log, id);
+    const run = log.get(id);
+    if (!run) throw new Error('There’s no such build.');
+    // A failed, stopped or interrupted build can't be kept, but its copy of the code is still on disk.
+    // Undo removes that copy and branch like for a built one. The record stays (status and cause are
+    // what History and the comparisons learn from); it's only marked as cleaned, so Undo isn't offered again.
+    if (run.status === 'failed' || run.status === 'stopped' || run.status === 'interrupted') {
+      const left = await tidy(g, codeFolderOf(settings, run.slug), run, 'force');
+      log.markCleaned(id, now);
+      return { run: log.get(id)!, note: `Removed ${run.feature}’s unfinished build copy. The record of what happened stays in the list. Your copy wasn’t touched.${left}` };
+    }
+    waiting(log, id);
     const folder = codeFolderOf(settings, run.slug);
     const left = await tidy(g, folder, run, 'force');
     log.decide(id, 'undone', now);

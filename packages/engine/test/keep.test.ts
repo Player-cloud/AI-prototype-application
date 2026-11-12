@@ -159,4 +159,39 @@ describe('Keep or Undo a build', () => {
     expect(r.result.run.status).toBe('undone');
     expect(git(code, 'worktree', 'list').trim().split('\n')).toHaveLength(1);
   });
+  it('refuses to keep a failed, stopped or interrupted build; Undo only removes its copy and keeps the record', async () => {
+    const mk = async (feature: string, end: (log: RunLog, id: number) => void) => {
+      const b = await built(feature);
+      const raw = RunLog.open(db);
+      const id = raw.start({ at: NOW, slug: 'club-hr', feature, path: b.path, branch: b.branch, base: 'x', model: 'claude-sonnet-5-5' });
+      end(raw, id);
+      raw.close();
+      return { ...b, id };
+    };
+    const failed = await mk('F-02', (l, id) => l.fail(id, { status: 'failed', cause: 'model', error: 'The model ended without an answer.', costUsd: 0.2, ms: 5, at: NOW }));
+    const stopped = await mk('F-03', (l, id) => l.fail(id, { status: 'stopped', error: 'Stopped.', costUsd: 0, ms: 5, at: NOW }));
+    for (const [b, word] of [[failed, 'failed'], [stopped, 'was stopped']] as const) {
+      const r = await call('run_keep', { settings, dbPath: db, id: b.id });
+      expect(r.error).toBe(`That build ${word}, so it can’t be kept.`);
+      expect(await exists(join(code, `${b.id}.md`))).toBe(false);
+      expect((await call('run_rate', { dbPath: db, id: b.id, rating: 4 })).error).toBeDefined();
+    }
+    // Both are listed with their cause.
+    const list = (await call('run_list', { dbPath: db, slug: 'club-hr' })).result.filter((r: { status: string }) => r.status !== 'built');
+    expect(list).toMatchObject([{ status: 'stopped', cause: null }, { status: 'failed', cause: 'model', error: 'The model ended without an answer.' }]);
+    // Undo removes the unfinished copy and its branch, but the record stays 'failed'.
+    expect(await exists(failed.path)).toBe(true);
+    const u = await call('run_undo', { settings, dbPath: db, id: failed.id });
+    expect(u.error).toBeUndefined();
+    expect(u.result.run).toMatchObject({ status: 'failed', cause: 'model' });
+    expect(u.result.run.decidedAt).not.toBeNull();
+    expect(await exists(failed.path)).toBe(false);
+    expect(git(code, 'branch', '--list', failed.branch).trim()).toBe('');
+    // A build that is still running can't be kept or undone.
+    const running = RunLog.open(db);
+    const rid = running.start({ at: NOW, slug: 'club-hr', feature: 'F-04', path: '/nowhere', branch: 'aip/none', base: 'x', model: 'm' });
+    running.close();
+    expect((await call('run_keep', { settings, dbPath: db, id: rid })).error).toBe('That build is still running.');
+    expect((await call('run_undo', { settings, dbPath: db, id: rid })).error).toBe('That build is still running.');
+  });
 });

@@ -72,4 +72,26 @@ describe('whole-workflow results from real builds (CI-4)', () => {
       await rm(dir, { recursive: true, force: true });
     }
   });
+  it('counts failed builds as failed only for the model’s or tool’s fault; other causes are shown, not counted', () => {
+    const log = RunLog.open(':memory:');
+    const base = { at: new Date('2026-11-12T10:00:00Z'), slug: 's', feature: 'F-01', path: '/p', branch: 'b', base: 'c', model: 'claude-sonnet-5-5' };
+    const end = (status: 'failed' | 'stopped', cause: 'model' | 'tool' | 'budget' | 'network' | 'unknown' | undefined, costUsd: number | null) => {
+      const id = log.start(base);
+      log.fail(id, { status, cause, error: 'x', costUsd, ms: 1000, at: base.at });
+    };
+    end('failed', 'model', 0.2);
+    end('failed', 'tool', 0.1);
+    end('failed', 'budget', 0.3);
+    end('failed', 'network', null);
+    end('failed', 'unknown', 0);
+    end('stopped', undefined, 0.05);
+    log.start(base); // still running: not measured
+    const kept = log.add({ ...base, costUsd: 0.5, testsPassed: true, fixAttempts: 0, summary: 's', ms: 60_000 });
+    log.decide(kept, 'kept', base.at);
+    const [s] = workflowStats(log.list());
+    expect(s).toMatchObject({ model: 'claude-sonnet-5-5', failed: 2, notCounted: 4, kept: 1, finished: 1, waiting: 0, defects: 0, testsFirstTime: 1, avgMs: 60_000 });
+    // Money spent on failed builds still counts.
+    expect(s!.costUsd).toBeCloseTo(1.15);
+    log.close();
+  });
 });

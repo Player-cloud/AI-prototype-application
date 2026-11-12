@@ -68,4 +68,96 @@ describe('build runs', () => {
     log.close();
     await rm(dir, { recursive: true, force: true });
   });
+  it('adds a build’s row at the start and fills in the same row when it finishes', () => {
+    const log = RunLog.open(':memory:');
+    const id = log.start({ at: AT, slug: 'club-hr', feature: 'F-01', path: '/p', branch: 'b', base: 'c', model: 'm' });
+    expect(log.get(id)).toMatchObject({ status: 'running', cause: null, error: '', endedAt: null, costUsd: null, summary: '' });
+    // Nothing can be kept, undone or rated while it is running.
+    expect(() => log.decide(id, 'kept', AT)).toThrow();
+    expect(() => log.rate(id, 3)).toThrow('There’s no such build.');
+    log.finish(id, { costUsd: 0.3, testsPassed: true, fixAttempts: 1, summary: 'Done.', checks: [{ name: 'secrets', passed: true }], pictures: [], ms: 5000 });
+    expect(log.get(id)).toMatchObject({ id, status: 'built', costUsd: 0.3, fixAttempts: 1, summary: 'Done.', ms: 5000, cause: null });
+    expect(log.list()).toHaveLength(1);
+    log.decide(id, 'kept', AT);
+    log.close();
+  });
+
+  it('a failed or stopped build keeps its cause, message and cost, and can’t be kept or rated', () => {
+    const log = RunLog.open(':memory:');
+    const start = () => log.start({ at: AT, slug: 'club-hr', feature: 'F-01', path: '/p', branch: 'b', base: 'c', model: 'm' });
+    const a = start();
+    log.fail(a, { status: 'failed', cause: 'budget', error: 'Stopped: cost limit.', costUsd: 0.1, ms: 900, at: AT });
+    expect(log.get(a)).toMatchObject({ status: 'failed', cause: 'budget', error: 'Stopped: cost limit.', costUsd: 0.1, ms: 900, endedAt: AT.toISOString() });
+    const b = start();
+    log.fail(b, { status: 'stopped', cause: 'stopped', error: 'Stopped.', costUsd: 0, ms: 10, at: AT });
+    expect(log.get(b)).toMatchObject({ status: 'stopped', cause: null });
+    for (const id of [a, b]) {
+      expect(() => log.decide(id, 'kept', AT)).toThrow('That build was already kept or undone.');
+      expect(() => log.decide(id, 'undone', AT)).toThrow();
+      expect(() => log.setChecks(id, [])).toThrow();
+      expect(() => log.rate(id, 5)).toThrow('There’s no such build.');
+    }
+    // A run already failed can't be finished afterwards.
+    expect(() => log.finish(a, { costUsd: 1, testsPassed: true, fixAttempts: 0, summary: 'x' })).toThrow('That build isn’t running.');
+    log.close();
+  });
+
+  it('a row still running from an earlier start becomes interrupted when the file is opened', async () => {
+    const { DatabaseSync } = await import('node:sqlite');
+    const { mkdtemp, rm } = await import('node:fs/promises');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const dir = await mkdtemp(join(tmpdir(), 'aip-runlog-'));
+    try {
+      const path = join(dir, 'history.sqlite');
+      const first = RunLog.open(path);
+      const mine = first.start({ at: AT, slug: 'club-hr', feature: 'F-01', path: '/p', branch: 'b', base: 'c', model: 'm' });
+      // This program started it, so another opening (the build's own, or a list) leaves it running.
+      const second = RunLog.open(path);
+      expect(second.get(mine)?.status).toBe('running');
+      second.close();
+      first.close();
+      // A row made by an earlier program: nothing here started it.
+      const old = new DatabaseSync(path);
+      old.exec("INSERT INTO runs (at, slug, feature, path, branch, base, model, tests_passed, fix_attempts, summary, status) VALUES ('2026-11-10', 'club-hr', 'F-00', '/q', 'b0', 'c', 'm', 0, 0, '', 'running')");
+      old.close();
+      const log = RunLog.open(path);
+      const left = log.list().find((r) => r.feature === 'F-00')!;
+      expect(left).toMatchObject({ status: 'interrupted', cause: null });
+      expect(left.error).toContain('closed while this build was running');
+      expect(left.endedAt).not.toBeNull();
+      expect(log.get(mine)?.status).toBe('running');
+      expect(() => log.decide(left.id, 'kept', AT)).toThrow();
+      log.close();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('adds the cause, error and end time to a history file made before run records, keeping its rows', async () => {
+    const { DatabaseSync } = await import('node:sqlite');
+    const { mkdtemp, rm } = await import('node:fs/promises');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const dir = await mkdtemp(join(tmpdir(), 'aip-runlog-'));
+    try {
+      const path = join(dir, 'history.sqlite');
+      const old = new DatabaseSync(path);
+      old.exec(`CREATE TABLE runs (id INTEGER PRIMARY KEY, at TEXT NOT NULL, slug TEXT NOT NULL, feature TEXT NOT NULL, path TEXT NOT NULL,
+        branch TEXT NOT NULL, base TEXT NOT NULL, model TEXT NOT NULL, cost_usd REAL, tests_passed INTEGER NOT NULL, fix_attempts INTEGER NOT NULL,
+        summary TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'built', rating INTEGER, decided_at TEXT, merge_commit TEXT NOT NULL DEFAULT '', kept_into TEXT NOT NULL DEFAULT '',
+        checks TEXT NOT NULL DEFAULT '[]', pictures TEXT NOT NULL DEFAULT '[]', ms INTEGER)`);
+      old.exec(`INSERT INTO runs (at, slug, feature, path, branch, base, model, tests_passed, fix_attempts, summary, status) VALUES ('2026-11-11', 'club-hr', 'F-01', '/p', 'b', 'c', 'm', 1, 0, 's', 'kept')`);
+      old.close();
+      const log = RunLog.open(path);
+      expect(log.get(1)).toMatchObject({ status: 'kept', cause: null, error: '', endedAt: null });
+      const id = log.start({ at: AT, slug: 'club-hr', feature: 'F-02', path: '/p', branch: 'b2', base: 'c', model: 'm' });
+      log.fail(id, { status: 'failed', cause: 'model', error: 'x', costUsd: null, ms: 1, at: AT });
+      expect(log.get(id)).toMatchObject({ status: 'failed', cause: 'model' });
+      log.close();
+      RunLog.open(path).close(); // opening again is fine
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
 });
