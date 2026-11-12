@@ -127,7 +127,7 @@ describe('replies from the phone', () => {
     reply(1, 'undo', '2026-11-11T20:01:00Z', 'NONE');
     reply(2, 'what is this?', '2026-11-11T20:02:00Z');
     const r = (await poll()).result;
-    expect(r).toEqual({ done: ['From your phone (issue #12): Sorry, I didn’t understand that. Reply **keep**, **undo**, or a rating from **1** to **5**.'], changed: false, builds: [] });
+    expect(r).toEqual({ done: ['From your phone (issue #12): Sorry, I didn’t understand that. Reply **keep**, **undo**, a rating from **1** to **5**, or **answer 1:** and your answer to a question.'], changed: false, builds: [] });
   });
 
   it('does nothing without a token', async () => {

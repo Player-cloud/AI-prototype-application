@@ -9,6 +9,7 @@ import { GitHub, messagesRepo, type Comment, type Fetch } from './github.ts';
 import { keepRun, rateRun, undoRun } from './keep.ts';
 import { SIGNATURE } from './notify.ts';
 import { answerControl, type BuildRequest } from './phone.ts';
+import { parseAnswer, questionsIn, saveAnswer } from './questions.ts';
 import type { AppSettings } from './settings.ts';
 
 export type Reply = { kind: 'keep' } | { kind: 'undo' } | { kind: 'rate'; rating: number } | { kind: 'unknown' };
@@ -88,6 +89,37 @@ async function answer(item: WorkItem, gh: GitHub, settings: AppSettings, dbPath:
   // GitHub's `since` includes the same second, so replies already read are skipped by time.
   const replies = (await gh.comments(item.issue, since)).filter((c) => c.at > since && fromJoshua(c));
   for (const c of replies) {
+    // D: an answer to one of the model's questions. Kept for later builds; the build stays open.
+    const ans = parseAnswer(c.body);
+    if (ans) {
+      let text: string;
+      try {
+        const run = (() => {
+          const log = m.RunLog.open(dbPath);
+          try {
+            return log.get(item.runId);
+          } finally {
+            log.close();
+          }
+        })();
+        if (!run) throw new Error('That build isn’t in the history any more.');
+        const qs = questionsIn(run.summary);
+        const q = qs[ans.n - 1];
+        if (!q) throw new Error(qs.length ? `There’s no question ${ans.n}: this build asked ${qs.length}.` : 'This build didn’t ask any questions.');
+        text = `Answer ${ans.n} ${await saveAnswer(settings, run.slug, run.feature, q, ans.text, now())}`;
+      } catch (err) {
+        text = (err as Error).message;
+      }
+      await gh.comment(item.issue, `${text}\n\n${SIGNATURE}`);
+      out.done.push(`From your phone (issue #${item.issue}): ${text}`);
+      const w = m.WorkItems.open(dbPath);
+      try {
+        w.readTo(item.id, c.at);
+      } finally {
+        w.close();
+      }
+      continue;
+    }
     const reply = parseReply(c.body);
     let text: string;
     let closes = false;
@@ -102,7 +134,7 @@ async function answer(item: WorkItem, gh: GitHub, settings: AppSettings, dbPath:
         text = `Rated ${r.feature} ${reply.rating}/5.`;
         out.changed = true;
       } else {
-        text = 'Sorry, I didn’t understand that. Reply **keep**, **undo**, or a rating from **1** to **5**.';
+        text = 'Sorry, I didn’t understand that. Reply **keep**, **undo**, a rating from **1** to **5**, or **answer 1:** and your answer to a question.';
       }
     } catch (err) {
       text = `${(err as Error).message}`;

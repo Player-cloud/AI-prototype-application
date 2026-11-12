@@ -24,6 +24,8 @@ export interface BuildResult {
   /** The model's own words; not checked by the app. */
   summary: string;
   claims: Claim[];
+  /** D: what the model had to guess; joshua can answer from the build's issue on his phone. */
+  questions?: string[];
   modelName: string;
   costText: string;
   /** The project's tests after the build and any fix attempts. */

@@ -94,7 +94,7 @@ import { DEFAULT_SETTINGS, checkSettings, type AppSettings } from './settings.ts
 import { keepRun, listRuns, rateRun, undoRun } from './keep.ts';
 import { learnNow } from './learn.ts';
 import { githubCheck } from './github.ts';
-import { closeBuild, listWork, postBuild } from './notify.ts';
+import { closeBuild, listWork, postBuild, publishPictures } from './notify.ts';
 import { pollReplies } from './replies.ts';
 import { dataOverview, rateAndSync, switchToolOn, syncAfterUndo, syncNow } from './data.ts';
 import { historyList, settingsSaved, undoStart } from './history.ts';
@@ -111,6 +111,17 @@ import { buildFeature } from './build.ts';
 import { environmentCheck } from './environment.ts';
 import { runFreeTests } from './evals.ts';
 import { claimLines } from './claims.ts';
+
+/** D: the build's pictures for its issue, only when the issue will be posted (a token is saved). */
+async function picturesFor(settings: AppSettings, slug: string, runId: number, pictures: { name: string; path: string }[], tok: string | undefined) {
+  if (!tok || !pictures.length) return {};
+  try {
+    const r = await publishPictures(settings, slug, runId, pictures);
+    return { pictures: r.links, picturesNote: r.note };
+  } catch (err) {
+    return { picturesNote: `on your PC only: ${(err as Error).message}` };
+  }
+}
 
 export const ENGINE_VERSION = '0.0.1';
 
@@ -399,6 +410,8 @@ const HANDLERS: Record<string, Handler> = {
               screensChanged: r.screensChanged,
               summary: r.summary,
               claims: claimLines(r.claims),
+              questions: r.questions,
+              ...(await picturesFor(settings, str(p, 'slug'), r.runId, r.pictures, token(p))),
             },
             token(p),
             deps.now?.() ?? new Date(),

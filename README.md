@@ -103,6 +103,12 @@ In Settings → API keys, with the GitHub token saved, press **Start builds from
 
 Only the first line counts. A build from the phone follows every rule a build from the PC does: the plan must be finished, the project needs a code folder on this computer, the month's budget and the per-run limit apply, only one build runs at a time, and the gatekeeper checks every step. The app has to be open on the PC; it reads replies about once a minute. Only people with access to the private data repo count. Setting up and the replies are free; the build costs what a build from the PC costs.
 
+### Questions and pictures on your phone (V2)
+
+A build never stops to wait for you. If the model has to guess something the spec doesn't say, it picks the safest option, carries on, and lists its questions at the end of its summary. They appear on the Build screen and in the build's issue. Reply **answer 1:** and your answer (or **answer 2:**, and so on). Each answer is saved in `projects/<project>/answers.md` in your data repo, and every later build of that project reads them first. Answers belong to that project only; they never become general habits or rules. Answering doesn't Keep or Undo the build.
+
+With a GitHub token saved, the build's desktop and phone pictures are copied into your private data repo (`pictures/<project>/<build>-desktop.png`) and shown in the build's issue, so you can see them on your phone. If they can't reach GitHub, the issue says they're on your PC only. Free.
+
 ## Tool health
 
 Each tool has a stable ID: its card's file name in `tools/` (for example `haiku`), or its ledger name as a slug when it has no card. Cards are matched to ledger lines by best fit, the same whatever the line order; a card can also name its line exactly with `Ledger: <name>`, and say `Kind:` (model, tool, plugin, skill, mod, agent or workflow) and `Version:`. Anything not written shows as unknown on the Tools page.

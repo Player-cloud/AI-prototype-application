@@ -153,6 +153,7 @@ describe('Build screen', () => {
         { topic: 'Tests', agrees: true, note: 'The app checked this itself: passed.' },
         { topic: 'Lint', agrees: null, note: 'The app doesn’t check this itself, so only the model says so.' },
       ],
+      questions: ['Should the rota start on Monday? I used Monday.'],
       modelName: 'Sonnet 5.5',
       costText: '£0.33 ($0.42)',
       tests: { passed: true, output: '3 passed', fixAttempts: 0 },
@@ -192,6 +193,9 @@ describe('Build screen', () => {
     expect(within(result).getByText(/^Checklist rules: advice \(doesn’t stop Keep\)/)).toBeTruthy();
     expect(within(result).getByText('src/rota.tsx:3 (Accessibility): Every image needs alt text.')).toBeTruthy();
     expect(within(result).getByText('Phone: Sent to your phone: issue #12 on o/r.')).toBeTruthy();
+    // D: the model's questions, which joshua can answer from his phone.
+    const qs = within(result).getByRole('region', { name: 'The model’s questions' });
+    expect([...qs.querySelectorAll('li')].map((li) => li.textContent)).toEqual(['Should the rota start on Monday? I used Monday.']);
   });
 
   it('reloads a plain page in the live view as the build changes it', async () => {
