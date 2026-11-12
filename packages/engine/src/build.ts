@@ -10,8 +10,10 @@
  * data folder syncs after the task.
  */
 import { notApproved, projectGuidance } from './project-tools.ts';
-import { readFile } from 'node:fs/promises';
-import { isAbsolute, relative, resolve } from 'node:path';
+import { execFile } from 'node:child_process';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { isAbsolute, join, relative, resolve } from 'node:path';
 import type { CheckResult, LiveState, Picture, PicturesResult } from '@aip/checks';
 import type { ModelAdapter, Provider, ToolDecision } from '@aip/models';
 import { readBudget, recordSpend } from './budget.ts';
@@ -40,6 +42,44 @@ export interface BuildDeps {
   pictures?(dir: string, outDir: string, previous: Picture[]): Promise<PicturesResult>;
   /** The live view while the model works (V2 A); null turns it off. The real one is @aip/checks. */
   live?: ((dir: string, onChange: (s: LiveState) => void) => { stop(): Promise<void> }) | null;
+  /** Makes the build agent's throwaway home folder (and finds the pnpm store). Injected for tests. */
+  sandboxHome?(runBranch: string): Promise<{ home: string; pnpmStore?: string }>;
+  /** Removes that folder at the end. Injected for tests; the real one never throws. */
+  removeSandboxHome?(home: string): Promise<void>;
+}
+
+/** The pnpm store, asked once with the real environment. Left out if pnpm isn't there or is slow. */
+function findPnpmStore(): Promise<string | undefined> {
+  return new Promise((done) => {
+    try {
+      execFile('pnpm', ['store', 'path'], { timeout: 15_000, shell: process.platform === 'win32', windowsHide: true }, (err, out) => {
+        const path = String(out ?? '').trim();
+        done(err || !path || path.includes('\n') ? undefined : path);
+      });
+    } catch {
+      done(undefined);
+    }
+  });
+}
+
+/** A fresh empty home folder for one build run: no git login, no keys, just the folders tools expect. */
+export async function makeSandboxHome(runBranch: string): Promise<{ home: string; pnpmStore?: string }> {
+  const name = runBranch.replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^[.-]+/, '') || 'run';
+  const home = join(tmpdir(), 'ai-prototype-build-home', name);
+  await rm(home, { recursive: true, force: true });
+  await mkdir(join(home, 'AppData', 'Roaming'), { recursive: true });
+  await mkdir(join(home, 'AppData', 'Local'), { recursive: true });
+  await writeFile(join(home, '.gitconfig'), '');
+  const pnpmStore = await findPnpmStore();
+  return { home, ...(pnpmStore ? { pnpmStore } : {}) };
+}
+
+async function removeHome(home: string): Promise<void> {
+  try {
+    await rm(home, { recursive: true, force: true });
+  } catch {
+    // Best effort: a leftover temp folder is harmless.
+  }
 }
 
 export interface BuildStep { text: string; refused?: string }
@@ -221,10 +261,19 @@ export async function buildFeature(
   onEvent?.({ type: 'using', using, run, advice });
   const watch = deps.live === undefined ? (await import('@aip/checks')).watchLive : deps.live;
   const live = watch ? watch(run.path, (s) => onEvent?.({ type: 'live', ...s })) : null;
+  let sandbox: { home: string; pnpmStore?: string } | undefined;
   try {
+    sandbox = await (deps.sandboxHome ?? makeSandboxHome)(run.branch);
     return await afterStart();
   } finally {
     await live?.stop();
+    if (sandbox) {
+      try {
+        await (deps.removeSandboxHome ?? removeHome)(sandbox.home);
+      } catch {
+        // Never throws.
+      }
+    }
   }
 
   async function afterStart(): Promise<BuildResult> {
@@ -239,6 +288,7 @@ export async function buildFeature(
         prompt,
         cwd: run.path,
         signal,
+        sandbox,
         onStep: (text) => add({ text }),
         async checkTool(name, input) {
           const d = checkStep(settings, run.path, name, input);

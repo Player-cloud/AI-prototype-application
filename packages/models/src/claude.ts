@@ -1,6 +1,11 @@
 /**
  * Claude through the Claude Agent SDK. The SDK is loaded only when the adapter is first used.
  * The API key is passed in per adapter and only ever placed in the SDK's environment.
+ *
+ * What the build agent gets: the feature's own copy of the code, its own empty home folder, the
+ * key saved in Settings, and local git (it can commit in the copy as "AI build").
+ * What it does not get: joshua's home folder, ~/.gitconfig, ~/.ssh, saved git logins, or any way
+ * to push (the push address is blocked and no login helper runs).
  */
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -9,6 +14,8 @@ import type { BuildTask, Job, ModelAdapter, StepResult } from './index.js';
 /**
  * Only these variables from the PC are passed to Claude. Anything else, in particular other
  * Claude or Anthropic logins, is left out so a run can only ever use the key saved in Settings.
+ * The plain ask (no tools) keeps the home variables because it runs nothing. A build does not:
+ * `sandboxEnv` swaps them for a throwaway home folder.
  */
 const PASS_THROUGH = [
   'PATH', 'Path', 'PATHEXT', 'HOME', 'USERPROFILE', 'HOMEDRIVE', 'HOMEPATH', 'APPDATA', 'LOCALAPPDATA',
@@ -27,6 +34,45 @@ export function claudeEnv(apiKey: string, from: NodeJS.ProcessEnv = process.env)
   env.CLAUDE_CONFIG_DIR = join(tmpdir(), 'ai-prototype-claude');
   env.ANTHROPIC_API_KEY = apiKey;
   env.CLAUDE_AGENT_SDK_CLIENT_APP = 'ai-prototype/0.0.1';
+  return env;
+}
+
+/**
+ * The environment for a build run: a copy of `base` where the home folder is the throwaway
+ * `sandboxHome`, git has no login and cannot push, and local commits still work.
+ * `GIT_CONFIG_COUNT` settings beat the repo's own config, so the copy's remote can't re-enable push.
+ */
+export function sandboxEnv(base: Record<string, string>, sandboxHome: string, opts: { pnpmStore?: string } = {}): Record<string, string> {
+  const env: Record<string, string> = { ...base };
+  delete env.HOMEDRIVE;
+  delete env.HOMEPATH;
+  env.HOME = sandboxHome;
+  env.USERPROFILE = sandboxHome;
+  env.APPDATA = join(sandboxHome, 'AppData', 'Roaming');
+  env.LOCALAPPDATA = join(sandboxHome, 'AppData', 'Local');
+  env.XDG_CONFIG_HOME = join(sandboxHome, '.config');
+  env.XDG_DATA_HOME = join(sandboxHome, '.local', 'share');
+  env.XDG_CACHE_HOME = join(sandboxHome, '.cache');
+  env.GIT_CONFIG_NOSYSTEM = '1';
+  env.GIT_CONFIG_GLOBAL = join(sandboxHome, '.gitconfig');
+  env.GIT_TERMINAL_PROMPT = '0';
+  env.GCM_INTERACTIVE = 'never';
+  const overrides: [string, string][] = [
+    ['credential.helper', ''],
+    ['remote.origin.pushurl', 'blocked://the-build-copy-cannot-push'],
+    ['remote.pushDefault', 'blocked'],
+  ];
+  env.GIT_CONFIG_COUNT = String(overrides.length);
+  overrides.forEach(([k, v], i) => {
+    env[`GIT_CONFIG_KEY_${i}`] = k;
+    env[`GIT_CONFIG_VALUE_${i}`] = v;
+  });
+  env.GIT_AUTHOR_NAME = 'AI build';
+  env.GIT_AUTHOR_EMAIL = 'ai-build@localhost';
+  env.GIT_COMMITTER_NAME = 'AI build';
+  env.GIT_COMMITTER_EMAIL = 'ai-build@localhost';
+  if (opts.pnpmStore) env.npm_config_store_dir = opts.pnpmStore;
+  env.npm_config_cache = join(sandboxHome, '.npm-cache');
   return env;
 }
 
@@ -153,7 +199,7 @@ export function createClaudeAdapter(opts: ClaudeAdapterOptions): ModelAdapter {
           options: {
             model: task.model,
             cwd: task.cwd,
-            env: claudeEnv(opts.apiKey),
+            env: task.sandbox ? sandboxEnv(claudeEnv(opts.apiKey), task.sandbox.home, { pnpmStore: task.sandbox.pnpmStore }) : claudeEnv(opts.apiKey),
             settingSources: [], // never the PC's or the project's own Claude settings
             tools: [...BUILD_TOOLS],
             permissionMode: 'default', // every tool call comes to checkTool first

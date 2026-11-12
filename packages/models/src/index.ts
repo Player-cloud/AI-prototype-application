@@ -25,6 +25,8 @@ export interface BuildTask {
   onStep?(step: string): void;
   /** Stops the run. */
   signal?: AbortSignal;
+  /** A throwaway home folder for the agent's shell, so it never sees the PC's home, git login or keys. */
+  sandbox?: { home: string; pnpmStore?: string };
 }
 
 export interface ModelAdapter {
@@ -62,7 +64,7 @@ export function pickClaudeModel(job: Job, opts: { sensitive?: boolean; multiFile
   return CLAUDE_MODEL_BY_JOB[job];
 }
 
-export { BUILD_TOOLS, claudeEnv, createClaudeAdapter, stepText, friendlyError, redact, type ClaudeAdapterOptions, type QueryFn, type SdkMessage } from './claude.js';
+export { BUILD_TOOLS, claudeEnv, sandboxEnv, createClaudeAdapter, stepText, friendlyError, redact, type ClaudeAdapterOptions, type QueryFn, type SdkMessage } from './claude.js';
 
 /** Plain name for a model id, e.g. "claude-haiku-5-5" -> "Haiku 5.5". */
 export function modelName(id: string): string {
