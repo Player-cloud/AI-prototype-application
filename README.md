@@ -145,6 +145,8 @@ Tools → **Look for updates** checks for newer versions of the app's own packag
 
 Press **OK** or **No** for each update. The app never installs one. After an OK it shows the exact command to run in the app folder, for example `pnpm --filter @aip/checks update @secretlint/node@13.1.0`. Then run `pnpm install` and **Run free tests**: a pass on the new version clears its retest mark, and a test that does worse is flagged. A declined update isn't suggested again.
 
+Going back (CI-8): once an update is installed, the next **Look for updates** runs that tool's free tests to check it really worked. It shows "checked: it works", "did worse", "couldn't run here", or "no free test covers it: run `pnpm check`". A broken check never counts as a pass. Every installed update shows the command that puts the old version back, for example `pnpm --filter @aip/checks update @secretlint/node@11.7.1`. Run it, then `pnpm install`. The next look notices the old version and marks the update "rolled back", and you can OK it again later.
+
 ## Tools for each project (Capability Intelligence)
 
 Open a finished project and look under **Tools for this project**. The app suggests tools that are on in your ledger and fit the project (axe-core only if the project checks Accessibility), and says why for each one it leaves out (switched off, not tested yet, waiting for a trial). Nothing is saved until you press **Approve these tools**; it goes in `projects/<slug>/tools.md` in the data repo, and you can undo it from History. Once you've chosen, builds for that project only use an approved model. The free safety checks always run, whatever the list says. A project's own rules go in `projects/<slug>/rules.md`: they beat your general rules and habits for that project only.
@@ -162,6 +164,8 @@ The engine only advises. The model for each job stays joshua's rule, so a score 
 ## Undo
 
 Every settings change and tool rating is kept in `history.sqlite` on this computer, with exactly what it was before and after. Settings → Change history lists them, each with an Undo button. Undo only puts a change back if nothing has changed it since; otherwise it says so and touches nothing. Undoing a rating also syncs the data repo. An undo can itself be undone (shown as Redo).
+
+Each undo is checked straight away (CI-8): settings are read back from disk, and files are read again, then compared with what they were before. The note says "Checked: … back as it was", or "Check failed" with what to look at.
 
 Private data (ledger, habits, rules, tool cards, tool health, project plans) lives in the separate `ai-prototype-data` repo.
 

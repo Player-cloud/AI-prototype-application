@@ -86,6 +86,14 @@ describe('settings history and undo', () => {
     expect(newest).toMatchObject({ label: 'Undo: Monthly budget £20 → £30', isUndo: true, undoneAt: null });
     expect(first.undoneAt).toBe(NOW.toISOString());
     expect((await call('undo', { dbPath, id: first.id, settings: {} })).error).toBe('That change has already been undone.');
+
+    // CI-8: the shell reads the settings back and checks the undo really worked.
+    expect((await call('undo_check', { dbPath, id: saved.result, settings: undo.result.settings })).result).toEqual({ ok: true, text: 'Checked: Settings are back as they were.' });
+    expect((await call('undo_check', { dbPath, id: saved.result, settings: { monthlyBudgetGbp: 25 } })).result).toEqual({
+      ok: false,
+      text: 'Check failed: Settings don’t match what they were before. Open Settings and look before building.',
+    });
+    expect((await call('undo_check', { dbPath, id: saved.result, settings: 'broken' })).result.ok).toBe(false);
   });
 
   it('records nothing when nothing changed', async () => {
@@ -136,7 +144,8 @@ describe('rating history and undo', () => {
     expect(rated).toMatchObject({ label: 'Rated EGM 4/5', kind: 'file' });
 
     const undo = await call('undo', { dbPath, id: rated.id, settings });
-    expect(undo.result.summary).toMatch(/^Undone: Rated EGM 4\/5\. .*up to date on GitHub/);
+    expect(undo.result.summary).toMatch(/^Undone: Rated EGM 4\/5\. Checked: the file is back as it was\. .*up to date on GitHub/);
+    expect(undo.result.checked).toBe(true);
     expect(await readFile(ledger, 'utf8')).toBe(original);
     expect(execFileSync('git', ['log', '-1', '--format=%s', 'main'], { cwd: remote, encoding: 'utf8' }).trim()).toBe('Undo: Rated EGM 4/5');
 
@@ -149,6 +158,8 @@ describe('rating history and undo', () => {
     await writeFile(ledger, `${await readFile(ledger, 'utf8')}- New | ON | x | - | - | rating: -\n`);
     expect((await call('undo', { dbPath, id: redo.id, settings })).error).toMatch(/This file can’t be undone safely/);
     expect(await readFile(ledger, 'utf8')).toContain('- New |');
+    // CI-8: the check notices a file that no longer matches.
+    expect((await call('undo_check', { dbPath, id: rated.id, settings })).result).toEqual({ ok: false, text: `Check failed: ${ledger} doesn’t match what it was before.` });
   });
 
   it('still undoes locally when the sync fails, and says so', async () => {
@@ -158,7 +169,7 @@ describe('rating history and undo', () => {
     const [rated] = (await call('history_list', { dbPath })).result;
     git(folder, 'remote', 'set-url', 'origin', join(dir, 'missing.git'));
     const undo = await call('undo', { dbPath, id: rated.id, settings });
-    expect(undo.result.summary).toMatch(/^Undone: Rated EGM 2\/5\. Saved here, but not synced yet/);
+    expect(undo.result.summary).toMatch(/^Undone: Rated EGM 2\/5\. Checked: the file is back as it was\. Saved here, but not synced yet/);
     expect(await readFile(join(folder, 'ledger.md'), 'utf8')).toContain('rating: -');
   });
 });

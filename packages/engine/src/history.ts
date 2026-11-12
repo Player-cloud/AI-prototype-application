@@ -167,6 +167,35 @@ export async function undoStart(dbPath: string, id: number, currentRawSettings: 
   return { kind: 'file', id, label: change.label, path: change.target, summary: doneText(change.label) };
 }
 
+/**
+ * CI-8: checks an undo really worked: the settings (as read back after saving) or the file now
+ * match what they were before change `id`. Changes nothing.
+ */
+export async function undoCheck(dbPath: string, id: number, currentRawSettings: unknown): Promise<{ ok: boolean; text: string }> {
+  const change = await withLog(dbPath, (log) => log.get(id));
+  if (!change) throw new Error('That change is no longer in the history.');
+  if (change.kind === 'settings') {
+    let now = '';
+    try {
+      now = stable(checkSettings(currentRawSettings));
+    } catch {
+      // unreadable settings never match
+    }
+    return now === change.before
+      ? { ok: true, text: 'Checked: Settings are back as they were.' }
+      : { ok: false, text: 'Check failed: Settings don’t match what they were before. Open Settings and look before building.' };
+  }
+  let current: string | null = null;
+  try {
+    current = await readFile(change.target, 'utf8');
+  } catch {
+    // missing file: doesn't match
+  }
+  return current === change.before
+    ? { ok: true, text: 'Checked: the file is back as it was.' }
+    : { ok: false, text: `Check failed: ${change.target} doesn’t match what it was before.` };
+}
+
 /** True when `path` is inside `folder`. */
 export function isInside(folder: string, path: string): boolean {
   if (!folder) return false;
