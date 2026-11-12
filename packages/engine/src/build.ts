@@ -190,9 +190,11 @@ export async function buildFeature(
   const cap = runCapUsd(settings, leftUsd);
   const model = await deps.pickModel(p.provider, 'build', settings);
   const tool = await deps.modelName(model);
+  const toolId = await toolIdOf(settings, tool);
+  const runInfo = { tool, id: toolId, version: model };
   if (settings.dataFolder) {
     const m = await import('@aip/memory');
-    const h = await m.readHealth(settings.dataFolder, tool);
+    const h = await m.readHealth(settings.dataFolder, tool, toolId);
     if (h.off) throw new Error(`${tool} is switched off: ${h.off.reason} Switch it back on in Tools to use it again.`);
   }
   const adapter = await deps.makeAdapter(p.provider, p.apiKey, settings, cap);
@@ -236,11 +238,11 @@ export async function buildFeature(
         const out = await task(prompt, a);
         spentUsd += out.usage.costUsd ?? 0;
         if (p.dbPath) await recordSpend(p.dbPath, { at: now, provider: p.provider, model, job: 'build', ...out.usage });
-        await noteRun(settings, tool, { ok: true }, now);
+        await noteRun(settings, runInfo, { ok: true }, now);
         return out.text.trim();
       } catch (err) {
         if (stopped(signal)) throw new Error('Stopped.');
-        const off = await noteRun(settings, tool, { ok: false, error: (err as Error).message }, now);
+        const off = await noteRun(settings, runInfo, { ok: false, error: (err as Error).message }, now);
         const sync = await syncAfter(settings, `Build ${p.slug} ${p.feature}: ${tool} failed`);
         const more = off ? ` ${tool} has now failed ${OFF_AFTER} times in a row, so it’s switched off. Switch it back on in Tools when you’re ready.` : '';
         throw new Error(`${(err as Error).message}${more}${sync ? ` (${sync})` : ''}`);
@@ -306,6 +308,7 @@ export async function buildFeature(
     add({ text: shots.note.split('\n')[0]! });
     for (const c of shots.checks) if (c.name !== 'pictures') add({ text: `${CHECK_NAMES[c.name] ?? c.name}: ${c.passed ? 'passed' : 'see notes'}` });
     checks.push(...shots.checks);
+    for (const line of await noteCheckTools(settings, checks, shots.pictures.length > 0, now)) add({ text: line });
     const { canKeep } = await import('@aip/checks');
     const keep = canKeep([{ ...tests, name: 'tests' }, ...checks]);
     const synced = await syncAfter(settings, `Build ${p.slug} ${p.feature}`);
@@ -359,12 +362,49 @@ export async function buildFeature(
  * Records one model run in its health record (only when a data folder is set). Returns true when
  * this failure switched the tool off: OFF_AFTER failures in a row (D-2). Off never uninstalls.
  */
-async function noteRun(settings: AppSettings, tool: string, run: { ok: boolean; error?: string }, now: Date): Promise<boolean> {
+async function noteRun(settings: AppSettings, t: { tool: string; id: string; version: string }, run: { ok: boolean; error?: string }, now: Date): Promise<boolean> {
   if (!settings.dataFolder) return false;
   const m = await import('@aip/memory');
-  let h = m.recordRun(await m.readHealth(settings.dataFolder, tool), run, now);
+  // CI-1: the model ID is its version. A new one marks old evidence stale; a good run clears it.
+  let h = m.recordRun(m.noteVersion(await m.readHealth(settings.dataFolder, t.tool, t.id), t.version), run, now);
   const off = !run.ok && !h.off && h.consecutiveFailures >= OFF_AFTER;
   if (off) h = m.switchOff(h, `${OFF_AFTER} failures in a row (last: ${h.failures.at(-1)?.error ?? 'unknown'}).`, now);
   await m.writeHealth(settings.dataFolder, h);
   return off;
+}
+
+/** The stable ID for a tool name, from the data repo's ledger and cards (CI-1). */
+async function toolIdOf(settings: AppSettings, name: string): Promise<string> {
+  const m = await import('@aip/memory');
+  if (!settings.dataFolder) return m.slugify(name);
+  try {
+    return m.toolIdFor((await m.loadDataRepo(settings.dataFolder)).tools, name);
+  } catch {
+    return m.slugify(name);
+  }
+}
+
+/**
+ * CI-1: notes each free-check tool's version and whether it worked in this build. A new version
+ * marks its old evidence stale; a good run in the same build clears that again (D-2). Check tools
+ * are never switched off here. Returns plain-words lines for the step list (only for updates).
+ * A problem here never stops the build.
+ */
+async function noteCheckTools(settings: AppSettings, checks: CheckResult[], picturesTaken: boolean, now: Date): Promise<string[]> {
+  if (!settings.dataFolder) return [];
+  const lines: string[] = [];
+  try {
+    const c = await import('@aip/checks');
+    const m = await import('@aip/memory');
+    for (const use of c.checkToolUses(checks, picturesTaken, c.checkToolVersions())) {
+      const before = await m.readHealth(settings.dataFolder, use.name, use.id);
+      const seen = use.version ? m.noteVersion(before, use.version) : before;
+      const after = m.recordRun(seen, use.ok ? { ok: true } : { ok: false, error: use.error }, now);
+      await m.writeHealth(settings.dataFolder, after);
+      if (seen.stale && !before.stale) lines.push(`${use.name} updated to ${use.version}: ${after.stale ? 'it didn’t work this time, so it’s marked for a retest.' : 'it worked in this build, so its evidence is up to date.'}`);
+    }
+  } catch {
+    // tool records are best effort
+  }
+  return lines;
 }

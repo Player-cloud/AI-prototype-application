@@ -2,7 +2,8 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { firstRead, loadDataRepo, parseLedger, related, roughTokens, toolState } from '../src/index.js';
+import { parseCard } from '@aip/tools';
+import { firstRead, joinTools, loadDataRepo, parseLedger, related, roughTokens, toolIdFor, toolState } from '../src/index.js';
 
 const LEDGER = `# Tool ledger
 
@@ -68,6 +69,36 @@ describe('loadDataRepo', () => {
     expect(byName['axe-core']!.status).toBe('not in the ledger yet');
     expect(repo.habits).toEqual(['Plain words.', 'Money in £ and $.']);
     expect(repo.rules).toHaveLength(1);
+  });
+
+  it('gives every tool a stable ID: its card’s file name, or its name as a slug (CI-1)', async () => {
+    const repo = await loadDataRepo(folder);
+    expect(repo.tools.map((t) => [t.name, t.id])).toEqual([
+      ['Only CLI (oc)', 'only-cli'],
+      ['WebFetch', 'webfetch'],
+      ['Haiku 5.5', 'haiku'],
+      ['EGM', 'egm'],
+      ['Opus single-pass plan review', 'opus-single-pass-plan-review'],
+      ['Desktop Commander', 'desktop-commander'],
+      ['axe-core', 'axe-core'],
+    ]);
+    // Any name the app uses for a tool finds the same ID.
+    expect(toolIdFor(repo.tools, 'Haiku 5.5')).toBe('haiku');
+    expect(toolIdFor(repo.tools, 'Claude Haiku 5.5')).toBe('haiku');
+    expect(toolIdFor(repo.tools, 'only-cli')).toBe('only-cli');
+    expect(toolIdFor(repo.tools, 'Sonnet 5.5')).toBe('sonnet-5-5');
+  });
+
+  it('matches cards to ledger lines the same way whatever the line order', () => {
+    const ledger = parseLedger('- Code review by Haiku | ON | review | x\n- Haiku 5.5 | ON | reading | x\n- EGM review | ON | review | x\n- EGM | TRIAL | planning | x\n');
+    const cards = [parseCard('haiku', '# Claude Haiku 5.5\nWhat: model.'), parseCard('egm', '# EGM (Elephant-Goldfish Model)\nWhat: planning.')];
+    const ids = (l: typeof ledger) => Object.fromEntries(joinTools(l, cards).map((t) => [t.name, t.id]));
+    const expected = { 'Haiku 5.5': 'haiku', 'Code review by Haiku': 'code-review-by-haiku', EGM: 'egm', 'EGM review': 'egm-review' };
+    expect(ids(ledger)).toEqual(expected);
+    expect(ids([...ledger].reverse())).toEqual(expected);
+    // A card can name its ledger line exactly, which beats any name match.
+    const pinned = parseCard('haiku-review', '# Haiku review\nLedger: Code review by Haiku\nWhat: reviews.');
+    expect(Object.fromEntries(joinTools(ledger, [pinned, ...cards]).map((t) => [t.name, t.id]))['Code review by Haiku']).toBe('haiku-review');
   });
 
   it('keeps notes linked, so only related ones are read', async () => {

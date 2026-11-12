@@ -8,7 +8,11 @@ import type { Invoke } from '../src/engine';
 afterEach(cleanup);
 
 const row = (name: string, state: ToolRow['state'], extra: Partial<ToolRow> = {}): ToolRow => ({
+  id: name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
   name,
+  kind: 'unknown',
+  version: null,
+  testedVersion: null,
   state,
   status: state.toUpperCase(),
   job: `${name} job`,
@@ -62,6 +66,21 @@ describe('Tools page', () => {
       .map((b) => b.querySelector('.tool-name')?.textContent)
       .filter(Boolean);
     expect(names).toEqual(['Only CLI (oc)', 'EGM', 'Old thing']);
+  });
+
+  it('shows each tool’s stable ID, kind and version, or unknown (CI-1)', async () => {
+    const tools = [
+      row('Only CLI (oc)', 'on', { id: 'only-cli', kind: 'tool', version: '1.3.0', testedVersion: '1.2.0', stale: true }),
+      row('EGM', 'on', { id: 'egm' }),
+    ];
+    render(<Tools invoke={shell({ ...OVERVIEW, tools })} />);
+    fireEvent.click(await screen.findByRole('button', { name: /Only CLI \(oc\)/ }));
+    expect(screen.getByText('only-cli')).toBeTruthy();
+    expect(screen.getByText('tool')).toBeTruthy();
+    expect(screen.getByText('1.3.0 (its evidence is for 1.2.0, retest due)')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /EGM/ }));
+    expect(screen.getByText('unknown (not seen in use yet)')).toBeTruthy();
+    expect(screen.getByText('egm')).toBeTruthy();
   });
 
   it('shows tool health under the tool, warning about failures', async () => {

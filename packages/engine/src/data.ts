@@ -4,7 +4,14 @@ import type { AppSettings } from './settings.ts';
 import { fileChanged, isInside, undoLabel } from './history.ts';
 
 export interface ToolRow {
+  /** CI-1: the stable ID (card file name, or the name as a slug). */
+  id: string;
   name: string;
+  /** model, tool, plugin, skill, mod, agent, workflow, or unknown when the card doesn't say. */
+  kind: string;
+  /** The version in use and the one its evidence is for; null when never seen. */
+  version: string | null;
+  testedVersion: string | null;
   state: ToolState;
   status: string;
   job: string;
@@ -77,12 +84,16 @@ export async function dataOverview(settings: AppSettings): Promise<DataOverview>
   const m = await import('@aip/memory');
   const repo = await m.loadDataRepo(settings.dataFolder);
   const health = await m.listHealth(settings.dataFolder);
-  const healthOf = (name: string) => health.get(m.slugify(name)) ?? m.emptyHealth(name);
+  const healthOf = (t: { id: string; name: string }) => health.get(t.id) ?? m.emptyHealth(t.name, t.id);
   return {
     configured: true,
     folder: repo.folder,
-    tools: [...repo.tools, ...healthOnly(repo.tools.map((t) => m.slugify(t.name)), health)].map((t) => ({
+    tools: [...repo.tools, ...healthOnly(repo.tools.map((t) => t.id), health)].map((t) => ({
+      id: t.id,
       name: t.name,
+      kind: t.card?.kind ?? 'unknown',
+      version: healthOf(t).version ?? (t.card?.version || null),
+      testedVersion: healthOf(t).testedVersion,
       state: t.state,
       status: t.status,
       job: t.job,
@@ -92,10 +103,10 @@ export async function dataOverview(settings: AppSettings): Promise<DataOverview>
       useWhen: t.card?.useWhen ?? '',
       dontUseWhen: t.card?.dontUseWhen ?? '',
       cost: t.card?.cost ?? '',
-      health: m.healthNote(healthOf(t.name)),
-      stale: healthOf(t.name).stale,
-      failuresInRow: healthOf(t.name).consecutiveFailures,
-      switchedOff: healthOf(t.name).off !== null,
+      health: m.healthNote(healthOf(t)),
+      stale: healthOf(t).stale,
+      failuresInRow: healthOf(t).consecutiveFailures,
+      switchedOff: healthOf(t).off !== null,
     })),
     habits: repo.habits,
     ruleCount: repo.rules.length,
@@ -112,7 +123,7 @@ export async function dataOverview(settings: AppSettings): Promise<DataOverview>
 export async function noteToolVersion(settings: AppSettings, tool: string, version: string) {
   const folder = folderOf(settings);
   const m = await import('@aip/memory');
-  const before = await m.readHealth(folder, tool);
+  const before = await m.readHealth(folder, tool, await idOf(folder, tool));
   const after = m.noteVersion(before, version);
   if (after !== before) await m.writeHealth(folder, after);
   return after;
@@ -122,17 +133,17 @@ export async function noteToolVersion(settings: AppSettings, tool: string, versi
  * Tools with a health record but no ledger line yet (a build model, say), so a switched-off one
  * still shows on the Tools screen with its Switch back on button.
  */
-function healthOnly(ledger: string[], health: Map<string, ToolHealth>) {
+function healthOnly(ids: string[], health: Map<string, ToolHealth>) {
   return [...health.entries()]
-    .filter(([slug]) => !ledger.includes(slug))
-    .map(([, h]) => ({ name: h.tool, state: 'unknown' as const, status: 'not in the ledger yet', job: 'Used by the app', evidence: '', rating: '', card: undefined }));
+    .filter(([id]) => !ids.includes(id))
+    .map(([id, h]) => ({ id, name: h.tool, state: 'unknown' as const, status: 'not in the ledger yet', job: 'Used by the app', evidence: '', rating: '', card: undefined }));
 }
 
 /** Switches a switched-off tool back on (D-2: it gets a quick retest on its next use), then syncs. */
 export async function switchToolOn(settings: AppSettings, tool: string) {
   const folder = folderOf(settings);
   const m = await import('@aip/memory');
-  const before = await m.readHealth(folder, tool);
+  const before = await m.readHealth(folder, tool, await idOf(folder, tool));
   if (!before.off) throw new Error(`${tool} isn’t switched off.`);
   await m.writeHealth(folder, m.switchOn(before));
   return m.syncDataRepo(folder, `Switch ${tool} back on`);
@@ -142,7 +153,17 @@ export async function switchToolOn(settings: AppSettings, tool: string) {
 export async function recordToolRun(settings: AppSettings, tool: string, run: { ok: boolean; error?: string }, now: Date) {
   const folder = folderOf(settings);
   const m = await import('@aip/memory');
-  const after = m.recordRun(await m.readHealth(folder, tool), run, now);
+  const after = m.recordRun(await m.readHealth(folder, tool, await idOf(folder, tool)), run, now);
   await m.writeHealth(folder, after);
   return after;
+}
+
+/** The stable ID for a tool name (CI-1): from the ledger and cards, else the name as a slug. */
+async function idOf(folder: string, name: string): Promise<string> {
+  const m = await import('@aip/memory');
+  try {
+    return m.toolIdFor((await m.loadDataRepo(folder)).tools, name);
+  } catch {
+    return m.slugify(name);
+  }
 }

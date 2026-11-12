@@ -82,12 +82,21 @@ describe('tool health files', () => {
     expect([...(await listHealth(folder)).keys()]).toEqual(['only-cli-oc']);
   });
 
+  it('keys each record by the tool’s stable ID when given one (CI-1)', async () => {
+    const h = recordRun(emptyHealth('Haiku 5.5', 'haiku'), { ok: true }, T1);
+    expect(h.id).toBe('haiku');
+    expect(await writeHealth(folder, h)).toBe('tool-health/haiku.json');
+    expect(await readHealth(folder, 'Claude Haiku 5.5', 'haiku')).toEqual({ ...h, tool: 'Claude Haiku 5.5' }); // named as the caller names it
+    expect((await listHealth(folder)).get('haiku')).toMatchObject({ id: 'haiku', tool: 'Haiku 5.5' });
+    await expect(writeHealth(folder, emptyHealth('x', '../oops'))).rejects.toThrow('can’t be used as a tool ID');
+  });
+
   it('reads a damaged or odd file as a clean record instead of failing', async () => {
     await mkdir(join(folder, 'tool-health'), { recursive: true });
     await writeFile(join(folder, 'tool-health', 'oc.json'), '{oops');
     expect(await readHealth(folder, 'oc')).toEqual(emptyHealth('oc'));
     await writeFile(join(folder, 'tool-health', 'oc.json'), '{"consecutiveFailures": -3, "failures": [1, {"at": "x", "error": "y"}], "stale": "yes"}');
     expect(await readHealth(folder, 'oc')).toMatchObject({ consecutiveFailures: 0, failures: [{ at: 'x', error: 'y' }], stale: false });
-    await expect(writeHealth(folder, emptyHealth('!!!'))).rejects.toThrow('can’t be used as a tool name');
+    await expect(writeHealth(folder, emptyHealth('!!!'))).rejects.toThrow('can’t be used as a tool ID');
   });
 });
