@@ -2,6 +2,7 @@
 import type { ToolHealth, ToolState } from '@aip/memory';
 import type { AppSettings } from './settings.ts';
 import { fileChanged, isInside, undoLabel } from './history.ts';
+import { readEnvironments } from './environment.ts';
 
 export interface ToolRow {
   /** CI-1: the stable ID (card file name, or the name as a slug). */
@@ -12,6 +13,8 @@ export interface ToolRow {
   /** The version in use and the one its evidence is for; null when never seen. */
   version: string | null;
   testedVersion: string | null;
+  /** CI-2: the version on each computer that has used it, when there's more than one: "joshu 4.14.0 · lapto 4.15.0". */
+  byComputer: string;
   state: ToolState;
   status: string;
   job: string;
@@ -39,6 +42,12 @@ export type DataOverview =
       noteCount: number;
       firstReadTokens: number;
       allTokens: number;
+      /** CI-2: this computer's ID, every computer's last check, and what differs between them. */
+      computer: string;
+      environments: import('@aip/checks').Environment[];
+      differences: string[];
+      /** Duplicate or clashing tools in the ledger and cards (advice only). */
+      clashes: string[];
     };
 
 function folderOf(settings: AppSettings): string {
@@ -85,6 +94,8 @@ export async function dataOverview(settings: AppSettings): Promise<DataOverview>
   const repo = await m.loadDataRepo(settings.dataFolder);
   const health = await m.listHealth(settings.dataFolder);
   const healthOf = (t: { id: string; name: string }) => health.get(t.id) ?? m.emptyHealth(t.name, t.id);
+  const c = await import('@aip/checks');
+  const environments = await readEnvironments(settings.dataFolder);
   return {
     configured: true,
     folder: repo.folder,
@@ -94,6 +105,7 @@ export async function dataOverview(settings: AppSettings): Promise<DataOverview>
       kind: t.card?.kind ?? 'unknown',
       version: healthOf(t).version ?? (t.card?.version || null),
       testedVersion: healthOf(t).testedVersion,
+      byComputer: byComputer(healthOf(t)),
       state: t.state,
       status: t.status,
       job: t.job,
@@ -113,6 +125,10 @@ export async function dataOverview(settings: AppSettings): Promise<DataOverview>
     noteCount: repo.notes.length,
     firstReadTokens: m.roughTokens(m.firstRead(repo)),
     allTokens: m.roughTokens(repo.notes.map((n) => n.body).join('\n')),
+    computer: c.computerId(),
+    environments,
+    differences: c.compareComputers(environments),
+    clashes: m.toolClashes(repo.tools),
   };
 }
 
@@ -166,4 +182,14 @@ async function idOf(folder: string, name: string): Promise<string> {
   } catch {
     return m.slugify(name);
   }
+}
+
+/** "joshu 4.14.0 · lapto 4.15.0" when more than one computer has used the tool, else ''. */
+function byComputer(h: ToolHealth): string {
+  const entries = Object.entries(h.computers).filter(([, v]) => v.version);
+  if (entries.length < 2) return '';
+  return entries
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([k, v]) => `${k} ${v.version}${v.stale ? ' (retest due)' : ''}`)
+    .join(' · ');
 }

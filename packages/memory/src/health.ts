@@ -13,6 +13,12 @@ import { looksLikeKey } from './sync.js';
 
 export interface ToolFailure { at: string; error: string }
 
+/**
+ * CI-2: versions per computer. joshua's PC and laptop can have different versions of a tool; each
+ * computer's evidence is its own, so one computer never marks the other's tool out of date.
+ */
+export interface ComputerVersions { version: string | null; testedVersion: string | null; stale: boolean; retestDue: boolean }
+
 export interface ToolHealth {
   /** CI-1: the tool's stable ID (its card's file name, or its name as a slug); names the file. */
   id: string;
@@ -33,6 +39,11 @@ export interface ToolHealth {
   lastRetest: { at: string; ok: boolean } | null;
   /** Set when the tool was switched off (not uninstalled), with why. */
   off: { at: string; reason: string } | null;
+  /**
+   * CI-2: each computer's own versions, by computer ID. The fields above show the computer that
+   * used the tool last.
+   */
+  computers: Record<string, ComputerVersions>;
 }
 
 /** Failures kept per tool. */
@@ -40,19 +51,34 @@ export const KEEP_FAILURES = 20;
 const MAX_ERROR_CHARS = 300;
 
 export function emptyHealth(tool: string, id = slugify(tool)): ToolHealth {
-  return { id, tool, version: null, testedVersion: null, stale: false, retestDue: false, consecutiveFailures: 0, failures: [], lastOk: null, lastRetest: null, off: null };
+  return { id, tool, version: null, testedVersion: null, stale: false, retestDue: false, consecutiveFailures: 0, failures: [], lastOk: null, lastRetest: null, off: null, computers: {} };
+}
+
+/** The version rule, on one set of fields: first seen is the baseline, a change is stale. */
+function seeVersion(c: ComputerVersions, v: string): ComputerVersions {
+  if (v === c.version) return c;
+  if (c.testedVersion === null) return { ...c, version: v, testedVersion: v };
+  if (v === c.testedVersion) return { ...c, version: v, stale: false, retestDue: false };
+  return { ...c, version: v, stale: true, retestDue: true };
 }
 
 /**
  * Notes the version in use. The first version seen becomes the baseline. A different version
  * later marks the evidence stale and schedules a retest on the next use.
  */
-export function noteVersion(h: ToolHealth, version: string): ToolHealth {
+export function noteVersion(h: ToolHealth, version: string, computer?: string): ToolHealth {
   const v = version.trim();
-  if (!v || v === h.version) return h;
-  if (h.testedVersion === null) return { ...h, version: v, testedVersion: v };
-  if (v === h.testedVersion) return { ...h, version: v, stale: false, retestDue: false };
-  return { ...h, version: v, stale: true, retestDue: true };
+  if (!v) return h;
+  const top = { version: h.version, testedVersion: h.testedVersion, stale: h.stale, retestDue: h.retestDue };
+  if (!computer) {
+    const c = seeVersion(top, v);
+    return c === top ? h : { ...h, ...c };
+  }
+  // A record from before CI-2 has no computers yet: its versions came from this computer.
+  const known = h.computers[computer] ?? (Object.keys(h.computers).length === 0 && h.testedVersion !== null ? top : { version: null, testedVersion: null, stale: false, retestDue: false });
+  const c = seeVersion(known, v);
+  // A retest asked for by Switch back on (not by a version) still stands.
+  return { ...h, ...c, retestDue: c.retestDue || (h.retestDue && !h.stale), computers: { ...h.computers, [computer]: c } };
 }
 
 function cleanError(error: string): string {
@@ -64,16 +90,19 @@ function cleanError(error: string): string {
  * Records one use of the tool. A success resets the failure count; if a retest was due, it
  * also clears the stale mark. A failure adds to the count and the failure list.
  */
-export function recordRun(h: ToolHealth, run: { ok: boolean; error?: string }, now: Date): ToolHealth {
+export function recordRun(h: ToolHealth, run: { ok: boolean; error?: string }, now: Date, computer?: string): ToolHealth {
   const at = now.toISOString();
-  const lastRetest = h.retestDue ? { at, ok: run.ok } : h.lastRetest;
+  const c = computer ? h.computers[computer] : undefined;
+  const due = h.retestDue || (c?.retestDue ?? false);
+  const lastRetest = due ? { at, ok: run.ok } : h.lastRetest;
   if (run.ok) {
     return {
       ...h,
       consecutiveFailures: 0,
       lastOk: at,
       lastRetest,
-      ...(h.retestDue ? { stale: false, retestDue: false, testedVersion: h.version } : {}),
+      ...(due ? { stale: false, retestDue: false, testedVersion: h.version } : {}),
+      ...(c && computer && (c.retestDue || c.stale) ? { computers: { ...h.computers, [computer]: { ...c, stale: false, retestDue: false, testedVersion: c.version } } } : {}),
     };
   }
   const failures = [...h.failures, { at, error: cleanError(run.error ?? '') }].slice(-KEEP_FAILURES);
@@ -122,7 +151,20 @@ export function checkHealth(raw: unknown, tool: string, id = slugify(tool)): Too
     lastOk: s(r.lastOk),
     lastRetest: lr && typeof lr.at === 'string' && typeof lr.ok === 'boolean' ? { at: lr.at, ok: lr.ok } : null,
     off,
+    computers: checkComputers(r.computers),
   };
+}
+
+function checkComputers(raw: unknown): Record<string, ComputerVersions> {
+  const out: Record<string, ComputerVersions> = {};
+  if (typeof raw !== 'object' || raw === null) return out;
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof v !== 'object' || v === null || slugify(k) !== k) continue;
+    const c = v as Record<string, unknown>;
+    const s = (x: unknown) => (typeof x === 'string' ? x : null);
+    out[k] = { version: s(c.version), testedVersion: s(c.testedVersion), stale: c.stale === true, retestDue: c.retestDue === true };
+  }
+  return out;
 }
 
 /** The tool's health (by its stable ID), or a clean record if there's none yet. */

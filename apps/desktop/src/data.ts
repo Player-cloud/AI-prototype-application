@@ -10,6 +10,8 @@ export interface ToolRow {
   /** The version in use and the one its evidence is for; null when never seen. */
   version: string | null;
   testedVersion: string | null;
+  /** The version on each computer, when more than one has used it (CI-2). */
+  byComputer?: string;
   state: ToolState;
   status: string;
   job: string;
@@ -37,7 +39,26 @@ export type DataOverview =
       noteCount: number;
       firstReadTokens: number;
       allTokens: number;
+      /** CI-2: this computer, every computer's last check, what differs, and tool clashes. */
+      computer?: string;
+      environments?: Environment[];
+      differences?: string[];
+      clashes?: string[];
     };
+
+/** One computer's last environment check (CI-2). ok null: couldn't tell. */
+export interface EnvCheck { name: string; ok: boolean | null; detail: string }
+export interface Environment { computer: string; checkedAt: string; os: string; versions: Record<string, string>; checks: EnvCheck[] }
+export interface EnvironmentReport { environment: Environment; differences: string[]; synced: string }
+
+/** Checks this computer: free, changes nothing on it. */
+export async function checkThisComputer(invoke: Invoke): Promise<EnvironmentReport> {
+  try {
+    return await invoke<EnvironmentReport>('environment_check');
+  } catch (err) {
+    throw plain(err);
+  }
+}
 
 export async function getDataOverview(invoke: Invoke): Promise<DataOverview> {
   try {

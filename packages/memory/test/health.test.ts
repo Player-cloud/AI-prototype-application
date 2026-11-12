@@ -100,3 +100,34 @@ describe('tool health files', () => {
     await expect(writeHealth(folder, emptyHealth('!!!'))).rejects.toThrow('can’t be used as a tool ID');
   });
 });
+
+describe('versions per computer (CI-2)', () => {
+  it('keeps each computer’s evidence its own, so the PC and laptop never mark each other stale', () => {
+    let h = noteVersion(emptyHealth('axe-core'), '4.14.0', 'joshu');
+    h = noteVersion(h, '4.15.0', 'lapto'); // the laptop's first sight is its own baseline
+    expect(h.computers).toEqual({
+      joshu: { version: '4.14.0', testedVersion: '4.14.0', stale: false, retestDue: false },
+      lapto: { version: '4.15.0', testedVersion: '4.15.0', stale: false, retestDue: false },
+    });
+    expect(h.stale).toBe(false);
+    h = noteVersion(h, '4.14.0', 'joshu'); // back on the PC: same as before, still fine
+    expect(h).toMatchObject({ version: '4.14.0', stale: false, retestDue: false });
+
+    // An update on the laptop only marks the laptop's evidence stale...
+    h = noteVersion(h, '4.16.0', 'lapto');
+    expect(h.computers.lapto).toMatchObject({ version: '4.16.0', testedVersion: '4.15.0', stale: true, retestDue: true });
+    expect(h.computers.joshu!.stale).toBe(false);
+    // ...and a good run there clears it.
+    h = recordRun(h, { ok: true }, T1, 'lapto');
+    expect(h.computers.lapto).toMatchObject({ testedVersion: '4.16.0', stale: false, retestDue: false });
+    expect(h).toMatchObject({ stale: false, retestDue: false, lastRetest: { at: T1.toISOString(), ok: true } });
+  });
+
+  it('treats a record from before CI-2 as this computer’s, and keeps a retest asked for by Switch back on', () => {
+    const old = noteVersion(emptyHealth('axe-core'), '4.0.0'); // no computers yet
+    const h = noteVersion(old, '4.14.0', 'joshu');
+    expect(h.computers.joshu).toMatchObject({ version: '4.14.0', testedVersion: '4.0.0', stale: true });
+    const on = noteVersion(switchOn(noteVersion(emptyHealth('x'), '1', 'joshu')), '1', 'joshu');
+    expect(on.retestDue).toBe(true);
+  });
+});

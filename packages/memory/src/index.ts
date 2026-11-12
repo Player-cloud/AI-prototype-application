@@ -31,6 +31,7 @@ export {
   bullets,
   firstRead,
   joinTools,
+  toolClashes,
   toolIdFor,
   loadDataRepo,
   parseLedger,

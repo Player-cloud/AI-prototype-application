@@ -366,7 +366,8 @@ async function noteRun(settings: AppSettings, t: { tool: string; id: string; ver
   if (!settings.dataFolder) return false;
   const m = await import('@aip/memory');
   // CI-1: the model ID is its version. A new one marks old evidence stale; a good run clears it.
-  let h = m.recordRun(m.noteVersion(await m.readHealth(settings.dataFolder, t.tool, t.id), t.version), run, now);
+  const computer = (await import('@aip/checks')).computerId();
+  let h = m.recordRun(m.noteVersion(await m.readHealth(settings.dataFolder, t.tool, t.id), t.version, computer), run, now, computer);
   const off = !run.ok && !h.off && h.consecutiveFailures >= OFF_AFTER;
   if (off) h = m.switchOff(h, `${OFF_AFTER} failures in a row (last: ${h.failures.at(-1)?.error ?? 'unknown'}).`, now);
   await m.writeHealth(settings.dataFolder, h);
@@ -396,10 +397,11 @@ async function noteCheckTools(settings: AppSettings, checks: CheckResult[], pict
   try {
     const c = await import('@aip/checks');
     const m = await import('@aip/memory');
+    const computer = c.computerId(); // CI-2: each computer's versions are its own
     for (const use of c.checkToolUses(checks, picturesTaken, c.checkToolVersions())) {
       const before = await m.readHealth(settings.dataFolder, use.name, use.id);
-      const seen = use.version ? m.noteVersion(before, use.version) : before;
-      const after = m.recordRun(seen, use.ok ? { ok: true } : { ok: false, error: use.error }, now);
+      const seen = use.version ? m.noteVersion(before, use.version, computer) : before;
+      const after = m.recordRun(seen, use.ok ? { ok: true } : { ok: false, error: use.error }, now, computer);
       await m.writeHealth(settings.dataFolder, after);
       if (seen.stale && !before.stale) lines.push(`${use.name} updated to ${use.version}: ${after.stale ? 'it didn’t work this time, so it’s marked for a retest.' : 'it worked in this build, so its evidence is up to date.'}`);
     }

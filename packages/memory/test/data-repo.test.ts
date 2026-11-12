@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { parseCard } from '@aip/tools';
-import { firstRead, joinTools, loadDataRepo, parseLedger, related, roughTokens, toolIdFor, toolState } from '../src/index.js';
+import { firstRead, joinTools, loadDataRepo, parseLedger, related, roughTokens, toolClashes, toolIdFor, toolState } from '../src/index.js';
 
 const LEDGER = `# Tool ledger
 
@@ -99,6 +99,19 @@ describe('loadDataRepo', () => {
     // A card can name its ledger line exactly, which beats any name match.
     const pinned = parseCard('haiku-review', '# Haiku review\nLedger: Code review by Haiku\nWhat: reviews.');
     expect(Object.fromEntries(joinTools(ledger, [pinned, ...cards]).map((t) => [t.name, t.id]))['Code review by Haiku']).toBe('haiku-review');
+  });
+
+  it('spots duplicate and clashing tools, without false alarms for backups (CI-2)', async () => {
+    expect(toolClashes((await loadDataRepo(folder)).tools)).toEqual([]);
+    const ledger = parseLedger(
+      '- Only CLI | ON | web reading | x\n- Jina reader | ON | Web reading | x\n- WebFetch | BACKUP | web reading | x\n- Foo bar | ON | a | x\n- Foo-bar | TRIAL | b | x\n',
+    );
+    const cards = [parseCard('ghost', '# Ghost\nLedger: Nothing here\nWhat: x.')];
+    expect(toolClashes(joinTools(ledger, cards))).toEqual([
+      'Foo bar and Foo-bar share the ID “foo-bar”. Rename one line, or give a card a Ledger: line.',
+      'Only CLI and Jina reader are both on for “web reading”. Keep one, or mark the other BACKUP.',
+      'The ghost card points to “Nothing here”, which isn’t in the ledger.',
+    ]);
   });
 
   it('keeps notes linked, so only related ones are read', async () => {

@@ -14,6 +14,10 @@
  *    ask and check take an optional dbPath: the call is refused once the month's budget is used up,
  *    and its cost is recorded there afterwards.
  *  - data_overview: {settings} -> the tools, habits and rules in the data folder, and what the engine reads first.
+ *    CI-2: also this computer's ID, every computer's last environment check, version differences
+ *    between them, and duplicate or clashing tools in the ledger.
+ *  - environment_check: {settings} -> checks this computer (Node, pnpm, git, browser, check tools),
+ *    saves it as environments/<computer>.json in the data folder and syncs. Free.
  *  - tool_rate: {settings, tool, rating} -> saves a 1–5 rating in ledger.md and syncs the data repo.
  *    With dbPath, the change is kept in the history so it can be undone.
  *  - data_sync: {settings} -> commits data folder changes and syncs with GitHub. Never forces.
@@ -88,6 +92,7 @@ import { MAX_CALL_USD, readBudget, recordSpend } from './budget.ts';
 import { gate, listRules } from './gate.ts';
 import { checkCodeFolder, codeFolderOf, createCodeFolder } from './runs.ts';
 import { buildFeature } from './build.ts';
+import { environmentCheck } from './environment.ts';
 import { claimLines } from './claims.ts';
 
 export const ENGINE_VERSION = '0.0.1';
@@ -279,6 +284,7 @@ const HANDLERS: Record<string, Handler> = {
     return { ...b, spentText };
   },
   data_overview: (params) => dataOverview(checkSettings(obj(params).settings)),
+  environment_check: (params, deps) => environmentCheck(checkSettings(obj(params).settings), deps.now?.() ?? new Date()),
   tool_rate: (params, deps) => {
     const p = obj(params);
     const rating = p.rating;
