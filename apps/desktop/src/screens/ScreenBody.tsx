@@ -4,11 +4,13 @@ import { Settings } from './Settings';
 import { Tools } from './Tools';
 import { Projects } from './Projects';
 import { Build } from './Build';
+import { Centre } from './Centre';
 import type { MakeChannel } from '../build';
 
 export function ScreenBody({ id, invoke, makeChannel = null }: { id: ScreenId; invoke: Invoke | null; makeChannel?: MakeChannel | null }) {
   if (id === 'settings') return <Settings invoke={invoke} />;
   if (id === 'ledger') return <Tools invoke={invoke} />;
   if (id === 'projects') return <Projects invoke={invoke} />;
+  if (id === 'centre') return <Centre invoke={invoke} />;
   return <Build invoke={invoke} makeChannel={makeChannel} />;
 }

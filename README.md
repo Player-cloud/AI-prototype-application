@@ -161,6 +161,16 @@ Each build is measured from start to finish: whether it was kept or undone, whet
 
 The engine only advises. The model for each job stays joshua's rule, so a score never switches it. Another way is suggested only when it kept clearly more builds (20 points more) over at least 3 finished builds, and never had a secret-scan failure. Otherwise the simplest way that works stays. Fewer than 3 builds is a first look, not proof. Free: nothing extra is sent to a model.
 
+## Capability Centre
+
+The **Capability Centre** in the rail puts every tool and model in one place:
+- **Where it is in its life:** in use, changed since tested, on trial, not tested, switched off, or retired.
+- **What its records show:** version, free test results, anything that got worse after an update, real builds, computers, health and your rating.
+- **Ways of building:** compared on real builds.
+- **Next steps:** what the records point to, such as a test to run, an update waiting, or instructions to check.
+
+Every line comes from a real record. Where there isn't one it says "Not tested" or "No builds yet", never 0. Scores are never added up into one grade. Your rating is kept apart, and the Centre changes nothing. Free.
+
 ## Undo
 
 Every settings change and tool rating is kept in `history.sqlite` on this computer, with exactly what it was before and after. Settings → Change history lists them, each with an Undo button. Undo only puts a change back if nothing has changed it since; otherwise it says so and touches nothing. Undoing a rating also syncs the data repo. An undo can itself be undone (shown as Redo).
