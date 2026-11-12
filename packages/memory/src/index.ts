@@ -74,3 +74,4 @@ export {
 } from './health.js';
 
 export { KEEP_EVALS, SCREENING_BELOW, addEvals, evidenceNote, listEvals, readEvals, type StoredEval } from './evals.js';
+export { workflowStats, type WorkflowStats } from './workflows.js';

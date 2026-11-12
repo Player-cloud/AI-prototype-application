@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Invoke } from '../engine';
 import { listProjects, openProject, type Feature, type ProjectRow } from '../projects';
 import { getSettings } from '../settings';
-import { CHECK_NAME, decideRun, keepable, listRuns, listWork, pollPhone, rateRun, startBuild, stopBuild, type BuildResult, type BuildRun, type BuildStep, type LiveView, type MakeChannel, type WorkItem } from '../build';
+import { CHECK_NAME, compareWorkflows, decideRun, keepable, listRuns, listWork, pollPhone, rateRun, startBuild, stopBuild, type BuildResult, type BuildRun, type BuildStep, type LiveView, type MakeChannel, type WorkItem, type WorkflowRow } from '../build';
 
 type Note = { text: string; bad: boolean } | null;
 
@@ -61,6 +61,8 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
   const [feature, setFeature] = useState('');
   const [limit, setLimit] = useState('');
   const [using, setUsing] = useState('');
+  const [advice, setAdvice] = useState<string[]>([]);
+  const [workflows, setWorkflows] = useState<WorkflowRow[]>([]);
   const [steps, setSteps] = useState<BuildStep[]>([]);
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<BuildResult | null>(null);
@@ -111,6 +113,20 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
     };
   }, [invoke, slug]);
 
+  // CI-4: the comparison follows the builds (new, kept, undone or rated). It's advice, so a failure is quiet.
+  const runsKey = runs.map((r) => `${r.id}:${r.status}:${r.rating ?? ''}`).join(',');
+  useEffect(() => {
+    if (!invoke || !runsKey) return;
+    let live = true;
+    compareWorkflows(invoke).then(
+      (w) => live && setWorkflows(w),
+      () => undefined,
+    );
+    return () => {
+      live = false;
+    };
+  }, [invoke, runsKey]);
+
   // Replies from the phone are read in the background (about once a minute); keep the lists fresh.
   useEffect(() => {
     if (!invoke || !slug) return;
@@ -133,6 +149,7 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
     if (!invoke || !makeChannel) return;
     setRunning(true);
     setUsing('');
+    setAdvice([]);
     setSteps([]);
     setResult(null);
     setNote(null);
@@ -140,7 +157,10 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
     let reloads = false;
     try {
       const r = await startBuild(invoke, makeChannel, slug, feature, (e) => {
-        if (e.type === 'using') setUsing(e.using);
+        if (e.type === 'using') {
+          setUsing(e.using);
+          setAdvice(e.advice ?? []);
+        }
         else if (e.type === 'live') {
           reloads = e.reloads;
           setLiveView({ url: e.url, note: e.note, reloads: e.reloads });
@@ -157,6 +177,7 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
       setRuns(await listRuns(invoke, slug));
       setWork(await listWork(invoke));
       setUsing(r.using);
+      setAdvice(r.advice ?? []);
       setSteps(r.steps);
       setNote(
         r.tests.passed && !r.keep.keep
@@ -274,6 +295,13 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
         </div>
       )}
       {using && <p className="using-line">{using}</p>}
+      {advice.length > 0 && (
+        <ul className="advice" aria-label="What real builds say">
+          {advice.map((a) => (
+            <li key={a}>{a}</li>
+          ))}
+        </ul>
+      )}
       {steps.length > 0 && (
         <ol className="step-list" aria-label="Steps" aria-live="polite">
           {steps.map((s, i) => (
@@ -375,6 +403,17 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
             ))}
           </ul>
           <p className="muted">Keep merges the build into your copy on this computer (it never pushes). Undo removes the build’s copy.</p>
+        </div>
+      )}
+      {workflows.length > 0 && (
+        <div className="workflows" role="region" aria-label="Ways of building compared">
+          <h3>Ways of building compared</h3>
+          <ul>
+            {workflows.map((w) => (
+              <li key={w.model}>{w.text}</li>
+            ))}
+          </ul>
+          <p className="muted">From real builds on this computer, all projects. The app only advises: the model for each job stays your choice.</p>
         </div>
       )}
       {note && (

@@ -118,6 +118,12 @@ Settings → Tools → **Run free tests** checks that each check tool still does
 
 Results are passed, failed or "couldn’t run here" (no browser, say), never a made-up score. Each names the tool's version and the computer, and is saved in the data repo as `evaluations/<id>.json` (last 30). A pass on a new version clears the "retest due" mark; a fail counts as a failure in tool health; "couldn’t run here" counts as neither. Fewer than 3 runs is shown as a first look, not proof. A tool with no test stays "Untested". Paid model tests come later, and only with joshua's OK.
 
+## Ways of building compared (Capability Intelligence)
+
+Each build is measured from start to finish: whether it was kept or undone, whether the tests passed first time, problems found by the app's own checks, the secret scan, cost in £ and $, and time. Missing numbers stay missing, and joshua's 1–5 rating is shown on its own, never mixed in. The Build screen shows **Ways of building compared** (from this computer's history), and each build starts with what the evidence says beside the Using line.
+
+The engine only advises. The model for each job stays joshua's rule, so a score never switches it. Another way is suggested only when it kept clearly more builds (20 points more) over at least 3 finished builds, and never had a secret-scan failure. Otherwise the simplest way that works stays. Fewer than 3 builds is a first look, not proof. Free: nothing extra is sent to a model.
+
 ## Undo
 
 Every settings change and tool rating is kept in `history.sqlite` on this computer, with exactly what it was before and after. Settings → Change history lists them, each with an Undo button. Undo only puts a change back if nothing has changed it since; otherwise it says so and touches nothing. Undoing a rating also syncs the data repo. An undo can itself be undone (shown as Redo).
