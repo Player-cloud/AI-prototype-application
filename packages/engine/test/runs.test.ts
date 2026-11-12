@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promi
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { checkCodeFolder, parseWorktrees, stamp, startRun } from '../src/runs.ts';
+import { checkCodeFolder, createCodeFolder, parseWorktrees, stamp, startRun } from '../src/runs.ts';
 import { checkSettings } from '../src/settings.ts';
 import { handleLine } from '../src/protocol.ts';
 
@@ -107,5 +107,50 @@ describe('feature runs in git worktrees', () => {
     expect((await call('code_folder_check', { settings: { dataFolder: data }, slug: 'club-hr' })).error).toBe(
       'Set this project’s code folder first: where its repo is cloned on this computer.',
     );
+  });
+});
+
+describe('making a new code folder', () => {
+  let root = '';
+  beforeEach(async () => {
+    root = await realpath(await mkdtemp(join(tmpdir(), 'aip-newcode-')));
+  });
+  afterEach(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+  // Real git, with a name and email for the first commit (test machines may not have one set).
+  const withName = async (args: string[], cwd: string) => git(cwd, ...args);
+
+  it('makes an empty repo on main with a first commit, ready to build in', async () => {
+    const folder = join(root, 'club-hr');
+    const r = await createCodeFolder(folder, 'Club HR', withName);
+    expect(r).toMatchObject({ folder, branch: 'main', clean: true, runs: [] });
+    expect(await readFile(join(folder, 'README.md'), 'utf8')).toContain('# Club HR');
+    const ignore = await readFile(join(folder, '.gitignore'), 'utf8');
+    for (const line of ['node_modules/', '.env', '*.pem']) expect(ignore.split('\n')).toContain(line);
+    expect(git(folder, 'log', '--format=%s').trim()).toBe('Start Club HR');
+    expect(git(folder, 'remote').trim()).toBe(''); // nothing to push to
+  });
+
+  it('uses an empty folder that already exists', async () => {
+    const folder = join(root, 'empty');
+    await mkdir(folder);
+    expect((await createCodeFolder(folder, 'X', withName)).branch).toBe('main');
+  });
+
+  it('never touches a folder that has something in it', async () => {
+    const folder = join(root, 'busy');
+    await mkdir(folder);
+    await writeFile(join(folder, 'mine.txt'), 'keep me');
+    await expect(createCodeFolder(folder, 'X', withName)).rejects.toThrow('isn’t empty, so nothing was changed');
+    expect(await readFile(join(folder, 'mine.txt'), 'utf8')).toBe('keep me');
+  });
+
+  it('says how to fix a missing git name and email', async () => {
+    const noName = async (args: string[], cwd: string) => {
+      if (args[0] === 'commit') throw new Error('Author identity unknown\n*** Please tell me who you are.');
+      return git(cwd, ...args);
+    };
+    await expect(createCodeFolder(join(root, 'n'), 'X', noName)).rejects.toThrow('Git doesn’t know your name and email yet');
   });
 });

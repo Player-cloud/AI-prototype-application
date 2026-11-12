@@ -86,6 +86,8 @@ export const confirmStage = (invoke: Invoke, slug: string, stage: StageId) =>
 export interface RunInfo { path: string; branch: string; feature: string }
 export interface CodeFolderStatus { folder: string; branch: string; clean: boolean; runs: RunInfo[] }
 export const checkCodeFolder = (invoke: Invoke, slug: string) => call<CodeFolderStatus>(invoke, 'code_folder_check', { slug });
+/** Makes a new empty git repo at `path` (only when it's empty or missing), so nothing needs cloning first. */
+export const createCodeFolder = (invoke: Invoke, slug: string, path: string) => call<CodeFolderStatus>(invoke, 'code_folder_create', { slug, path });
 
 /** Reviews the finished plan (one review, or three fresh-eyes reviewers for a big build). Costs money. */
 export async function reviewPlan(invoke: Invoke, slug: string): Promise<{ view: InterviewView; summary: string }> {
