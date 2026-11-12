@@ -20,6 +20,22 @@ import { looksLikeKey } from './sync.js';
 export type FailureCause = 'model' | 'tool' | 'budget' | 'network' | 'provider' | 'setup' | 'stopped' | 'unknown';
 const CAUSES: readonly string[] = ['model', 'tool', 'budget', 'network', 'provider', 'setup', 'stopped', 'unknown'];
 
+/**
+ * How far a tool is trusted. New tools start 'unknown'.
+ *  - unknown: nobody has checked it.
+ *  - checked: it passed its health check (see `passedHealthCheck`). The app sets this by itself.
+ *  - trusted: joshua said so. Only the explicit "Trust this tool" action sets it (`setTrust`).
+ *
+ * Trust is written in exactly two ways, and nowhere else:
+ *  1. The app: unknown becomes checked when the health check passes (in `recordRun`), and a tool
+ *     switched off by the 3-failure rule drops to checked at most (in `switchOff`).
+ *  2. joshua: `setTrust`, from the Capability Centre.
+ * A score (health %, rating, workflow stats, test results) never changes trust.
+ */
+export type Trust = 'unknown' | 'checked' | 'trusted';
+export const TRUST_LEVELS: readonly Trust[] = ['unknown', 'checked', 'trusted'];
+const TRUST_ORDER: Record<Trust, number> = { unknown: 0, checked: 1, trusted: 2 };
+
 export interface ToolFailure { at: string; error: string; cause?: FailureCause }
 
 /** Only the model's or the tool's own fault counts towards switching off. */
@@ -72,6 +88,8 @@ export interface ToolHealth {
    * used the tool last.
    */
   computers: Record<string, ComputerVersions>;
+  /** How far joshua can rely on it. A record from before trust levels reads as 'unknown'. */
+  trust: Trust;
 }
 
 /** Failures kept per tool. */
@@ -79,7 +97,7 @@ export const KEEP_FAILURES = 20;
 const MAX_ERROR_CHARS = 300;
 
 export function emptyHealth(tool: string, id = slugify(tool)): ToolHealth {
-  return { id, tool, version: null, testedVersion: null, stale: false, retestDue: false, consecutiveFailures: 0, failures: [], lastOk: null, lastRetest: null, off: null, computers: {} };
+  return { id, tool, version: null, testedVersion: null, stale: false, retestDue: false, consecutiveFailures: 0, failures: [], lastOk: null, lastRetest: null, off: null, computers: {}, trust: 'unknown' };
 }
 
 /** The version rule, on one set of fields: first seen is the baseline, a change is stale. */
@@ -126,22 +144,52 @@ export function recordRun(h: ToolHealth, run: { ok: true } | { ok: false; error?
   const due = h.retestDue || (c?.retestDue ?? false);
   const lastRetest = due ? { at, ok: run.ok } : h.lastRetest;
   if (run.ok) {
-    return {
+    return promoteIfChecked({
       ...h,
       consecutiveFailures: 0,
       lastOk: at,
       lastRetest,
       ...(due ? { stale: false, retestDue: false, testedVersion: h.version } : {}),
       ...(c && computer && (c.retestDue || c.stale) ? { computers: { ...h.computers, [computer]: { ...c, stale: false, retestDue: false, testedVersion: c.version } } } : {}),
-    };
+    });
   }
   const failures = [...h.failures, { at, error: cleanError(run.error ?? ''), cause: run.cause }].slice(-KEEP_FAILURES);
   return { ...h, consecutiveFailures: h.consecutiveFailures + (countsAgainst(run.cause) ? 1 : 0), failures, lastRetest };
 }
 
-/** Switches the tool off (it stays installed). */
+/**
+ * The health check, exactly: the tool's last use worked (`lastOk` is set), it has no failures in
+ * a row, it isn't switched off, and its evidence isn't out of date or waiting for a retest.
+ */
+export function passedHealthCheck(h: ToolHealth): boolean {
+  return h.lastOk !== null && h.consecutiveFailures === 0 && h.off === null && !h.stale && !h.retestDue;
+}
+
+/** Trust path 1a (the app): unknown becomes checked once the health check passes. Never touches checked or trusted. */
+function promoteIfChecked(h: ToolHealth): ToolHealth {
+  return h.trust === 'unknown' && passedHealthCheck(h) ? { ...h, trust: 'checked' } : h;
+}
+
+/**
+ * Switches the tool off (it stays installed). Trust path 1b (the app): a trusted tool drops to
+ * checked, never lower, so joshua only has to press Trust again after switching it back on.
+ */
 export function switchOff(h: ToolHealth, reason: string, now: Date): ToolHealth {
-  return { ...h, off: { at: now.toISOString(), reason } };
+  return { ...h, off: { at: now.toISOString(), reason }, trust: h.trust === 'trusted' ? 'checked' : h.trust };
+}
+
+/**
+ * Trust path 2 (joshua only; the engine's `tool_trust` command calls this and nothing else does).
+ * Raising to trusted is allowed only from checked: a tool nobody has checked can't be trusted.
+ * Lowering is allowed from anywhere; the app never raises past checked.
+ */
+export function setTrust(h: ToolHealth, to: Trust): ToolHealth {
+  if (!TRUST_LEVELS.includes(to)) throw new Error('Trust must be unknown, checked or trusted.');
+  if (to === h.trust) return h;
+  if (TRUST_ORDER[to] > TRUST_ORDER[h.trust] && !(h.trust === 'checked' && to === 'trusted')) {
+    throw new Error(`${h.tool} hasn’t passed its health check yet, so its trust can’t be raised yet. Use it first; the app checks it.`);
+  }
+  return { ...h, trust: to };
 }
 
 /** Switches it back on with a clean failure count; a retest runs on its next use. */
@@ -183,6 +231,7 @@ export function checkHealth(raw: unknown, tool: string, id = slugify(tool)): Too
     lastRetest: lr && typeof lr.at === 'string' && typeof lr.ok === 'boolean' ? { at: lr.at, ok: lr.ok } : null,
     off,
     computers: checkComputers(r.computers),
+    trust: TRUST_LEVELS.includes(r.trust as Trust) ? (r.trust as Trust) : 'unknown',
   };
 }
 

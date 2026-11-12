@@ -359,7 +359,7 @@ describe('build_feature', () => {
     expect(out.screensChanged).toBeNull();
     // Advice-only findings are reported but don't stop Keep.
     expect(out.keep).toEqual({ keep: true, blocking: [] });
-    expect(out.checks.map((c: { name: string }) => c.name)).toEqual(['secrets', 'audit', 'checklist', 'axe', 'phone-overflow']);
+    expect(out.findings.map((f: { check: string }) => f.check)).toEqual(['secrets', 'audit', 'checklist', 'axe', 'phone-overflow']);
     expect(out.tests).toEqual({ passed: true, output: '3 passed', fixAttempts: 0 });
     expect(out.synced).toMatch(/^Saved here, but not synced yet: .*not a git clone/);
 
@@ -372,11 +372,12 @@ describe('build_feature', () => {
       { id: 1, feature: 'F-01', branch: out.run.branch, path: out.run.path, testsPassed: true, status: 'built', costUsd: 0.42 },
     ]);
     expect(typeof (await call('run_list', { dbPath, slug: 'club-hr' })).result[0].ms).toBe('number');
-    expect((await call('run_list', { dbPath, slug: 'club-hr' })).result[0].checks[2]).toEqual({
-      name: 'checklist',
-      passed: false,
-      advisory: true,
+    expect((await call('run_list', { dbPath, slug: 'club-hr' })).result[0].findings[2]).toEqual({
+      check: 'checklist',
+      level: 'warn',
+      title: 'Checklist rules: advice (doesn’t stop Keep)',
       detail: 'login.md:1 (Security): Use https:// links.',
+      source: 'rule',
     });
     expect((await call('run_list', { dbPath, slug: 'club-hr' })).result[0].pictures).toEqual([{ name: 'desktop', path: out.pictures[0].path, hash: 'h1' }]);
   });
@@ -575,6 +576,25 @@ describe('build_feature', () => {
     const after = JSON.parse(await readFile(join(data, 'tool-health', 'sonnet-5-5.json'), 'utf8'));
     expect(after).toMatchObject({ off: null, consecutiveFailures: 0, retestDue: true });
     expect((await call('tool_switch_on', { settings, tool: 'Sonnet 5.5' })).error).toBe('Sonnet 5.5 isn’t switched off.');
+  });
+
+  it('a trusted build model that the 3-failure rule switches off drops to checked, not lower', async () => {
+    const seen: Seen = { answers: [] };
+    const settings = { dataFolder: data, codeFolders: { 'club-hr': code } };
+    await mkdir(join(data, 'tool-health'), { recursive: true });
+    await writeFile(join(data, 'tool-health', 'sonnet-5-5.json'), JSON.stringify({ tool: 'Sonnet 5.5', id: 'sonnet-5-5', trust: 'trusted', lastOk: NOW.toISOString() }));
+    const d = deps(seen, true, { fail: 'Claude ended without an answer' });
+    let tick = 0;
+    d.now = () => new Date(NOW.getTime() + 1000 * tick++);
+    const call = await plan(d, settings);
+    const build = () => call('build_feature', { settings, slug: 'club-hr', feature: 'F-01', provider: 'claude', apiKey: FAKE_KEY, dbPath: null });
+    const trustNow = async () => JSON.parse(await readFile(join(data, 'tool-health', 'sonnet-5-5.json'), 'utf8')).trust;
+    await build();
+    await build();
+    // Failures alone, even two in a row, don't lower trust: only the switch-off does.
+    expect(await trustNow()).toBe('trusted');
+    await build();
+    expect(JSON.parse(await readFile(join(data, 'tool-health', 'sonnet-5-5.json'), 'utf8'))).toMatchObject({ off: { reason: expect.stringContaining('3 failures') }, trust: 'checked' });
   });
 
   it('doesn’t switch the model off for failures that aren’t its fault, and says so (Q-3)', async () => {

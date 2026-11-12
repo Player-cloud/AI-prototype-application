@@ -12,6 +12,11 @@ import {
   readHealth,
   recordRun,
   causeWords,
+  passedHealthCheck,
+  setTrust,
+  TRUST_LEVELS,
+  type FailureCause,
+  type ToolHealth,
   switchOff,
   switchOn,
   writeHealth,
@@ -178,5 +183,95 @@ describe('versions per computer (CI-2)', () => {
     const h = checkHealth(JSON.parse('{"consecutiveFailures": 2, "failures": [{"at": "x", "error": "y"}, {"at": "x", "error": "z", "cause": "nonsense"}]}'), 'oc');
     expect(h.consecutiveFailures).toBe(2);
     expect(h.failures.map((f) => f.cause)).toEqual(['unknown', 'unknown']);
+  });
+});
+
+describe('trust levels', () => {
+  const ok = (h: ToolHealth) => recordRun(h, { ok: true }, T1);
+  const bad = (h: ToolHealth, cause: FailureCause = 'tool') => recordRun(h, { ok: false, error: 'x', cause }, T1);
+
+  it('a new tool starts unknown, and an old record without trust reads as unknown', () => {
+    expect(emptyHealth('oc').trust).toBe('unknown');
+    expect(checkHealth({ consecutiveFailures: 0 }, 'oc').trust).toBe('unknown');
+    expect(checkHealth({ trust: 'trusted' }, 'oc').trust).toBe('trusted');
+    expect(checkHealth({ trust: 'super' }, 'oc').trust).toBe('unknown');
+  });
+
+  it('passing the health check moves unknown to checked, and nothing else does', () => {
+    const fresh = emptyHealth('oc');
+    // The health check: last use worked, no failures in a row, not switched off, evidence not out of date.
+    expect(passedHealthCheck(fresh)).toBe(false);
+    expect(bad(fresh).trust).toBe('unknown');
+    expect(ok(fresh)).toMatchObject({ trust: 'checked', lastOk: T1.toISOString() });
+    // Not while it is stale or waiting for a retest: that run is the retest, and it clears the mark first.
+    const stale = noteVersion(noteVersion(fresh, '1.0.0'), '2.0.0');
+    expect(passedHealthCheck(stale)).toBe(false);
+    expect(ok(stale).trust).toBe('checked');
+    // A failure after a success: the tool is no longer passing, but checked is not lowered by a score.
+    expect(bad(ok(fresh)).trust).toBe('checked');
+  });
+
+  it('only joshua’s setTrust makes a tool trusted, and only from checked', () => {
+    const checked = ok(emptyHealth('oc'));
+    expect(setTrust(checked, 'trusted').trust).toBe('trusted');
+    expect(() => setTrust(emptyHealth('oc'), 'trusted')).toThrow(/hasn’t passed its health check/);
+    expect(() => setTrust(emptyHealth('oc'), 'checked')).toThrow();
+    // Stop trusting.
+    expect(setTrust(setTrust(checked, 'trusted'), 'checked').trust).toBe('checked');
+    expect(setTrust(setTrust(checked, 'trusted'), 'unknown').trust).toBe('unknown');
+    expect(() => setTrust(checked, 'nonsense' as never)).toThrow();
+  });
+
+  it('switching a trusted tool off drops it to checked, never lower; the others stay', () => {
+    const trusted = setTrust(ok(emptyHealth('oc')), 'trusted');
+    expect(switchOff(trusted, '3 failures in a row', T1).trust).toBe('checked');
+    expect(switchOff(ok(emptyHealth('oc')), 'x', T1).trust).toBe('checked');
+    expect(switchOff(emptyHealth('oc'), 'x', T1).trust).toBe('unknown');
+    // Switching back on does not raise it either.
+    expect(switchOn(switchOff(trusted, 'x', T1)).trust).toBe('checked');
+  });
+
+  it('nothing but a pass raises trust, and nothing but switch-off lowers it, whatever the run history', () => {
+    // Every mix of failures (of every cause), stale versions and switch-on/off over 4 steps.
+    const steps: ((h: ToolHealth) => ToolHealth)[] = [
+      (h) => bad(h, 'tool'),
+      (h) => bad(h, 'model'),
+      (h) => bad(h, 'budget'),
+      (h) => noteVersion(h, `v${h.version ? h.version + 1 : 1}`),
+      (h) => switchOn(h),
+    ];
+    for (const start of TRUST_LEVELS) {
+      const walk = (h: ToolHealth, depth: number) => {
+        expect(h.trust).toBe(start);
+        if (depth === 0) return;
+        for (const s of steps) walk(s(h), depth - 1);
+      };
+      walk({ ...emptyHealth('oc'), trust: start, lastOk: start === 'unknown' ? null : T1.toISOString() }, 3);
+    }
+  });
+
+  it('in code, only health.ts and joshua’s trust command can write trust; no score code can', async () => {
+    // Trust is written in exactly two ways: by the app in health.ts (a pass in recordRun, switchOff) and
+    // by joshua through setTrust, which only `setToolTrust` (the tool_trust command) calls.
+    const { readdir, readFile } = await import('node:fs/promises');
+    const { join } = await import('node:path');
+    const roots = ['memory', 'engine', 'tools', 'checks', 'models'].map((p) => join(__dirname, '../..', p, 'src'));
+    const callers: string[] = [];
+    const trustedLiterals: string[] = [];
+    for (const dir of roots) {
+      for (const f of await readdir(dir)) {
+        if (!f.endsWith('.ts')) continue;
+        const text = await readFile(join(dir, f), 'utf8');
+        if (/\bsetTrust\(/.test(text)) callers.push(f);
+        if (/trust:\s*'(trusted|checked)'/.test(text)) trustedLiterals.push(f);
+      }
+    }
+    expect(callers.sort()).toEqual(['data.ts', 'health.ts']);
+    // The only place a 'trusted' or 'checked' value is written into a record is health.ts.
+    expect(trustedLiterals).toEqual(['health.ts']);
+    // The score code (workflows, ratings, evals) never touches health trust.
+    for (const f of ['workflows.ts', 'sync.ts', 'evals.ts', 'experiments.ts']) {
+      expect(await readFile(join(__dirname, '../src', f), 'utf8')).not.toMatch(/\btrust\b/i);
+    }
   });
 });

@@ -32,6 +32,8 @@ export interface ToolRow {
   stale: boolean;
   failuresInRow: number;
   switchedOff: boolean;
+  /** How far the tool is trusted (see Trust). */
+  trust: Trust;
 }
 
 export type DataOverview =
@@ -164,6 +166,21 @@ export async function switchToolOn(invoke: Invoke, tool: string): Promise<SyncRe
   }
 }
 
+/** unknown: nobody has checked it. checked: it passed its health check (the app sets this). trusted: only joshua sets this. */
+export type Trust = 'unknown' | 'checked' | 'trusted';
+
+/**
+ * joshua's trust action: 'trusted' (the Trust this tool button, only for a checked tool) or
+ * 'checked' (Stop trusting). The only way a tool becomes trusted.
+ */
+export async function setTrust(invoke: Invoke, tool: string, trust: Trust): Promise<{ trust: Trust }> {
+  try {
+    return await invoke<{ trust: Trust }>('tool_trust', { tool, trust });
+  } catch (err) {
+    throw plain(err);
+  }
+}
+
 export async function syncData(invoke: Invoke): Promise<SyncResult> {
   try {
     return await invoke<SyncResult>('data_sync');
@@ -203,6 +220,7 @@ export interface CentreRow {
   computers: string;
   health: string;
   rating: string;
+  trust: Trust;
 }
 
 export type Centre =

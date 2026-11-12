@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { RunLog, type NewRun } from '../src/runlog.ts';
+import { RunLog, findingsFromStored, type NewRun } from '../src/runlog.ts';
 
 const AT = new Date('2026-11-11T19:30:00Z');
 const run = (over: Partial<NewRun> = {}): NewRun => ({
@@ -64,7 +64,7 @@ describe('build runs', () => {
     old.exec(`INSERT INTO runs (at, slug, feature, path, branch, base, model, tests_passed, fix_attempts, summary) VALUES ('2026-11-11', 'club-hr', 'F-01', '/p', 'b', 'c', 'm', 1, 0, 's')`);
     old.close();
     const log = RunLog.open(path);
-    expect(log.get(1)).toMatchObject({ feature: 'F-01', checks: [], pictures: [] });
+    expect(log.get(1)).toMatchObject({ feature: 'F-01', findings: [], pictures: [] });
     log.close();
     await rm(dir, { recursive: true, force: true });
   });
@@ -159,5 +159,68 @@ describe('build runs', () => {
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('findings in run rows', () => {
+  const SOURCES_OK = ['tool', 'model', 'rule'];
+
+  it('saves findings and reads them back in the same shape', () => {
+    const log = RunLog.open(':memory:');
+    const id = log.start({ at: AT, slug: 'club-hr', feature: 'F-01', path: '/p', branch: 'b', base: 'c', model: 'm' });
+    const findings = [
+      { check: 'secrets', level: 'pass' as const, title: 'Secret scan: passed', source: 'tool' as const },
+      { check: 'checklist', level: 'warn' as const, title: 'Checklist rules: advice (doesn’t stop Keep)', detail: 'a.tsx:1 (Security): Use https:// links.', file: 'a.tsx', line: 1, source: 'rule' as const },
+    ];
+    log.finish(id, { costUsd: 0.3, testsPassed: true, fixAttempts: 0, summary: 's', findings, pictures: [], ms: 1 });
+    expect(log.get(id)!.findings).toEqual(findings);
+    log.close();
+  });
+
+  it('reads a row saved with the OLD checks shape through the converter', async () => {
+    const { DatabaseSync } = await import('node:sqlite');
+    const { mkdtemp, rm } = await import('node:fs/promises');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const dir = await mkdtemp(join(tmpdir(), 'aip-runlog-'));
+    const path = join(dir, 'history.sqlite');
+    const old = new DatabaseSync(path);
+    old.exec(`CREATE TABLE runs (id INTEGER PRIMARY KEY, at TEXT NOT NULL, slug TEXT NOT NULL, feature TEXT NOT NULL, path TEXT NOT NULL,
+      branch TEXT NOT NULL, base TEXT NOT NULL, model TEXT NOT NULL, cost_usd REAL, tests_passed INTEGER NOT NULL, fix_attempts INTEGER NOT NULL,
+      summary TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'built', rating INTEGER, decided_at TEXT, merge_commit TEXT NOT NULL DEFAULT '', kept_into TEXT NOT NULL DEFAULT '',
+      checks TEXT NOT NULL DEFAULT '[]', pictures TEXT NOT NULL DEFAULT '[]', ms INTEGER)`);
+    const oldChecks = [
+      { name: 'secrets', passed: true, advisory: false, detail: 'No keys found in 1 changed file.' },
+      { name: 'audit', passed: false, advisory: true, detail: 'Not run: no internet.' },
+      { name: 'checklist', passed: false, advisory: true, detail: 'a.tsx:1 (Security): Use https:// links.' },
+      { name: 'dependencies', passed: false, advisory: false, detail: 'New: left-pad ^1.3.0 (dependencies in package.json)' },
+    ];
+    old.prepare("INSERT INTO runs (at, slug, feature, path, branch, base, model, tests_passed, fix_attempts, summary, checks) VALUES ('2026-11-11', 'club-hr', 'F-01', '/p', 'b', 'c', 'm', 1, 0, 's', ?)").run(JSON.stringify(oldChecks));
+    old.close();
+
+    const log = RunLog.open(path);
+    const got = log.get(1)!.findings;
+    expect(got.map((f) => [f.check, f.level])).toEqual([['secrets', 'pass'], ['audit', 'info'], ['checklist', 'warn'], ['dependencies', 'block']]);
+    expect(got[3]).toEqual({ check: 'dependencies', level: 'block', title: 'New packages: need your OK before Keep', detail: 'New: left-pad ^1.3.0 (dependencies in package.json)', source: 'rule' });
+    expect(got.every((f) => SOURCES_OK.includes(f.source) && typeof f.title === 'string')).toBe(true);
+    // An old waiting build that was blocked is still blocked after conversion.
+    expect(got.some((f) => f.level === 'block')).toBe(true);
+    // Saving findings back over an old row works (joshua's OK for new packages), and then reads as findings.
+    log.setFindings(1, got.map((f) => (f.check === 'dependencies' ? { ...f, level: 'pass' as const } : f)));
+    expect(log.get(1)!.findings.some((f) => f.level === 'block')).toBe(false);
+    log.close();
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('old-shape checks given when saving are stored as findings, and a mix reads fine', () => {
+    const log = RunLog.open(':memory:');
+    const id = log.add(run({ checks: [{ name: 'secrets', passed: false }] }));
+    expect(log.get(id)!.findings).toEqual([{ check: 'secrets', level: 'block', title: 'Secret scan: failed', source: 'tool' }]);
+    expect(findingsFromStored([{ name: 'axe', passed: true }, { check: 'x', level: 'warn', title: 'T', source: 'rule' }, { check: 'bad', level: 'nonsense' }, 'junk', null])).toEqual([
+      { check: 'axe', level: 'pass', title: 'Accessibility: passed', source: 'tool' },
+      { check: 'x', level: 'warn', title: 'T', source: 'rule' },
+    ]);
+    expect(findingsFromStored('not a list')).toEqual([]);
+    log.close();
   });
 });

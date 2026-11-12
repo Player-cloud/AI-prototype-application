@@ -492,6 +492,13 @@ async fn tool_switch_on(tool: String, app: tauri::AppHandle, state: tauri::State
     engine_call(&state, "tool_switch_on", serde_json::json!({ "settings": saved, "tool": tool }))
 }
 
+/// joshua's trust action: Trust this tool (only for a checked tool) or Stop trusting. Nothing else sets "trusted".
+#[tauri::command]
+async fn tool_trust(tool: String, trust: String, app: tauri::AppHandle, state: tauri::State<'_, Engine>) -> Result<serde_json::Value, String> {
+    let saved = settings::read(&settings_path(&app)?)?;
+    engine_call(&state, "tool_trust", serde_json::json!({ "settings": saved, "tool": tool, "trust": trust }))
+}
+
 /// Commits data folder changes and syncs them with GitHub (never forces).
 #[tauri::command]
 async fn data_sync(app: tauri::AppHandle, state: tauri::State<'_, Engine>) -> Result<serde_json::Value, String> {
@@ -543,7 +550,7 @@ pub fn run() {
             });
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![version, engine_status, key_status, key_save, key_remove, test_model, settings_get, settings_save, data_overview, environment_check, eval_run, experiment_run, update_check, update_decide, project_tools, project_tools_approve, capability_centre, spend_summary, tool_rate, tool_switch_on, data_sync, gate_rules, history_list, history_undo, project, interview_suggest, interview_review, build_feature, build_stop, run_list, workflow_compare, run_decide, deps_approve, ask_list, ask_decide, run_rate, github_test, work_list, work_poll, phone_setup])
+        .invoke_handler(tauri::generate_handler![version, engine_status, key_status, key_save, key_remove, test_model, settings_get, settings_save, data_overview, environment_check, eval_run, experiment_run, update_check, update_decide, project_tools, project_tools_approve, capability_centre, spend_summary, tool_rate, tool_switch_on, tool_trust, data_sync, gate_rules, history_list, history_undo, project, interview_suggest, interview_review, build_feature, build_stop, run_list, workflow_compare, run_decide, deps_approve, ask_list, ask_decide, run_rate, github_test, work_list, work_poll, phone_setup])
         .run(tauri::generate_context!())
         .expect("error while running the app");
 }
@@ -581,6 +588,7 @@ mod tests {
         assert_eq!(project_method("code_folder_create"), Ok("code_folder_create"));
         assert!(project_method("tool_rate").is_err());
         assert!(project_method("tool_switch_on").is_err());
+        assert!(project_method("tool_trust").is_err());
         assert!(project_method("ask").is_err());
     }
 

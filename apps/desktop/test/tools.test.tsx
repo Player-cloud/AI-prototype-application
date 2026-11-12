@@ -26,6 +26,7 @@ const row = (name: string, state: ToolRow['state'], extra: Partial<ToolRow> = {}
   stale: false,
   failuresInRow: 0,
   switchedOff: false,
+  trust: 'unknown',
   ...extra,
 });
 

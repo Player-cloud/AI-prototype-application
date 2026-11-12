@@ -39,19 +39,19 @@ export interface ApproveResult { run: Run; note: string; keep: { keep: boolean; 
  * Keep then works from the saved checks, so nothing else is needed.
  */
 export async function approveDeps(dbPath: string, id: number, now: Date): Promise<ApproveResult> {
-  const { NEW_PACKAGE } = await import('@aip/checks');
+  const { NEW_PACKAGE, blockingChecks } = await import('@aip/checks');
   const { approvalRecorded } = await import('./history.ts');
   const result = await withRuns(dbPath, (log) => {
     const run = waiting(log, id);
-    const check = run.checks.find((c) => c.name === 'dependencies' && !c.passed && !c.advisory);
+    const check = run.findings.find((f) => f.check === 'dependencies' && f.level === 'block');
     if (!check) throw new Error('This build has no new packages waiting for your OK.');
     const packages = (check.detail ?? '').split('\n').filter((l) => l.startsWith(NEW_PACKAGE)).map((l) => l.slice(NEW_PACKAGE.length));
     const detail = `Approved by joshua on ${now.toISOString().slice(0, 10)}: ${packages.join('; ')}`;
-    log.setChecks(id, run.checks.map((c) => (c === check ? { name: c.name, passed: true, detail } : c)));
+    log.setFindings(id, run.findings.map((f) => (f === check ? { check: f.check, level: 'pass' as const, title: 'New packages: approved by joshua', detail, source: f.source } : f)));
     return { run: log.get(id)!, detail, packages };
   });
   await approvalRecorded(dbPath, `Approved new packages for ${result.run.feature}: ${result.packages.join(', ')}`, result.detail, now);
-  const blocking = result.run.checks.filter((c) => !c.passed && !c.advisory).map((c) => c.name);
+  const blocking = blockingChecks(result.run.findings);
   if (!result.run.testsPassed) blocking.unshift('tests');
   return { run: result.run, note: `Approved the new packages for ${result.run.feature}: ${result.packages.join(', ')}.`, keep: { keep: blocking.length === 0, blocking } };
 }
@@ -109,7 +109,8 @@ export async function keepRun(settings: AppSettings, dbPath: string, id: number,
   return withRuns(dbPath, async (log) => {
     const run = waiting(log, id);
     if (!run.testsPassed) throw new Error('The tests fail, so this build can’t be kept. Undo it, or build the feature again.');
-    const blocking = run.checks.filter((c) => !c.passed && !c.advisory).map((c) => c.name);
+    const { blockingChecks } = await import('@aip/checks');
+    const blocking = blockingChecks(run.findings);
     const others = blocking.filter((n) => n !== 'dependencies');
     if (others.length) throw new Error(`These checks must pass before it can be kept: ${others.join(', ')}. Undo it, or build the feature again.`);
     if (blocking.includes('dependencies')) throw new Error(NEEDS_APPROVAL);

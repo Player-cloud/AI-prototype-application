@@ -172,6 +172,7 @@ body { margin: 0; min-height: 100vh; background: radial-gradient(circle at 20% 1
 .check-list { list-style: none; padding: 0; margin: 4px 0; }
 .check-list li.bad { color: #f2a08c; }
 .check-list li.advice { color: #f0d27e; }
+.finding-group h4 { margin: 8px 0 2px; }
 .pictures { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; }
 .needs-you { margin-bottom: 16px; padding: 12px 16px; border-radius: 12px; background: var(--glass); border: 1px solid var(--accent); }
 .needs-you h3 { margin: 0 0 6px; font-size: 1rem; }

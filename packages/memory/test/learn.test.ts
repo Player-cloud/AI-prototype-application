@@ -17,7 +17,7 @@ const run = (over: Partial<Run> = {}): Run => ({
   testsPassed: true,
   fixAttempts: 0,
   summary: '',
-  checks: [],
+  findings: [],
   pictures: [],
   status: 'kept',
   rating: null,
@@ -50,7 +50,7 @@ describe('learning habits from builds', () => {
   });
 
   it('notices a checklist rule tripped in 3 of the last 10 builds', () => {
-    const tripped = { checks: [{ name: 'checklist', passed: false, advisory: true, detail: 'src/a.ts:3 (Code): no console.log\nsrc/b.ts:9 (Code): no console.log' }] };
+    const tripped = { findings: [{ check: 'checklist', level: 'warn' as const, title: 'Checklist rules: advice', source: 'rule' as const, detail: 'src/a.ts:3 (Code): no console.log\nsrc/b.ts:9 (Code): no console.log' }] };
     const l = learnHabits([...many(2, { ...tripped, status: 'built' }), run({ status: 'built' })], name);
     expect(l).toEqual([]);
     const l3 = learnHabits([...many(3, { ...tripped, status: 'built' })], name);

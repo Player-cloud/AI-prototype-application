@@ -14,7 +14,7 @@ import { execFile } from 'node:child_process';
 import { mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
-import type { CheckResult, LiveState, Picture, PicturesResult } from '@aip/checks';
+import type { CheckResult, Finding, LiveState, Picture, PicturesResult } from '@aip/checks';
 import type { FailureCause } from '@aip/memory';
 import { failureCause } from '@aip/models';
 import type { ModelAdapter, Provider, ToolDecision } from '@aip/models';
@@ -113,8 +113,8 @@ export interface BuildResult {
   synced: string;
   /** The saved run that Keep, Undo and the rating act on (null without a history file). */
   runId: number | null;
-  /** The free checks (9b). Advice-only ones don't stop Keep. */
-  checks: CheckResult[];
+  /** The free checks (9b) as findings. Only a 'block' stops Keep; advice doesn't. */
+  findings: Finding[];
   /** Whether Keep is allowed, and what stops it. */
   keep: { keep: boolean; blocking: string[] };
   /** Desktop and phone pictures (9c), ready to show. */
@@ -457,7 +457,8 @@ export async function buildFeature(
     for (const c of shots.checks) if (c.name !== 'pictures') add({ text: `${CHECK_NAMES[c.name] ?? c.name}: ${c.passed ? 'passed' : 'see notes'}` });
     checks.push(...shots.checks);
     for (const line of await noteCheckTools(settings, checks, shots.pictures.length > 0, now)) add({ text: line });
-    const { canKeep } = await import('@aip/checks');
+    const { canKeep, toFindings } = await import('@aip/checks');
+    const findings = toFindings(checks);
     const keep = canKeep([{ ...tests, name: 'tests' }, ...checks]);
     const synced = await syncAfter(settings, `Build ${p.slug} ${p.feature}`);
     if (p.dbPath && buildId !== null) {
@@ -469,7 +470,7 @@ export async function buildFeature(
           testsPassed: tests.passed,
           fixAttempts: fixes,
           summary: shortenKeepingQuestions(summary, 2000),
-          checks: checks.map((c) => ({ name: c.name, passed: c.passed, advisory: c.advisory ?? false, detail: c.detail ?? '' })),
+          findings,
           pictures: shots.pictures,
           ms: Math.max(0, (deps.now?.() ?? new Date()).getTime() - now.getTime()),
         });
@@ -490,7 +491,7 @@ export async function buildFeature(
       costUsd: spentUsd,
       tests: { passed: tests.passed, output: tests.detail ?? '', fixAttempts: fixes },
       synced,
-      checks,
+      findings,
       keep,
       pictures: await Promise.all(
         shots.pictures.map(async (x) => ({ name: x.name, path: x.path, dataUrl: `data:image/png;base64,${(await readFile(x.path)).toString('base64')}` })),

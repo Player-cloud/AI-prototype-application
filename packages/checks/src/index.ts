@@ -36,3 +36,4 @@ export { CHECK_TOOLS, checkToolUses, checkToolVersions, type CheckTool, type Too
 export { Blocked, RUBRIC, SUITES, overall, runSuites, type CaseResult, type EvalKind, type EvalResult, type EvalSuite, type Outcome } from './evals.js';
 export { browserPaths, checkEnvironment, compareComputers, computerId, versionIn, type EnvCheck, type EnvOptions, type Environment, type Run } from './environment.js';
 export { findUpdates, levelOf, parseOutdated, type Level, type RunOut, type UpdateFound } from './updates.js';
+export { CHECK_TITLES, FINDING_LEVELS, FINDING_SOURCES, blockingChecks, summarise, toFinding, toFindings, type Finding, type FindingLevel, type FindingSource, type FindingSummary } from './findings.js';
