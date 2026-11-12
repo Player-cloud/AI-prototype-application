@@ -185,10 +185,10 @@ export async function switchToolOn(settings: AppSettings, tool: string) {
 }
 
 /** Records one use of a tool: success, or failure with its error. Saved in the data folder. */
-export async function recordToolRun(settings: AppSettings, tool: string, run: { ok: boolean; error?: string }, now: Date) {
+export async function recordToolRun(settings: AppSettings, tool: string, run: { ok: true } | { ok: false; error?: string }, now: Date) {
   const folder = folderOf(settings);
   const m = await import('@aip/memory');
-  const after = m.recordRun(await m.readHealth(folder, tool, await idOf(folder, tool)), run, now);
+  const after = m.recordRun(await m.readHealth(folder, tool, await idOf(folder, tool)), run.ok ? run : { ...run, cause: 'tool' }, now);
   await m.writeHealth(folder, after);
   return after;
 }

@@ -54,7 +54,7 @@ export async function runFreeTests(
       const label = names.get(r.capability) ?? suites.find((x) => x.capability === r.capability)?.label ?? r.capability;
       let h = await m.readHealth(folder, label, r.capability);
       if (r.version) h = m.noteVersion(h, r.version, computer);
-      h = m.recordRun(h, r.outcome === 'passed' ? { ok: true } : { ok: false, error: `Test ${r.suite} failed: ${detailOf(r)}` }, now, computer);
+      h = m.recordRun(h, r.outcome === 'passed' ? { ok: true } : { ok: false, error: `Test ${r.suite} failed: ${detailOf(r)}`, cause: 'tool' }, now, computer);
       await m.writeHealth(folder, h);
     }
     try {
