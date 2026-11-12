@@ -93,6 +93,16 @@ When a build finishes it needs you (Keep or Undo), so it shows under **Needs you
 
 You can answer from your phone: reply on the issue with **keep**, **undo**, or a rating from **1** to **5** (only the first line counts). While the app is open it reads replies about once a minute (or press **Check phone replies now**), does the same as the buttons on the PC, and answers on the issue. Keep from the phone has the same rules: it's refused if the tests or a blocking check failed, or your copy has changes not committed yet, and the reply says why. Only people with access to the private data repo count, and the app never reads its own posts as yours.
 
+### Starting a build from your phone (V2)
+
+In Settings → API keys, with the GitHub token saved, press **Start builds from my phone**. The app posts one issue on your data repo, "AI Prototype: start builds from here" (only once). Reply on it from your phone:
+
+- **projects**: the plans that are ready to build, and their features.
+- **build** *project* *feature*: for example `build club-hr F-02`. The reply says the most it can cost in £ and $, then the app starts the build itself. The result comes as the usual build issue, where you can reply keep, undo or a rating.
+- **help**: the list of commands.
+
+Only the first line counts. A build from the phone follows every rule a build from the PC does: the plan must be finished, the project needs a code folder on this computer, the month's budget and the per-run limit apply, only one build runs at a time, and the gatekeeper checks every step. The app has to be open on the PC; it reads replies about once a minute. Only people with access to the private data repo count. Setting up and the replies are free; the build costs what a build from the PC costs.
+
 ## Tool health
 
 Each tool has a stable ID: its card's file name in `tools/` (for example `haiku`), or its ledger name as a slug when it has no card. Cards are matched to ledger lines by best fit, the same whatever the line order; a card can also name its line exactly with `Ledger: <name>`, and say `Kind:` (model, tool, plugin, skill, mod, agent or workflow) and `Version:`. Anything not written shows as unknown on the Tools page.

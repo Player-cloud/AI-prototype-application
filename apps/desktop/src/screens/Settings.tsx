@@ -3,7 +3,7 @@ import type { Invoke } from '../engine';
 import { BudgetModels } from './BudgetModels';
 import { SafetyRules } from './SafetyRules';
 import { History } from './History';
-import { PROVIDERS, keyStatus, removeKey, saveKey, testModel, type Provider } from '../keys';
+import { PROVIDERS, keyStatus, removeKey, saveKey, setupPhone, testModel, type Provider } from '../keys';
 
 function KeyRow({ invoke, id, name, hint }: { invoke: Invoke; id: Provider; name: string; hint: string }) {
   const [saved, setSaved] = useState<boolean | null>(null);
@@ -71,6 +71,18 @@ function KeyRow({ invoke, id, name, hint }: { invoke: Invoke; id: Provider; name
     }
   }
 
+  async function onPhone() {
+    setBusy(true);
+    setNote({ text: 'Setting up…', bad: false });
+    try {
+      setNote({ text: (await setupPhone(invoke)).summary, bad: false });
+    } catch (err) {
+      setNote({ text: (err as Error).message, bad: true });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function refresh() {
     try {
       setSaved((await keyStatus(invoke, id)).saved);
@@ -104,6 +116,11 @@ function KeyRow({ invoke, id, name, hint }: { invoke: Invoke; id: Provider; name
         {saved && (
           <button type="button" onClick={onTest} disabled={busy}>
             Test connection
+          </button>
+        )}
+        {saved && id === 'github' && (
+          <button type="button" onClick={onPhone} disabled={busy}>
+            Start builds from my phone
           </button>
         )}
         {saved && (

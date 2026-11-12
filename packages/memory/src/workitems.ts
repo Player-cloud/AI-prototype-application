@@ -7,8 +7,8 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
-/** 'build': a build waiting for Keep or Undo. */
-export type WorkKind = 'build';
+/** 'build': a build waiting for Keep or Undo. 'control': the issue joshua starts builds from (D). */
+export type WorkKind = 'build' | 'control';
 
 export interface WorkItem {
   id: number;
@@ -95,6 +95,12 @@ export class WorkItems {
   /** The open item for a build, if any. */
   forRun(runId: number): WorkItem | null {
     const row = this.db.prepare('SELECT * FROM work_items WHERE run_id = ? AND open = 1 ORDER BY id DESC LIMIT 1').get(runId) as Row | undefined;
+    return row ? toItem(row) : null;
+  }
+
+  /** The open phone-control item, if set up. */
+  control(): WorkItem | null {
+    const row = this.db.prepare("SELECT * FROM work_items WHERE kind = 'control' AND open = 1 ORDER BY id DESC LIMIT 1").get() as Row | undefined;
     return row ? toItem(row) : null;
   }
 

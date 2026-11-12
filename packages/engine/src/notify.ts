@@ -52,7 +52,7 @@ export function buildBody(n: BuildNews): string {
   ].join('\n');
 }
 
-async function withItems<T>(dbPath: string, fn: (w: import('@aip/memory').WorkItems) => T | Promise<T>): Promise<T> {
+export async function withItems<T>(dbPath: string, fn: (w: import('@aip/memory').WorkItems) => T | Promise<T>): Promise<T> {
   const m = await import('@aip/memory');
   const w = m.WorkItems.open(dbPath);
   try {
@@ -116,5 +116,6 @@ export async function closeBuild(
 
 /** The "Needs you" panel. */
 export function listWork(dbPath: string): Promise<WorkItem[]> {
-  return withItems(dbPath, (w) => w.listOpen());
+  // The phone-control issue is a place to give orders, not something waiting for joshua.
+  return withItems(dbPath, (w) => w.listOpen().filter((i) => i.kind === 'build'));
 }
