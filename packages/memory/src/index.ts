@@ -73,5 +73,6 @@ export {
   type ToolHealth,
 } from './health.js';
 
-export { KEEP_EVALS, SCREENING_BELOW, addEvals, evidenceNote, listEvals, readEvals, type StoredEval } from './evals.js';
+export { KEEP_EVALS, SCREENING_BELOW, addEvals, evidenceNote, findRegressions, listEvals, readEvals, regressionNote, type Regression, type StoredEval } from './evals.js';
+export { KEEP_EXPERIMENTS, listExperiments, saveExperiment, type Experiment } from './experiments.js';
 export { workflowStats, type WorkflowStats } from './workflows.js';

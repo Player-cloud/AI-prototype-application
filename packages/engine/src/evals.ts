@@ -11,6 +11,8 @@ export interface EvalReport {
   results: { capability: string; suite: string; outcome: EvalResult['outcome']; detail: string }[];
   /** Plain words for the screen. */
   summary: string;
+  /** CI-5: tests that did worse after the tool's version changed. */
+  regressions: string[];
   synced: string;
 }
 
@@ -32,10 +34,14 @@ export async function runFreeTests(
   const now = opts.now ?? new Date();
   const results = await (opts.run ?? ((s) => c.runSuites(s, { now: () => now })))(suites);
   let synced = '';
+  const regressions: string[] = [];
   if (settings.dataFolder) {
     const m = await import('@aip/memory');
     const folder = settings.dataFolder;
     await m.addEvals(folder, results);
+    for (const id of [...new Set(results.map((r) => r.capability))]) {
+      for (const g of m.findRegressions(await m.readEvals(folder, id))) regressions.push(m.regressionNote([g]).replace(/^Got worse/, `${g.capability} got worse`));
+    }
     let names = new Map<string, string>();
     try {
       names = new Map((await m.loadDataRepo(folder)).tools.map((t) => [t.id, t.name]));
@@ -62,6 +68,7 @@ export async function runFreeTests(
   return {
     results: results.map((r) => ({ capability: r.capability, suite: r.suite, outcome: r.outcome, detail: detailOf(r) })),
     summary: `Free tests: ${parts.join(', ')} (of ${results.length}). Cost: £0.00 ($0.00).`,
+    regressions,
     synced,
   };
 }

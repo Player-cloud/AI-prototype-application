@@ -17,6 +17,10 @@ export interface ToolRow {
   byComputer: string;
   /** CI-3: the latest repeatable-test results and how sure they are; '' when never tested. */
   tested: string;
+  /** CI-5: tests that did worse after an update ('' when none). */
+  regression: string;
+  /** Whether a free test exists for it (so it can be tested and experimented on). */
+  testable: boolean;
   state: ToolState;
   status: string;
   job: string;
@@ -50,6 +54,8 @@ export type DataOverview =
       differences: string[];
       /** Duplicate or clashing tools in the ledger and cards (advice only). */
       clashes: string[];
+      /** CI-5: the newest experiments, newest first. All proposals until joshua adopts one. */
+      experiments: { id: string; capability: string; question: string; verdict: string; at: string; status: string }[];
     };
 
 function folderOf(settings: AppSettings): string {
@@ -110,6 +116,8 @@ export async function dataOverview(settings: AppSettings): Promise<DataOverview>
       testedVersion: healthOf(t).testedVersion,
       byComputer: byComputer(healthOf(t)),
       tested: m.evidenceNote(evals.get(t.id) ?? []),
+      regression: m.regressionNote(m.findRegressions(evals.get(t.id) ?? [])),
+      testable: c.SUITES.some((x) => x.free && x.capability === t.id),
       state: t.state,
       status: t.status,
       job: t.job,
@@ -133,6 +141,7 @@ export async function dataOverview(settings: AppSettings): Promise<DataOverview>
     environments,
     differences: c.compareComputers(environments),
     clashes: m.toolClashes(repo.tools),
+    experiments: (await m.listExperiments(settings.dataFolder)).slice(0, 10).map(({ id, capability, question, verdict, at, status }) => ({ id, capability, question, verdict, at, status })),
   };
 }
 

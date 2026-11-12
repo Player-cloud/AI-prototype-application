@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { Invoke } from '../engine';
-import { STATE_LABEL, checkThisComputer, getDataOverview, runFreeTests, rateTool, savedPercent, switchToolOn, syncData, type DataOverview, type Environment, type ToolRow, type ToolState } from '../data';
+import { STATE_LABEL, checkThisComputer, getDataOverview, runExperiment, runFreeTests, rateTool, savedPercent, switchToolOn, syncData, type DataOverview, type Environment, type ToolRow, type ToolState } from '../data';
 
 const ORDER: ToolState[] = ['on', 'trial', 'untested', 'off', 'unknown'];
 
@@ -165,7 +165,16 @@ export function Tools({ invoke }: { invoke: Invoke | null }) {
       const r = await runFreeTests(invoke);
       setData(await getDataOverview(invoke));
       const bad = r.results.filter((x) => x.outcome !== 'passed').map((x) => `${x.suite}: ${x.outcome}${x.detail ? ` (${x.detail})` : ''}`);
-      return { summary: [r.summary, ...bad, r.synced].filter(Boolean).join(' ') };
+      return { summary: [r.summary, ...bad, ...(r.regressions ?? []), r.synced].filter(Boolean).join(' ') };
+    });
+  }
+
+  function experiment(t: ToolRow) {
+    if (!invoke) return;
+    void work(`Running ${t.name}’s test 3 times in a row…`, async () => {
+      const r = await runExperiment(invoke, t.id);
+      setData(await getDataOverview(invoke));
+      return { summary: [r.summary, r.synced].filter(Boolean).join(' ') };
     });
   }
 
@@ -208,6 +217,7 @@ export function Tools({ invoke }: { invoke: Invoke | null }) {
             </button>
             <p className="tool-what">{t.what || t.job}</p>
             {t.health && <p className={`tool-health${t.switchedOff || t.failuresInRow > 0 ? ' warn' : ''}`}>{t.health}</p>}
+            {t.regression && <p className="tool-health warn">{t.regression}</p>}
             {t.switchedOff && (
               <button type="button" disabled={busy} onClick={() => switchOn(t.name)}>
                 Switch {t.name} back on
@@ -225,7 +235,14 @@ export function Tools({ invoke }: { invoke: Invoke | null }) {
                 <dd>{versionText(t)}</dd>
                 {t.byComputer && (<><dt>On each computer</dt><dd>{t.byComputer}</dd></>)}
                 <dt>Tested by the app</dt>
-                <dd>{t.tested || 'Untested (no repeatable test has run yet).'}</dd>
+                <dd>
+                  {t.tested || 'Untested (no repeatable test has run yet).'}
+                  {t.testable && (
+                    <button type="button" disabled={busy} onClick={() => experiment(t)}>
+                      Is it steady? (runs its test 3 times, free)
+                    </button>
+                  )}
+                </dd>
                 {t.useWhen && (<><dt>Use when</dt><dd>{t.useWhen}</dd></>)}
                 {t.dontUseWhen && (<><dt>Don’t use when</dt><dd>{t.dontUseWhen}</dd></>)}
                 {t.evidence && (<><dt>Evidence</dt><dd>{t.evidence}</dd></>)}
@@ -252,6 +269,18 @@ export function Tools({ invoke }: { invoke: Invoke | null }) {
           </li>
         ))}
       </ul>
+      {(data.experiments ?? []).length > 0 && (
+        <div className="experiments" role="region" aria-label="Experiments">
+          <h3>Experiments</h3>
+          <ul>
+            {data.experiments!.map((e) => (
+              <li key={e.id}>
+                {e.question} {e.verdict} <span className="muted">({e.status === 'proposal' ? 'a proposal: nothing was changed' : e.status}, {new Date(e.at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })})</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </section>
   );
 }

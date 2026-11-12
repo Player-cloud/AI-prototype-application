@@ -93,3 +93,58 @@ export function evidenceNote(results: StoredEval[]): string {
   const sure = runs < SCREENING_BELOW ? `${runs} run${runs === 1 ? '' : 's'} so far: a first look, not proof` : `${runs} runs`;
   return `Tests: ${parts.join('; ')}. ${sure}.`;
 }
+
+/** CI-5: a test that did worse after the tool's version changed, on the same computer. */
+export interface Regression {
+  capability: string;
+  suite: string;
+  computer: string;
+  from: string;
+  to: string;
+  before: string;
+  after: string;
+  at: string;
+}
+
+const counted = (r: StoredEval) => r.outcome === 'passed' || r.outcome === 'failed';
+const score = (r: StoredEval) => (r.cases.length ? r.cases.filter((c) => c.outcome === 'passed').length / r.cases.length : 0);
+const said = (r: StoredEval) => `${r.outcome} (${r.cases.filter((c) => c.outcome === 'passed').length}/${r.cases.length})`;
+
+/**
+ * Regression check: for each test on each computer, the newest result against the last one on a
+ * different version. Worse means it failed where it passed, or got fewer cases right. Tests that
+ * couldn't run, and results with no version, are never compared.
+ */
+export function findRegressions(results: StoredEval[]): Regression[] {
+  const groups = new Map<string, StoredEval[]>();
+  for (const r of results) {
+    if (!counted(r) || !r.version) continue;
+    const k = `${r.capability}\u0000${r.suite}\u0000${r.environment.computer}`;
+    groups.set(k, [...(groups.get(k) ?? []), r]);
+  }
+  const out: Regression[] = [];
+  for (const rs of groups.values()) {
+    const sorted = [...rs].sort((a, b) => a.at.localeCompare(b.at));
+    const latest = sorted.at(-1)!;
+    const before = sorted.filter((r) => r.version !== latest.version).at(-1);
+    if (!before) continue;
+    const worse = (before.outcome === 'passed' && latest.outcome === 'failed') || score(latest) < score(before);
+    if (!worse) continue;
+    out.push({
+      capability: latest.capability,
+      suite: latest.suite,
+      computer: latest.environment.computer,
+      from: before.version,
+      to: latest.version,
+      before: said(before),
+      after: said(latest),
+      at: latest.at,
+    });
+  }
+  return out.sort((a, b) => a.capability.localeCompare(b.capability) || a.suite.localeCompare(b.suite) || a.computer.localeCompare(b.computer));
+}
+
+/** "Got worse after updating from 11.2.5 to 11.3.0 on lapto: passed (4/4) before, failed (3/4) now." */
+export function regressionNote(regs: Regression[]): string {
+  return regs.map((r) => `Got worse after updating from ${r.from} to ${r.to} on ${r.computer} (${r.suite}): ${r.before} before, ${r.after} now.`).join(' ');
+}

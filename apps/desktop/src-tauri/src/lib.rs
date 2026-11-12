@@ -353,6 +353,17 @@ async fn eval_run(capability: Option<String>, app: tauri::AppHandle, state: taur
     engine_call(&state, "eval_run", serde_json::json!({ "settings": saved, "capability": capability.unwrap_or_default() }))
 }
 
+/// CI-5: runs one tool's free test several times in a row and saves the experiment as a proposal.
+#[tauri::command]
+async fn experiment_run(capability: String, runs: Option<u32>, app: tauri::AppHandle, state: tauri::State<'_, Engine>) -> Result<serde_json::Value, String> {
+    let saved = settings::read(&settings_path(&app)?)?;
+    let mut params = serde_json::json!({ "settings": saved, "capability": capability });
+    if let Some(n) = runs {
+        params["runs"] = serde_json::json!(n);
+    }
+    engine_call(&state, "experiment_run", params)
+}
+
 /// CI-2: checks this computer (free) and saves the result in the data folder, then syncs.
 #[tauri::command]
 async fn environment_check(app: tauri::AppHandle, state: tauri::State<'_, Engine>) -> Result<serde_json::Value, String> {
@@ -431,7 +442,7 @@ pub fn run() {
             });
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![version, engine_status, key_status, key_save, key_remove, test_model, settings_get, settings_save, data_overview, environment_check, eval_run, spend_summary, tool_rate, tool_switch_on, data_sync, gate_rules, history_list, history_undo, project, interview_suggest, interview_review, build_feature, build_stop, run_list, workflow_compare, run_decide, run_rate, github_test, work_list, work_poll])
+        .invoke_handler(tauri::generate_handler![version, engine_status, key_status, key_save, key_remove, test_model, settings_get, settings_save, data_overview, environment_check, eval_run, experiment_run, spend_summary, tool_rate, tool_switch_on, data_sync, gate_rules, history_list, history_undo, project, interview_suggest, interview_review, build_feature, build_stop, run_list, workflow_compare, run_decide, run_rate, github_test, work_list, work_poll])
         .run(tauri::generate_context!())
         .expect("error while running the app");
 }
