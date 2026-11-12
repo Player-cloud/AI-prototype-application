@@ -17,6 +17,13 @@ import { DatabaseSync } from 'node:sqlite';
  */
 export type RunStatus = 'running' | 'built' | 'kept' | 'undone' | 'reverted' | 'failed' | 'stopped' | 'interrupted';
 
+/**
+ * Maintenance items (dev-tool patch updates the app prepared itself) are stored as runs so Keep, Undo and
+ * Undo-a-kept-build work on them unchanged. Their `model` is this, and they are never counted as a build
+ * model in habits or comparisons: no model made them.
+ */
+export const MAINTENANCE_MODEL = 'maintenance';
+
 /** Why a build failed. Same words as the tools' health records (kept here so memory stays one piece). */
 export type RunCause = 'model' | 'tool' | 'budget' | 'network' | 'provider' | 'setup' | 'stopped' | 'unknown';
 

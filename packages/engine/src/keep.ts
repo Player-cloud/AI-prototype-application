@@ -144,7 +144,8 @@ export async function keepRun(settings: AppSettings, dbPath: string, id: number,
     let mapNote: string;
     try {
       const changed = (await g(['diff', '--name-only', '-z', '--no-renames', `${run.base}..${run.branch}`], folder)).split('\0').filter(Boolean);
-      mapNote = await updateMapAfterKeep(settings, run.slug, { feature: run.feature, buildId: id, keptAt: now, changed }, folder);
+      // A maintenance item (dev-tool patch update) is not a feature: the map isn't touched.
+      mapNote = run.model === (await import('@aip/memory')).MAINTENANCE_MODEL ? '' : await updateMapAfterKeep(settings, run.slug, { feature: run.feature, buildId: id, keptAt: now, changed }, folder);
     } catch (err) {
       mapNote = ` The project map wasn’t updated (${(err as Error).message.split('\n')[0]}).`;
     }

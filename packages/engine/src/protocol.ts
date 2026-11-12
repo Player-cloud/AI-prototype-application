@@ -26,6 +26,12 @@
  *    `pnpm outdated`, installs nothing), keeps them in the data folder's updates.json and syncs.
  *  - update_decide: {settings, package, to, ok} -> joshua's OK or no on one update. Nothing is
  *    installed: an OK gives back the command for joshua to run himself.
+ *  - maintenance_run: {settings, slug, dbPath} -> Q-5: when settings.maintenance.patchUpdates is on (it is off
+ *    by default; off does nothing), prepares up to 3 dev-tool PATCH updates (devDependencies, same major and
+ *    minor, higher patch) in the project's code folder, one at a time, each in its own worktree and branch,
+ *    installed with --ignore-scripts, then the project's tests and the free checks. A failure removes the
+ *    worktree and branch and is recorded. A pass is NOT merged: it waits in Build as an item joshua Keeps
+ *    (Undo works as for any kept build). Never pushes. Free. Returns {ran, slug, summary, items, githubNote}.
  *  - capability_centre: {settings, dbPath?} -> UI-01: every capability's lifecycle, free test results,
  *    real-build evidence, computers and health, with comparisons and recommendations. Built only
  *    from real records ("Not tested" where there are none). Free; changes nothing.
@@ -126,6 +132,7 @@ import { compareWorkflows } from './workflows.ts';
 import { runRepeatExperiment } from './experiments.ts';
 import { setupPhone } from './phone.ts';
 import { checkUpdates, decideUpdateNow } from './updates.ts';
+import { runMaintenance } from './maintenance.ts';
 import { approveProjectTools, projectTools } from './project-tools.ts';
 import { readMap } from './project-map.ts';
 import { addBlocker, addDecision, closeBlocker, readDecisions } from './decisions.ts';
@@ -372,6 +379,10 @@ const HANDLERS: Record<string, Handler> = {
     const p = obj(params);
     if (typeof p.ok !== 'boolean') throw new Error('Say OK or no.');
     return decideUpdateNow(checkSettings(p.settings), str(p, 'package'), str(p, 'to'), p.ok, deps.now?.() ?? new Date());
+  },
+  maintenance_run: (params, deps) => {
+    const p = obj(params);
+    return runMaintenance(checkSettings(p.settings), str(p, 'slug'), str(p, 'dbPath'), { now: deps.now?.() });
   },
   capability_centre: async (params, deps) => {
     const p = obj(params);

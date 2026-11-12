@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import type { Invoke } from '../engine';
 import { BudgetModels } from './BudgetModels';
 import { SafetyRules } from './SafetyRules';
+import { Maintenance } from './Maintenance';
 import { History } from './History';
 import { PROVIDERS, keyStatus, removeKey, saveKey, setupPhone, testModel, type Provider } from '../keys';
 
@@ -167,6 +168,8 @@ export function Settings({ invoke }: { invoke: Invoke | null }) {
       <h2>Ask-first rules</h2>
       <p className="muted">Every risky step is checked against these first. The built-in ones can’t be changed here, and the agent can never change any of them.</p>
       {invoke ? <SafetyRules reload={forms} invoke={invoke} onSaved={saved} /> : <p className="key-note bad">Rules show in the desktop app only.</p>}
+      <h2>Self-maintenance</h2>
+      {invoke ? <Maintenance reload={forms} invoke={invoke} onSaved={saved} /> : <p className="key-note bad">Self-maintenance can be changed in the desktop app only.</p>}
       <h2>Change history</h2>
       <p className="muted">Every settings change and tool rating is kept here. Undo puts it back, as long as nothing has changed it since.</p>
       {invoke ? (

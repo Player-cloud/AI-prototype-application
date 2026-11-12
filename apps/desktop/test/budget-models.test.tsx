@@ -17,6 +17,7 @@ const DEFAULTS: AppSettings = {
   dataFolder: '',
   extraRules: [],
   codeFolders: {},
+  maintenance: { patchUpdates: false },
   runCapGbp: 0.8,
 };
 

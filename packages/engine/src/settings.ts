@@ -25,6 +25,11 @@ export interface AppSettings {
   runCapGbp: number;
   /** Where each project's code is cloned on this computer, by project folder name (slug). */
   codeFolders: Record<string, string>;
+  /**
+   * Self-maintenance (Q-5). Off unless joshua turns it on. `patchUpdates`: the app may prepare dev-tool
+   * patch updates itself (never merged: joshua still presses Keep).
+   */
+  maintenance: { patchUpdates: boolean };
 }
 
 export interface ExtraRule { match: string; reason: string }
@@ -45,6 +50,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   dataFolder: '',
   extraRules: [],
   codeFolders: {},
+  maintenance: { patchUpdates: false },
   runCapGbp: 0.8,
 };
 
@@ -72,6 +78,13 @@ function codeFolders(v: unknown): Record<string, string> {
     if (p) out[slug] = p;
   }
   return out;
+}
+
+function maintenance(v: unknown): { patchUpdates: boolean } {
+  if (v === undefined) return { patchUpdates: false };
+  if (!isObj(v)) throw new Error('maintenance must be an object');
+  if (v.patchUpdates !== undefined && typeof v.patchUpdates !== 'boolean') throw new Error('Dev-tool patch updates must be on or off');
+  return { patchUpdates: v.patchUpdates === true };
 }
 
 function extraRules(v: unknown): ExtraRule[] {
@@ -153,6 +166,7 @@ export function checkSettings(raw: unknown): AppSettings {
     dataFolder,
     extraRules: extraRules(raw.extraRules),
     codeFolders: codeFolders(raw.codeFolders),
+    maintenance: maintenance(raw.maintenance),
     runCapGbp: raw.runCapGbp === undefined ? d.runCapGbp : num(raw.runCapGbp, 'Cost limit per build run (£)', 0.05, 50),
     monthlyBudgetGbp: raw.monthlyBudgetGbp === undefined ? d.monthlyBudgetGbp : num(raw.monthlyBudgetGbp, 'Monthly budget (£)', 0, 10000),
     gbpPerUsd: raw.gbpPerUsd === undefined ? d.gbpPerUsd : num(raw.gbpPerUsd, '£ per $ rate', 0.1, 5),

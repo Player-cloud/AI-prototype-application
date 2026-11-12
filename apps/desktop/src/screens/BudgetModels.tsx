@@ -50,7 +50,7 @@ function toDraft(s: AppSettings): Draft {
   };
 }
 
-function fromDraft(d: Draft): Omit<AppSettings, 'extraRules' | 'codeFolders'> {
+function fromDraft(d: Draft): Omit<AppSettings, 'extraRules' | 'codeFolders' | 'maintenance'> {
   const prices: Record<string, Price> = {};
   for (const [model, p] of Object.entries(d.prices)) {
     if (p.input.trim() === '' && p.output.trim() === '') continue; // blank = price not known
