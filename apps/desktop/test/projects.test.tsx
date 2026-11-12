@@ -101,6 +101,11 @@ function fakeShell() {
         if (folder.includes('nope')) throw `${folder} isn’t a git repo. Clone the project’s repo there first.`;
         return { folder, branch: 'main', clean: false, runs: [{ path: `${folder}-runs/F-01-20261111-160509`, branch: 'aip/f-01-20261111-160509', feature: 'F-01' }] } as T;
       }
+      case 'code_folder_create': {
+        const folder = String(p.path);
+        if (folder.includes('busy')) throw `${folder} isn’t empty, so nothing was changed. Pick a new folder, or a repo you’ve already cloned and press Save.`;
+        return { folder, branch: 'main', clean: true, runs: [] } as T;
+      }
       case 'interview_confirm': {
         const iv = get();
         const stage = p.stage as StageId;
@@ -179,6 +184,17 @@ describe('Projects: plan interview', () => {
     const saved = shell.calls.filter((c) => c.method === 'settings_save').at(-1)!.params.settings as { codeFolders: Record<string, string>; dataFolder: string };
     expect(saved.codeFolders).toEqual({ 'club-hr': '/code/club-hr' });
     expect(saved.dataFolder).toBe('/data');
+
+    // No repo yet: the app can make one, and only in an empty folder.
+    fireEvent.change(within(code).getByLabelText('Code folder path'), { target: { value: '/code/busy' } });
+    fireEvent.click(within(code).getByRole('button', { name: 'Make a new one here' }));
+    expect((await within(code).findByRole('alert')).textContent).toContain('isn’t empty, so nothing was changed');
+    fireEvent.change(within(code).getByLabelText('Code folder path'), { target: { value: '/code/club-hr-new' } });
+    fireEvent.click(within(code).getByRole('button', { name: 'Make a new one here' }));
+    expect(await within(code).findByText('Made a new code folder at /code/club-hr-new, with a first commit. Nothing was pushed.')).toBeTruthy();
+    expect(within(code).getByText('Ready: on branch main. Builds start from its last commit.')).toBeTruthy();
+    const made = shell.calls.filter((c) => c.method === 'settings_save').at(-1)!.params.settings as { codeFolders: Record<string, string> };
+    expect(made.codeFolders).toEqual({ 'club-hr': '/code/club-hr-new' });
   });
 
   it('lets you go back to a confirmed stage, saving what you typed first', async () => {

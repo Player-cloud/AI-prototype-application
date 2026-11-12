@@ -3,7 +3,7 @@
  * on its own branch (aip/<feature>-<time>), next to the code folder in "<folder>-runs/". joshua's
  * own copy isn't touched until he presses Keep (step 9). One feature per run.
  */
-import { stat } from 'node:fs/promises';
+import { mkdir, readdir, stat, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import type { AppSettings } from './settings.ts';
 import { getInterview } from './projects.ts';
@@ -82,6 +82,42 @@ export async function checkCodeFolder(folder: string, git?: Git): Promise<CodeFo
   const clean = (await g(['status', '--porcelain'], folder)).trim() === '';
   const runs = parseWorktrees(await g(['worktree', 'list', '--porcelain'], folder));
   return { folder, branch, clean, runs };
+}
+
+const GITIGNORE = ['node_modules/', 'dist/', '.next/', '*.log', '', '# Keys never go in the repo', '.env', '.env.*', '*.pem', ''].join('\n');
+
+/**
+ * Makes a new, empty code folder for a project: a git repo on branch main with a first commit
+ * (README and a .gitignore that keeps keys out), so joshua doesn't have to clone anything first.
+ * Only an empty or missing folder is used; anything else is left alone. Nothing is pushed.
+ */
+export async function createCodeFolder(folder: string, name: string, git?: Git): Promise<CodeFolderStatus> {
+  const g = git ?? (await defaultGit());
+  if (!folder.trim() || !resolve(folder)) throw new Error('Type the folder path first.');
+  let entries: string[] = [];
+  try {
+    const s = await stat(folder);
+    if (!s.isDirectory()) throw new Error(`${folder} is a file, not a folder.`);
+    entries = await readdir(folder);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+  }
+  if (entries.length) throw new Error(`${folder} isn’t empty, so nothing was changed. Pick a new folder, or a repo you’ve already cloned and press Save.`);
+  await mkdir(folder, { recursive: true });
+  await g(['init', '-q', '-b', 'main'], folder);
+  await writeFile(join(folder, 'README.md'), `# ${name}\n\nBuilt with AI Prototype, one feature at a time.\n`, 'utf8');
+  await writeFile(join(folder, '.gitignore'), GITIGNORE, 'utf8');
+  await g(['add', '-A'], folder);
+  try {
+    await g(['commit', '-q', '-m', `Start ${name}`], folder);
+  } catch (err) {
+    const msg = (err as Error).message;
+    if (/user\.(name|email)|Please tell me who you are|identity/i.test(msg)) {
+      throw new Error('Git doesn’t know your name and email yet, so it can’t make the first commit. Run: git config --global user.name "Your Name" and git config --global user.email "you@example.com", then try again.');
+    }
+    throw new Error(`Couldn’t make the first commit: ${msg.split('\n')[0]}`);
+  }
+  return checkCodeFolder(folder, g);
 }
 
 /**

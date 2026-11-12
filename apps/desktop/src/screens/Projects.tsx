@@ -12,6 +12,7 @@ import {
   suggest,
   reviewPlan,
   checkCodeFolder,
+  createCodeFolder,
   type CodeFolderStatus,
   type SuggestResult,
   type InterviewView,
@@ -172,6 +173,23 @@ function CodeFolder({ invoke, slug }: { invoke: Invoke; slug: string }) {
     }
   }
 
+  async function onCreate() {
+    setBusy(true);
+    setNote(null);
+    try {
+      const made = await createCodeFolder(invoke, slug, path.trim());
+      const latest = await getSettings(invoke);
+      const saved = await saveSettings(invoke, { ...latest, codeFolders: { ...(latest.codeFolders ?? {}), [slug]: made.folder } });
+      setPath(saved.codeFolders?.[slug] ?? made.folder);
+      setStatus(made);
+      setNote({ text: `Made a new code folder at ${made.folder}, with a first commit. Nothing was pushed.`, bad: false });
+    } catch (err) {
+      setNote({ text: (err as Error).message, bad: true });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="review" role="region" aria-label="Code folder">
       <h3>Code folder</h3>
@@ -179,7 +197,11 @@ function CodeFolder({ invoke, slug }: { invoke: Invoke; slug: string }) {
       <form className="key-controls" onSubmit={(e) => void onSave(e)}>
         <input aria-label="Code folder path" value={path} placeholder={'e.g. D:\\code\\club-hr'} onChange={(e) => setPath(e.target.value)} />
         <button type="submit" disabled={busy}>Save</button>
+        <button type="button" disabled={busy || !path.trim()} onClick={() => void onCreate()}>
+          Make a new one here
+        </button>
       </form>
+      <p className="muted">No repo yet? Type a new or empty folder and press “Make a new one here”: the app makes an empty git repo there for you.</p>
       {status && (
         <>
           <p className="key-note">Ready: on branch {status.branch}. Builds start from its last commit.</p>

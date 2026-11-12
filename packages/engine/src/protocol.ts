@@ -25,6 +25,9 @@
  *    (questions, areas, features or done checks), with the cost. Uses the "plan" job; nothing is saved.
  *  - interview_review: {settings, slug, provider, apiKey, dbPath} -> reviews the finished spec: one
  *    plan review, or 3 fresh-eyes reviewers for a big build. Saves review.md and syncs.
+ *  - code_folder_create: {settings, slug, path} -> makes a new empty git repo there (branch main, a
+ *    README and a .gitignore that keeps keys out, one first commit) when the folder is empty or
+ *    missing. Never pushes. Then joshua saves it as the project's code folder.
  *  - code_folder_check: {settings, slug} -> checks the project's code folder on this computer (a git
  *    repo with a commit) and lists its feature runs (worktrees on aip/ branches).
  *  - build_feature: {settings, slug, feature, provider, apiKey, dbPath} -> builds one feature in its own
@@ -81,7 +84,7 @@ import { interviewForReview, recordReview } from './projects.ts';
 import { confirm, getInterview, interviewStages, listProjects, saveAnswers, startInterview } from './projects.ts';
 import { MAX_CALL_USD, readBudget, recordSpend } from './budget.ts';
 import { gate, listRules } from './gate.ts';
-import { checkCodeFolder, codeFolderOf } from './runs.ts';
+import { checkCodeFolder, codeFolderOf, createCodeFolder } from './runs.ts';
 import { buildFeature } from './build.ts';
 
 export const ENGINE_VERSION = '0.0.1';
@@ -370,6 +373,13 @@ const HANDLERS: Record<string, Handler> = {
     const p = obj(params);
     const settings = checkSettings(p.settings);
     return checkCodeFolder(codeFolderOf(settings, str(p, 'slug')));
+  },
+  code_folder_create: async (params) => {
+    const p = obj(params);
+    const settings = checkSettings(p.settings);
+    const slug = str(p, 'slug');
+    const name = (await getInterview(settings, slug)).interview.name || slug;
+    return createCodeFolder(str(p, 'path').trim(), name);
   },
   history_list: (params) => historyList(str(obj(params), 'dbPath')),
   undo: async (params, deps) => {
