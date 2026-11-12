@@ -75,7 +75,7 @@ export function freePort(): Promise<number> {
 const TYPES: Record<string, string> = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.json': 'application/json' };
 
 /** A tiny server for a plain page; it never serves anything outside the copy. */
-function staticServer(dir: string, port: number): Promise<Server> {
+export function staticServer(dir: string, port: number): Promise<Server> {
   const root = resolve(dir);
   const server = createServer((req, res) => {
     const path = decodeURIComponent((req.url ?? '/').split('?')[0]!);
@@ -97,8 +97,16 @@ function staticServer(dir: string, port: number): Promise<Server> {
   return new Promise((res) => server.listen(port, '127.0.0.1', () => res(server)));
 }
 
-function stopTree(child: ChildProcess) {
-  if (child.pid === undefined || child.exitCode !== null) return;
+/** Stops a page server and everything it started. Resolves once it has gone (or after 5 seconds). */
+export function stopTree(child: ChildProcess): Promise<void> {
+  if (child.pid === undefined || child.exitCode !== null || child.signalCode !== null) return Promise.resolve();
+  const gone = new Promise<void>((res) => {
+    const t = setTimeout(res, 5_000);
+    child.once('exit', () => {
+      clearTimeout(t);
+      res();
+    });
+  });
   if (process.platform === 'win32') spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true });
   else {
     try {
@@ -107,9 +115,27 @@ function stopTree(child: ChildProcess) {
       // already gone
     }
   }
+  return gone;
 }
 
-async function waitForPage(url: string, child: ChildProcess | null, timeoutMs: number): Promise<void> {
+/** Starts the build copy's page server on a port (not for plain pages). Its output is kept short. */
+export function startServer(dir: string, serve: Serve, port: number): { child: ChildProcess; log: () => string } {
+  let log = '';
+  const child = spawn(serve.cmd, [...serve.args, String(port)], {
+    cwd: dir,
+    shell: process.platform === 'win32',
+    detached: process.platform !== 'win32',
+    windowsHide: true,
+    env: projectEnv({ PORT: String(port), BROWSER: 'none', CI: '1' }),
+  });
+  const keep = (b: Buffer) => (log = `${log}${b.toString()}`.slice(-2000));
+  child.stdout?.on('data', keep);
+  child.stderr?.on('data', keep);
+  child.on('error', () => undefined); // reported as "stopped before the page was ready"
+  return { child, log: () => log };
+}
+
+export async function waitForPage(url: string, child: ChildProcess | null, timeoutMs: number): Promise<void> {
   const until = Date.now() + timeoutMs;
   while (Date.now() < until) {
     if (child && child.exitCode !== null) throw new Error('the page server stopped before the page was ready');
@@ -152,25 +178,14 @@ export async function takePictures(
   const url = `http://127.0.0.1:${port}/`;
   let child: ChildProcess | null = null;
   let server: Server | null = null;
-  let log = '';
+  let log = () => '';
   try {
     if (serve === 'static') server = await staticServer(dir, port);
-    else {
-      child = spawn(serve.cmd, [...serve.args, String(port)], {
-        cwd: dir,
-        shell: process.platform === 'win32',
-        detached: process.platform !== 'win32',
-        windowsHide: true,
-        env: projectEnv({ PORT: String(port), BROWSER: 'none', CI: '1' }),
-      });
-      const keep = (b: Buffer) => (log = `${log}${b.toString()}`.slice(-2000));
-      child.stdout?.on('data', keep);
-      child.stderr?.on('data', keep);
-    }
+    else ({ child, log } = startServer(dir, serve, port));
     try {
       await waitForPage(url, child, WAIT_FOR_SERVER);
     } catch (err) {
-      return none(`No pictures: ${(err as Error).message}.${log ? `\n${log.trim()}` : ''}`);
+      return none(`No pictures: ${(err as Error).message}.${log() ? `\n${log().trim()}` : ''}`);
     }
 
     const choice = browserChoice(opts.env);
@@ -234,7 +249,7 @@ export async function takePictures(
       await browser.close();
     }
   } finally {
-    if (child) stopTree(child);
+    if (child) await stopTree(child);
     if (server) await new Promise((r) => server!.close(() => r(undefined)));
   }
 }

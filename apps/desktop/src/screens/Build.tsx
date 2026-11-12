@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Invoke } from '../engine';
 import { listProjects, openProject, type Feature, type ProjectRow } from '../projects';
 import { getSettings } from '../settings';
-import { CHECK_NAME, decideRun, keepable, listRuns, listWork, pollPhone, rateRun, startBuild, stopBuild, type BuildResult, type BuildRun, type BuildStep, type MakeChannel, type WorkItem } from '../build';
+import { CHECK_NAME, decideRun, keepable, listRuns, listWork, pollPhone, rateRun, startBuild, stopBuild, type BuildResult, type BuildRun, type BuildStep, type LiveView, type MakeChannel, type WorkItem } from '../build';
 
 type Note = { text: string; bad: boolean } | null;
 
@@ -10,6 +10,43 @@ const STATUS: Record<BuildRun['status'], string> = { built: 'waiting for Keep or
 
 /** How often the screen refreshes Builds and Needs you, to show what was done from the phone. */
 const REFRESH_MS = 30_000;
+
+/** A plain page doesn't update itself: it's reloaded as the build changes, at most this often. */
+const RELOAD_MS = 3_000;
+
+/** The live view's two sizes, shown smaller: the same sizes as the final pictures. */
+const FRAMES = [
+  { name: 'desktop', label: 'Desktop', width: 1280, height: 800, scale: 0.4 },
+  { name: 'phone', label: 'Phone', width: 390, height: 844, scale: 0.4 },
+] as const;
+
+/** V2 A: the build's own page, live, at desktop and phone sizes. */
+export function LivePanel({ view, reload }: { view: LiveView; reload: number }) {
+  return (
+    <div className="live" role="region" aria-label="Live view">
+      <h3>Live view</h3>
+      <p className="muted">{view.note}</p>
+      {view.url && (
+        <div className="live-frames">
+          {FRAMES.map((f) => (
+            <figure key={f.name} className={`live-frame ${f.name}`} style={{ width: f.width * f.scale, height: f.height * f.scale + 20 }}>
+              <div className="live-window" style={{ width: f.width * f.scale, height: f.height * f.scale }}>
+                <iframe
+                  key={`${view.url}-${reload}`}
+                  src={view.url!}
+                  title={`${f.label} live view of the build`}
+                  sandbox="allow-scripts allow-same-origin allow-forms"
+                  style={{ width: f.width, height: f.height, transform: `scale(${f.scale})` }}
+                />
+              </div>
+              <figcaption>{f.label}</figcaption>
+            </figure>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 /** "£0.80 ($1.01)" */
 export function limitText(gbp: number, gbpPerUsd: number): string {
@@ -32,6 +69,9 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
   const [busy, setBusy] = useState(false);
   const [learned, setLearned] = useState<string[]>([]);
   const [work, setWork] = useState<WorkItem[]>([]);
+  const [liveView, setLiveView] = useState<LiveView | null>(null);
+  const [reload, setReload] = useState(0);
+  const lastReload = useRef(0);
 
   useEffect(() => {
     if (!invoke) return;
@@ -96,10 +136,22 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
     setSteps([]);
     setResult(null);
     setNote(null);
+    setLiveView(null);
+    let reloads = false;
     try {
       const r = await startBuild(invoke, makeChannel, slug, feature, (e) => {
         if (e.type === 'using') setUsing(e.using);
-        else setSteps((s) => [...s, e.refused ? { text: e.text, refused: e.refused } : { text: e.text }]);
+        else if (e.type === 'live') {
+          reloads = e.reloads;
+          setLiveView({ url: e.url, note: e.note, reloads: e.reloads });
+        } else {
+          setSteps((s) => [...s, e.refused ? { text: e.text, refused: e.refused } : { text: e.text }]);
+          // A plain page is reloaded as the build changes; Next.js and Vite update themselves.
+          if (reloads && Date.now() - lastReload.current >= RELOAD_MS) {
+            lastReload.current = Date.now();
+            setReload((n) => n + 1);
+          }
+        }
       });
       setResult(r);
       setRuns(await listRuns(invoke, slug));
@@ -232,6 +284,7 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
           ))}
         </ol>
       )}
+      {running && liveView && <LivePanel view={liveView} reload={reload} />}
       {running && <p className="muted">Building…</p>}
       {result && (
         <div className="review" role="region" aria-label="Build result">

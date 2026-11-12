@@ -184,3 +184,9 @@ body { margin: 0; min-height: 100vh; background: radial-gradient(circle at 20% 1
 .picture.desktop img { width: 480px; }
 .picture.phone img { width: 160px; }
 .picture figcaption { font-size: 0.8rem; opacity: 0.7; }
+.live { margin: 12px 0; }
+.live-frames { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; }
+.live-frame { margin: 0; max-width: 100%; }
+.live-window { overflow: hidden; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.15); background: #fff; max-width: 100%; }
+.live-window iframe { border: 0; transform-origin: 0 0; display: block; }
+.live-frame figcaption { font-size: 0.8rem; opacity: 0.7; }
