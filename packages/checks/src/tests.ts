@@ -15,13 +15,24 @@ export type Exec = (cmd: string, args: string[], cwd: string, timeoutMs: number)
 export const KEEP_OUTPUT = 3000;
 const TEN_MINUTES = 10 * 60_000;
 
+/**
+ * The environment for a project's own package manager. Settings that leak in from the app's own
+ * pnpm (npm_config_*, npm_package_*, pnpm_*) are left out: npm reads them as its own options, and
+ * on joshua's laptop one of them stopped npm audit from running at all.
+ */
+export function projectEnv(extra: Record<string, string> = {}, env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const out: NodeJS.ProcessEnv = {};
+  for (const [k, v] of Object.entries(env)) if (!/^(npm|pnpm)_/.test(k)) out[k] = v; // lower-case only: PNPM_HOME stays
+  return { ...out, ...extra };
+}
+
 export const realExec: Exec = (cmd, args, cwd, timeoutMs) =>
   new Promise((resolve) => {
     // pnpm/npm/yarn are .cmd files on Windows, which need a shell. The arguments here are fixed.
     execFile(
       cmd,
       args,
-      { cwd, timeout: timeoutMs, windowsHide: true, shell: process.platform === 'win32', env: { ...process.env, CI: '1' }, maxBuffer: 20 * 1024 * 1024 },
+      { cwd, timeout: timeoutMs, windowsHide: true, shell: process.platform === 'win32', env: projectEnv({ CI: '1' }), maxBuffer: 20 * 1024 * 1024 },
       (err, stdout, stderr) => {
         const output = `${stdout}${stderr}`;
         if (!err) return resolve({ code: 0, output });

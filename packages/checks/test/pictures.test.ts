@@ -30,6 +30,9 @@ describe('pictures', () => {
     expect(await serveCommand(dir)).toEqual({ cmd: 'pnpm', args: ['exec', 'vite', '--strictPort', '--port'] });
     await writeFile(join(dir, 'package.json'), JSON.stringify({ dependencies: { next: '16' } }));
     expect(await serveCommand(dir)).toEqual({ cmd: 'pnpm', args: ['exec', 'next', 'dev', '-p'] });
+    // npm needs "--" before the command, or it takes -p as its own option (joshua's first real run).
+    await writeFile(join(dir, 'package-lock.json'), '{}');
+    expect(await serveCommand(dir)).toEqual({ cmd: 'npm', args: ['exec', '--', 'next', 'dev', '-p'] });
   });
 
   it('says plainly when there’s no page to show', async () => {

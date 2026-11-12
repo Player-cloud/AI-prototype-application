@@ -14,7 +14,7 @@ import { createRequire } from 'node:module';
 import { createServer as netServer } from 'node:net';
 import { extname, isAbsolute, join, relative, resolve } from 'node:path';
 import type { CheckResult } from './index.js';
-import { packageManager } from './tests.js';
+import { packageManager, projectEnv } from './tests.js';
 
 export interface Picture { name: 'desktop' | 'phone'; path: string; hash: string }
 
@@ -53,8 +53,10 @@ export async function serveCommand(dir: string): Promise<Serve | 'static' | null
   }
   const deps = { ...pkg.dependencies, ...pkg.devDependencies };
   const pm = await packageManager(dir);
-  if (deps.next) return { cmd: pm, args: ['exec', 'next', 'dev', '-p'] };
-  if (deps.vite) return { cmd: pm, args: ['exec', 'vite', '--strictPort', '--port'] };
+  // npm needs "--", or it takes -p and --port as its own options (seen on joshua's laptop).
+  const exec = pm === 'npm' ? ['exec', '--'] : ['exec'];
+  if (deps.next) return { cmd: pm, args: [...exec, 'next', 'dev', '-p'] };
+  if (deps.vite) return { cmd: pm, args: [...exec, 'vite', '--strictPort', '--port'] };
   if (await exists(join(dir, 'index.html'))) return 'static';
   return null;
 }
@@ -159,7 +161,7 @@ export async function takePictures(
         shell: process.platform === 'win32',
         detached: process.platform !== 'win32',
         windowsHide: true,
-        env: { ...process.env, PORT: String(port), BROWSER: 'none', CI: '1' },
+        env: projectEnv({ PORT: String(port), BROWSER: 'none', CI: '1' }),
       });
       const keep = (b: Buffer) => (log = `${log}${b.toString()}`.slice(-2000));
       child.stdout?.on('data', keep);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canKeep, isBigBuild } from '../src/index.js';
+import { canKeep, isBigBuild, projectEnv } from '../src/index.js';
 
 describe('canKeep', () => {
   it('needs every check to pass', () => {
@@ -82,5 +82,12 @@ describe('runTests', () => {
     expect(ok).toEqual({ code: 0, output: '42' });
     const bad = await realExec('node', ['-e', 'process.exit(3)'], process.cwd(), 30_000);
     expect(bad.code).toBe(3);
+  });
+});
+
+describe('the project’s own package manager', () => {
+  it('doesn’t get the app’s own pnpm settings', () => {
+    const env = projectEnv({ CI: '1' }, { PATH: '/bin', npm_config_allow_scripts: 'x', npm_package_name: 'aip', PNPM_HOME: '/p', pnpm_config_verify_deps_before_run: 'false', HOME: '/h' });
+    expect(env).toEqual({ PATH: '/bin', PNPM_HOME: '/p', HOME: '/h', CI: '1' });
   });
 });

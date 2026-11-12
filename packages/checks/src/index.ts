@@ -27,7 +27,7 @@ export function isBigBuild(features: number, touches: { logins?: boolean; paymen
   return features >= 5 || !!touches.logins || !!touches.payments || !!touches.personalData;
 }
 
-export { KEEP_OUTPUT, packageManager, realExec, runTests, type Exec, type ExecResult } from './tests.js';
+export { KEEP_OUTPUT, packageManager, projectEnv, realExec, runTests, type Exec, type ExecResult } from './tests.js';
 
 export { CHECKLIST_RULES, MAX_FINDINGS, auditCheck, changedSince, checklistCheck, runFreeChecks, secretScan, type AddedLine, type ChangedFiles } from './free.js';
 export { SIZES, browserChoice, freePort, serveCommand, takePictures, type Picture, type PicturesResult, type Serve } from './pictures.js';
