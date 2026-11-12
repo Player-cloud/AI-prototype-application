@@ -111,6 +111,11 @@ export async function approvalRecorded(dbPath: string, label: string, detail: st
   return withLog(dbPath, (log) => log.record({ at: now, kind: 'approval', label, target: '', before: '', after: detail }));
 }
 
+/** Records that a kept build was reversed by a new commit (from → to). Nothing here can put it back. */
+export async function revertRecorded(dbPath: string, label: string, folder: string, keptCommit: string, revertCommit: string, now: Date) {
+  return withLog(dbPath, (log) => log.record({ at: now, kind: 'revert', label, target: folder, before: keptCommit, after: revertCommit }));
+}
+
 /** Records a change to a text file (e.g. ledger.md). */
 export async function fileChanged(dbPath: string, path: string, before: string, after: string, label: string, now: Date) {
   if (before === after) return null;
@@ -121,7 +126,7 @@ export interface HistoryItem {
   id: number;
   at: string;
   label: string;
-  kind: 'settings' | 'file' | 'approval';
+  kind: 'settings' | 'file' | 'approval' | 'revert';
   /** When this change was undone, or null. */
   undoneAt: string | null;
   /** True when this change was itself an undo. */
@@ -151,6 +156,7 @@ export async function undoStart(dbPath: string, id: number, currentRawSettings: 
   if (!change) throw new Error('That change is no longer in the history.');
   if (change.undoneAt) throw new Error('That change has already been undone.');
   if (change.kind === 'approval') throw new Error('An approval can’t be undone here. Undo the build instead.');
+  if (change.kind === 'revert') throw new Error('A reversed build can’t be undone here. Build the feature again if you want it back.');
 
   if (change.kind === 'settings') {
     if (stable(settingsOrDefault(currentRawSettings)) !== change.after) throw new Error(`Settings ${CHANGED_SINCE}`);

@@ -75,6 +75,10 @@
  *  - ask_decide: {dbPath, id, allow} -> joshua's answer. Allow once lets that exact tool and input through
  *    one time in that project (24 hours); false closes it. Both go in the history. Returns {ask, note}.
  *  - run_undo: {settings, dbPath, id} -> removes a waiting build's copy and branch.
+ *  - run_revert: {settings, dbPath, id} -> Undo a kept build: a new commit in joshua's copy reverses
+ *    the merge Keep made (git revert; no reset, no force, no push). Refused with nothing changed when
+ *    the copy has uncommitted changes, the kept commit isn't in the branch, or the reversal clashes.
+ *    Status becomes 'reverted'. Returns {run, note, learned}.
  *  - run_rate: {dbPath, id, rating, settings?} -> joshua's 1–5 rating for a build.
  *    run_keep, run_undo and run_rate also return `learned`: plain notes when the app added, updated
  *    or dropped a habit in habits.md from the evidence (step 9d). Undoable from History.
@@ -123,7 +127,7 @@ import type { Job, ModelAdapter, Provider } from '@aip/models';
 import { formatCost } from './money.ts';
 import { DEFAULT_SETTINGS, checkSettings, type AppSettings } from './settings.ts';
 import { decideAsk, listAsks } from './asks.ts';
-import { approveDeps, keepRun, listRuns, rateRun, undoRun } from './keep.ts';
+import { approveDeps, keepRun, listRuns, rateRun, revertKept, undoRun } from './keep.ts';
 import { learnNow } from './learn.ts';
 import { githubCheck } from './github.ts';
 import { closeBuild, listWork, postBuild, publishPictures } from './notify.ts';
@@ -547,6 +551,13 @@ const HANDLERS: Record<string, Handler> = {
     const r = await undoRun(settings, str(p, 'dbPath'), runId(p), now);
     const phone = await closeBuild(settings, str(p, 'dbPath'), r.run.id, r.note, token(p), now, deps.fetch);
     return { ...r, phone, learned: await learnNow(settings, str(p, 'dbPath'), (id) => deps.modelName(id), now) };
+  },
+  run_revert: async (params, deps) => {
+    const p = obj(params);
+    const settings = checkSettings(p.settings);
+    const now = deps.now?.() ?? new Date();
+    const r = await revertKept(settings, str(p, 'dbPath'), runId(p), now);
+    return { ...r, learned: await learnNow(settings, str(p, 'dbPath'), (id) => deps.modelName(id), now) };
   },
   run_rate: async (params, deps) => {
     const p = obj(params);

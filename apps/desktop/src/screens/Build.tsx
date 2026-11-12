@@ -2,11 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import type { Invoke } from '../engine';
 import { listProjects, openProject, projectMap, type Feature, type MapFeature, type ProjectRow } from '../projects';
 import { getSettings } from '../settings';
-import { CHECK_NAME, LEVEL_HEADING, LEVEL_ORDER, approvePackages, findingsAt, costSoFar, DONE_MARK, doneList, neverCheckedLine, endedWords, endedEarly, compareWorkflows, decideAsk, decideRun, keepable, listAsks, listRuns, listWork, needsPackageOk, pollPhone, rateRun, startBuild, stopBuild, type BuildResult, type BuildRun, type AskRequest, type BuildStep, type LiveView, type MakeChannel, type WorkItem, type WorkflowRow } from '../build';
+import { CHECK_NAME, LEVEL_HEADING, LEVEL_ORDER, approvePackages, findingsAt, costSoFar, DONE_MARK, doneList, neverCheckedLine, endedWords, endedEarly, compareWorkflows, decideAsk, decideRun, keepable, revertRun, listAsks, listRuns, listWork, needsPackageOk, pollPhone, rateRun, startBuild, stopBuild, type BuildResult, type BuildRun, type AskRequest, type BuildStep, type LiveView, type MakeChannel, type WorkItem, type WorkflowRow } from '../build';
 
 type Note = { text: string; bad: boolean } | null;
 
-const STATUS: Record<BuildRun['status'], string> = { built: 'waiting for Keep or Undo', kept: 'kept', undone: 'undone', running: 'running', failed: 'failed', stopped: 'stopped', interrupted: 'interrupted' };
+const STATUS: Record<BuildRun['status'], string> = { built: 'waiting for Keep or Undo', kept: 'kept', undone: 'undone', reverted: 'kept, then undone', running: 'running', failed: 'failed', stopped: 'stopped', interrupted: 'interrupted' };
 
 /** How often the screen refreshes Builds and Needs you, to show what was done from the phone. */
 const REFRESH_MS = 30_000;
@@ -252,6 +252,8 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
     }
   }
 
+  const [confirmRevert, setConfirmRevert] = useState<number | null>(null);
+
   async function act(label: string, job: () => Promise<{ text: string; learned: string[] }>) {
     if (!invoke) return;
     setBusy(true);
@@ -281,6 +283,13 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
       const d = await decideRun(invoke!, r.id, keep);
       return { text: d.phone ? `${d.note} ${d.phone}` : d.note, learned: d.learned };
     });
+  const revert = (r: BuildRun) => {
+    setConfirmRevert(null);
+    return act(`Undoing the kept ${r.feature}…`, async () => {
+      const d = await revertRun(invoke!, r.id);
+      return { text: d.note, learned: d.learned };
+    });
+  };
   const approve = (r: BuildRun) =>
     act(`Approving the new packages for ${r.feature}…`, async () => ({ text: (await approvePackages(invoke!, r.id)).note, learned: [] }));
   const rate = (r: BuildRun, n: number) =>
@@ -513,7 +522,28 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
                     </button>
                   </span>
                 )}
-                {(r.status === 'built' || r.status === 'kept') && (
+                {r.status === 'kept' && (
+                  <span className="run-actions">
+                    {confirmRevert === r.id ? (
+                      <>
+                        <span role="group" aria-label={`Confirm undoing ${r.feature} build ${r.id}`}>
+                          Are you sure? This adds a new commit that reverses it.
+                        </span>
+                        <button type="button" disabled={busy || running} onClick={() => void revert(r)} aria-label={`Yes, undo kept ${r.feature}`}>
+                          Yes
+                        </button>
+                        <button type="button" disabled={busy} onClick={() => setConfirmRevert(null)} aria-label={`No, keep ${r.feature}`}>
+                          No
+                        </button>
+                      </>
+                    ) : (
+                      <button type="button" disabled={busy || running} onClick={() => setConfirmRevert(r.id)} aria-label={`Undo this kept build ${r.feature} build ${r.id}`}>
+                        Undo this kept build
+                      </button>
+                    )}
+                  </span>
+                )}
+                {(r.status === 'built' || r.status === 'kept' || r.status === 'reverted') && (
                   <span className="rating" role="group" aria-label={`Rate ${r.feature} build ${r.id}`}>
                     {[1, 2, 3, 4, 5].map((n) => (
                       <button key={n} type="button" disabled={busy} aria-pressed={r.rating === n} onClick={() => void rate(r, n)}>
@@ -525,7 +555,7 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
               </li>
             ))}
           </ul>
-          <p className="muted">Keep merges the build into your copy on this computer (it never pushes). Undo removes the build’s copy.</p>
+          <p className="muted">Keep merges the build into your copy on this computer (it never pushes). Undo removes the build’s copy. Undo this kept build adds a new commit that reverses it (nothing is rewritten or pushed).</p>
         </div>
       )}
       {workflows.length > 0 && (

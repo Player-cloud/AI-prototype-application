@@ -56,7 +56,7 @@ export function workflowStats(runs: Run[]): WorkflowStats[] {
     // Builds that ended early have no tests, checks or timing to measure: only their cost and cause count.
     const rs = all.filter((r) => !ended(r));
     const kept = rs.filter((r) => r.status === 'kept').length;
-    const undone = rs.filter((r) => r.status === 'undone').length;
+    const undone = rs.filter((r) => r.status === 'undone' || r.status === 'reverted').length;
     const costs = all.map((r) => r.costUsd).filter((c): c is number => typeof c === 'number');
     const times = rs.map((r) => r.ms).filter((m): m is number => typeof m === 'number');
     const ratings = rs.map((r) => r.rating).filter((n): n is number => typeof n === 'number');

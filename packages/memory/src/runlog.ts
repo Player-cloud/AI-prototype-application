@@ -9,12 +9,13 @@ import { DatabaseSync } from 'node:sqlite';
 
 /**
  * 'running': the build is going now (its row is added at the start, and its id is the build ID).
- * 'built': finished, waiting for Keep or Undo. 'kept' / 'undone': joshua decided.
+ * 'built': finished, waiting for Keep or Undo. 'kept' / 'undone': joshua decided. 'reverted': a kept
+ * build joshua later undid (a new commit reverses it; the history is not rewritten).
  * 'failed': it threw (model error, cost limit, crash...), see `cause`. 'stopped': joshua pressed Stop.
  * 'interrupted': the app closed while it was running, so nobody knows how it ended.
  * Only 'built' can be kept; failed, stopped and interrupted builds stay as a record.
  */
-export type RunStatus = 'running' | 'built' | 'kept' | 'undone' | 'failed' | 'stopped' | 'interrupted';
+export type RunStatus = 'running' | 'built' | 'kept' | 'undone' | 'reverted' | 'failed' | 'stopped' | 'interrupted';
 
 /** Why a build failed. Same words as the tools' health records (kept here so memory stays one piece). */
 export type RunCause = 'model' | 'tool' | 'budget' | 'network' | 'provider' | 'setup' | 'stopped' | 'unknown';
@@ -366,6 +367,12 @@ export class RunLog {
     if (Number(res.changes) !== 1) throw new Error('That build was already kept or undone.');
   }
 
+  /** A kept build was reversed by a new commit. Only a kept run can be marked. */
+  markReverted(id: number): void {
+    const res = this.db.prepare("UPDATE runs SET status = 'reverted' WHERE id = ? AND status = 'kept'").run(id);
+    if (Number(res.changes) !== 1) throw new Error('Only a kept build can be marked as undone this way.');
+  }
+
   /** Replaces a waiting run's saved findings (joshua approved new packages). Only a run still waiting. */
   setFindings(id: number, findings: RunFinding[]): void {
     const res = this.db.prepare("UPDATE runs SET checks = ? WHERE id = ? AND status = 'built'").run(JSON.stringify(findings), id);
@@ -376,7 +383,7 @@ export class RunLog {
   rate(id: number, rating: number): void {
     if (!Number.isInteger(rating) || rating < 1 || rating > 5) throw new Error('Rating must be a whole number from 1 to 5');
     // A build that failed, stopped or is still going has nothing to rate.
-    const res = this.db.prepare("UPDATE runs SET rating = ? WHERE id = ? AND status IN ('built', 'kept', 'undone')").run(rating, id);
+    const res = this.db.prepare("UPDATE runs SET rating = ? WHERE id = ? AND status IN ('built', 'kept', 'undone', 'reverted')").run(rating, id);
     if (Number(res.changes) !== 1) throw new Error('There’s no such build.');
   }
 

@@ -56,7 +56,7 @@ export function History({ invoke, tick = 0, onUndone }: { invoke: Invoke; tick?:
               <span className="muted-inline">{when(c.at)}</span> {c.label}{' '}
               {c.undoneAt ? (
                 <span className="muted-inline">(undone)</span>
-              ) : c.kind === 'approval' ? null : (
+              ) : c.kind === 'approval' || c.kind === 'revert' ? null : (
                 <button type="button" className="link-button" disabled={busy} onClick={() => void onUndo(c)} aria-label={`Undo ${c.label}`}>
                   Undo
                 </button>

@@ -11,7 +11,7 @@ import { DatabaseSync } from 'node:sqlite';
  * 'settings': the app's settings.json. 'file': a text file, e.g. ledger.md in the data folder.
  * 'approval': joshua's OK for something (new packages in a build); shown in the history, nothing to put back.
  */
-export type ChangeKind = 'settings' | 'file' | 'approval';
+export type ChangeKind = 'settings' | 'file' | 'approval' | 'revert';
 
 export interface NewChange {
   at: Date;
