@@ -11,7 +11,7 @@
  */
 import { readFile } from 'node:fs/promises';
 import { isAbsolute, relative, resolve } from 'node:path';
-import type { CheckResult, Picture, PicturesResult } from '@aip/checks';
+import type { CheckResult, LiveState, Picture, PicturesResult } from '@aip/checks';
 import type { ModelAdapter, Provider, ToolDecision } from '@aip/models';
 import { readBudget, recordSpend } from './budget.ts';
 import { gate } from './gate.ts';
@@ -34,12 +34,17 @@ export interface BuildDeps {
   freeChecks?(dir: string, base: string, areas: string[]): Promise<CheckResult[]>;
   /** Desktop and phone pictures plus axe and phone width (9c), with the browser already on the computer. */
   pictures?(dir: string, outDir: string, previous: Picture[]): Promise<PicturesResult>;
+  /** The live view while the model works (V2 A); null turns it off. The real one is @aip/checks. */
+  live?: ((dir: string, onChange: (s: LiveState) => void) => { stop(): Promise<void> }) | null;
 }
 
 export interface BuildStep { text: string; refused?: string }
 
 /** What a running build reports as it goes. */
-export type BuildEvent = { type: 'using'; using: string; run: StartedRun } | ({ type: 'step' } & BuildStep);
+export type BuildEvent =
+  | { type: 'using'; using: string; run: StartedRun }
+  | ({ type: 'step' } & BuildStep)
+  | ({ type: 'live' } & LiveState);
 
 export interface BuildResult {
   run: StartedRun;
@@ -81,6 +86,7 @@ export function buildPrompt(iv: Interview, feature: string, spec: string): strin
     `Build it so every check in done/${feature}.md passes. Add or update tests for it, and run them.`,
     'Keep changes small. Don’t push, deploy, install things globally or call outside services: those need joshua’s OK and will be refused.',
     'Never read or write key files (.env, *.pem).',
+    'The app already runs this copy’s page (next dev, vite or index.html) so joshua can watch it change. Don’t start another dev server: two in one folder clash.',
     'When you’re done, reply with a short plain-words summary of what you changed and what the tests showed.',
     '',
     spec,
@@ -192,143 +198,157 @@ export async function buildFeature(
   const run = await startRun(settings, p.slug, p.feature, now);
   const using = usingLine(model, ['file edits', 'shell', 'tests']);
   onEvent?.({ type: 'using', using, run });
-  const steps: BuildStep[] = [];
-  const add = (s: BuildStep) => {
-    steps.push(s);
-    onEvent?.({ type: 'step', ...s });
-  };
-  const task = (prompt: string, a: ModelAdapter) =>
-    a.build!({
-      model,
-      prompt,
-      cwd: run.path,
-      signal,
-      onStep: (text) => add({ text }),
-      async checkTool(name, input) {
-        const d = checkStep(settings, run.path, name, input);
-        if (!d.allow) add({ text: `Refused: ${name}`, refused: d.reason });
-        return d;
-      },
-    });
-
-  let spentUsd = 0;
-  /** One model run: its spend counts, and its success or failure goes in the tool's health record. */
-  const once = async (prompt: string, a: ModelAdapter) => {
-    try {
-      const out = await task(prompt, a);
-      spentUsd += out.usage.costUsd ?? 0;
-      if (p.dbPath) await recordSpend(p.dbPath, { at: now, provider: p.provider, model, job: 'build', ...out.usage });
-      await noteRun(settings, tool, { ok: true }, now);
-      return out.text.trim();
-    } catch (err) {
-      if (stopped(signal)) throw new Error('Stopped.');
-      const off = await noteRun(settings, tool, { ok: false, error: (err as Error).message }, now);
-      const sync = await syncAfter(settings, `Build ${p.slug} ${p.feature}: ${tool} failed`);
-      const more = off ? ` ${tool} has now failed ${OFF_AFTER} times in a row, so it’s switched off. Switch it back on in Tools when you’re ready.` : '';
-      throw new Error(`${(err as Error).message}${more}${sync ? ` (${sync})` : ''}`);
-    }
-  };
-
-  const prompt = buildPrompt(interview, p.feature, specText(interview, new Date(interview.specAt ?? now))) + (await guidance(settings, rulesFirst));
-  let summary = await once(prompt, adapter);
-
-  const runTests = deps.runTests ?? (await import('@aip/checks')).runTests;
-  add({ text: 'Running tests' });
-  let tests = await runTests(run.path);
-  let fixes = 0;
-  while (!tests.passed && fixes < FIX_ATTEMPTS && !stopped(signal)) {
-    const left = cap - spentUsd;
-    if (left < MIN_FIX_USD) {
-      add({ text: 'No money left in this run’s limit for a fix.' });
-      break;
-    }
-    fixes += 1;
-    add({ text: `Fix attempt ${fixes} of ${FIX_ATTEMPTS}` });
-    const fixer = await deps.makeAdapter(p.provider, p.apiKey, settings, left);
-    const fixed = await once(fixPrompt(p.feature, fixes, tests.detail ?? ''), fixer);
-    if (fixed) summary = `${summary}\n\nFix ${fixes}: ${fixed}`;
-    add({ text: 'Running tests' });
-    tests = await runTests(run.path);
-  }
-  if (stopped(signal)) throw new Error('Stopped.');
-  add({ text: tests.passed ? 'Tests pass' : 'Tests still fail' });
-  add({ text: 'Running free checks' });
-  const freeChecks = deps.freeChecks ?? (await import('@aip/checks')).runFreeChecks;
-  let checks: CheckResult[];
+  const watch = deps.live === undefined ? (await import('@aip/checks')).watchLive : deps.live;
+  const live = watch ? watch(run.path, (s) => onEvent?.({ type: 'live', ...s })) : null;
   try {
-    checks = await freeChecks(run.path, run.base, interview.areas);
-  } catch (err) {
-    checks = [{ name: 'free checks', passed: false, free: true, detail: `Couldn’t run: ${(err as Error).message}` }];
+    return await afterStart();
+  } finally {
+    await live?.stop();
   }
-  for (const c of checks) add({ text: `${CHECK_NAMES[c.name] ?? c.name}: ${c.passed ? 'passed' : c.advisory ? 'see notes' : 'failed'}` });
 
-  add({ text: 'Taking desktop and phone pictures' });
-  let previous: Picture[] = [];
-  if (p.dbPath) {
-    const m = await import('@aip/memory');
-    const log = m.RunLog.open(p.dbPath);
-    try {
-      previous = log.lastPictures(p.slug).map((x) => ({ ...x, name: x.name === 'phone' ? 'phone' : 'desktop' }));
-    } finally {
-      log.close();
-    }
-  }
-  const takePictures = deps.pictures ?? (async (dir: string, out: string, prev: Picture[]) => (await import('@aip/checks')).takePictures(dir, out, { previous: prev }));
-  let shots: PicturesResult;
-  try {
-    shots = await takePictures(run.path, `${run.path}-pictures`, previous);
-  } catch (err) {
-    const note = `No pictures: ${(err as Error).message.split('\n')[0]}`;
-    shots = { pictures: [], checks: [{ name: 'pictures', passed: false, free: true, advisory: true, detail: note }], changed: null, note };
-  }
-  add({ text: shots.note.split('\n')[0]! });
-  for (const c of shots.checks) if (c.name !== 'pictures') add({ text: `${CHECK_NAMES[c.name] ?? c.name}: ${c.passed ? 'passed' : 'see notes'}` });
-  checks.push(...shots.checks);
-  const { canKeep } = await import('@aip/checks');
-  const keep = canKeep([{ ...tests, name: 'tests' }, ...checks]);
-  const synced = await syncAfter(settings, `Build ${p.slug} ${p.feature}`);
-  let runId: number | null = null;
-  if (p.dbPath) {
-    const m = await import('@aip/memory');
-    const log = m.RunLog.open(p.dbPath);
-    try {
-      runId = log.add({
-        at: now,
-        slug: p.slug,
-        feature: p.feature,
-        path: run.path,
-        branch: run.branch,
-        base: run.base,
+  async function afterStart(): Promise<BuildResult> {
+    const steps: BuildStep[] = [];
+    const add = (s: BuildStep) => {
+      steps.push(s);
+      onEvent?.({ type: 'step', ...s });
+    };
+    const task = (prompt: string, a: ModelAdapter) =>
+      a.build!({
         model,
-        costUsd: spentUsd,
-        testsPassed: tests.passed,
-        fixAttempts: fixes,
-        summary: summary.slice(0, 2000),
-        checks: checks.map((c) => ({ name: c.name, passed: c.passed, advisory: c.advisory ?? false, detail: c.detail ?? '' })),
-        pictures: shots.pictures,
+        prompt,
+        cwd: run.path,
+        signal,
+        onStep: (text) => add({ text }),
+        async checkTool(name, input) {
+          const d = checkStep(settings, run.path, name, input);
+          if (!d.allow) add({ text: `Refused: ${name}`, refused: d.reason });
+          return d;
+        },
       });
-    } finally {
-      log.close();
+
+    let spentUsd = 0;
+    /** One model run: its spend counts, and its success or failure goes in the tool's health record. */
+    const once = async (prompt: string, a: ModelAdapter) => {
+      try {
+        const out = await task(prompt, a);
+        spentUsd += out.usage.costUsd ?? 0;
+        if (p.dbPath) await recordSpend(p.dbPath, { at: now, provider: p.provider, model, job: 'build', ...out.usage });
+        await noteRun(settings, tool, { ok: true }, now);
+        return out.text.trim();
+      } catch (err) {
+        if (stopped(signal)) throw new Error('Stopped.');
+        const off = await noteRun(settings, tool, { ok: false, error: (err as Error).message }, now);
+        const sync = await syncAfter(settings, `Build ${p.slug} ${p.feature}: ${tool} failed`);
+        const more = off ? ` ${tool} has now failed ${OFF_AFTER} times in a row, so it’s switched off. Switch it back on in Tools when you’re ready.` : '';
+        throw new Error(`${(err as Error).message}${more}${sync ? ` (${sync})` : ''}`);
+      }
+    };
+
+    const prompt = buildPrompt(interview, p.feature, specText(interview, new Date(interview.specAt ?? now))) + (await guidance(settings, rulesFirst));
+    let summary = await once(prompt, adapter);
+
+    const runTests = deps.runTests ?? (await import('@aip/checks')).runTests;
+    add({ text: 'Running tests' });
+    let tests = await runTests(run.path);
+    let fixes = 0;
+    while (!tests.passed && fixes < FIX_ATTEMPTS && !stopped(signal)) {
+      const left = cap - spentUsd;
+      if (left < MIN_FIX_USD) {
+        add({ text: 'No money left in this run’s limit for a fix.' });
+        break;
+      }
+      fixes += 1;
+      add({ text: `Fix attempt ${fixes} of ${FIX_ATTEMPTS}` });
+      const fixer = await deps.makeAdapter(p.provider, p.apiKey, settings, left);
+      const fixed = await once(fixPrompt(p.feature, fixes, tests.detail ?? ''), fixer);
+      if (fixed) summary = `${summary}\n\nFix ${fixes}: ${fixed}`;
+      add({ text: 'Running tests' });
+      tests = await runTests(run.path);
     }
+    if (stopped(signal)) throw new Error('Stopped.');
+    add({ text: tests.passed ? 'Tests pass' : 'Tests still fail' });
+    if (live) {
+      await live.stop(); // the final pictures start the page themselves
+      onEvent?.({ type: 'live', url: null, note: 'Live view closed: the build is done. The final pictures follow.', reloads: false });
+    }
+    add({ text: 'Running free checks' });
+    const freeChecks = deps.freeChecks ?? (await import('@aip/checks')).runFreeChecks;
+    let checks: CheckResult[];
+    try {
+      checks = await freeChecks(run.path, run.base, interview.areas);
+    } catch (err) {
+      checks = [{ name: 'free checks', passed: false, free: true, detail: `Couldn’t run: ${(err as Error).message}` }];
+    }
+    for (const c of checks) add({ text: `${CHECK_NAMES[c.name] ?? c.name}: ${c.passed ? 'passed' : c.advisory ? 'see notes' : 'failed'}` });
+
+    add({ text: 'Taking desktop and phone pictures' });
+    let previous: Picture[] = [];
+    if (p.dbPath) {
+      const m = await import('@aip/memory');
+      const log = m.RunLog.open(p.dbPath);
+      try {
+        previous = log.lastPictures(p.slug).map((x) => ({ ...x, name: x.name === 'phone' ? 'phone' : 'desktop' }));
+      } finally {
+        log.close();
+      }
+    }
+    const takePictures = deps.pictures ?? (async (dir: string, out: string, prev: Picture[]) => (await import('@aip/checks')).takePictures(dir, out, { previous: prev }));
+    let shots: PicturesResult;
+    try {
+      shots = await takePictures(run.path, `${run.path}-pictures`, previous);
+    } catch (err) {
+      const note = `No pictures: ${(err as Error).message.split('\n')[0]}`;
+      shots = { pictures: [], checks: [{ name: 'pictures', passed: false, free: true, advisory: true, detail: note }], changed: null, note };
+    }
+    add({ text: shots.note.split('\n')[0]! });
+    for (const c of shots.checks) if (c.name !== 'pictures') add({ text: `${CHECK_NAMES[c.name] ?? c.name}: ${c.passed ? 'passed' : 'see notes'}` });
+    checks.push(...shots.checks);
+    const { canKeep } = await import('@aip/checks');
+    const keep = canKeep([{ ...tests, name: 'tests' }, ...checks]);
+    const synced = await syncAfter(settings, `Build ${p.slug} ${p.feature}`);
+    let runId: number | null = null;
+    if (p.dbPath) {
+      const m = await import('@aip/memory');
+      const log = m.RunLog.open(p.dbPath);
+      try {
+        runId = log.add({
+          at: now,
+          slug: p.slug,
+          feature: p.feature,
+          path: run.path,
+          branch: run.branch,
+          base: run.base,
+          model,
+          costUsd: spentUsd,
+          testsPassed: tests.passed,
+          fixAttempts: fixes,
+          summary: summary.slice(0, 2000),
+          checks: checks.map((c) => ({ name: c.name, passed: c.passed, advisory: c.advisory ?? false, detail: c.detail ?? '' })),
+          pictures: shots.pictures,
+        });
+      } finally {
+        log.close();
+      }
+    }
+    return {
+      runId,
+      run,
+      using,
+      steps,
+      summary: summary.slice(0, 2000),
+      model,
+      costUsd: spentUsd,
+      tests: { passed: tests.passed, output: tests.detail ?? '', fixAttempts: fixes },
+      synced,
+      checks,
+      keep,
+      pictures: await Promise.all(
+        shots.pictures.map(async (x) => ({ name: x.name, path: x.path, dataUrl: `data:image/png;base64,${(await readFile(x.path)).toString('base64')}` })),
+      ),
+      screensChanged: shots.changed,
+      picturesNote: shots.note,
+    };
   }
-  return {
-    runId,
-    run,
-    using,
-    steps,
-    summary: summary.slice(0, 2000),
-    model,
-    costUsd: spentUsd,
-    tests: { passed: tests.passed, output: tests.detail ?? '', fixAttempts: fixes },
-    synced,
-    checks,
-    keep,
-    pictures: await Promise.all(
-      shots.pictures.map(async (x) => ({ name: x.name, path: x.path, dataUrl: `data:image/png;base64,${(await readFile(x.path)).toString('base64')}` })),
-    ),
-    screensChanged: shots.changed,
-    picturesNote: shots.note,
-  };
 }
 
 /**

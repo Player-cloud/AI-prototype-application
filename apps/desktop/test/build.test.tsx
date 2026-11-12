@@ -116,6 +116,27 @@ describe('Build screen', () => {
     expect(screen.getByRole('button', { name: 'Stop' })).toBeTruthy();
     expect(shell.calls.find((c) => c.cmd === 'build_feature')?.args).toMatchObject({ slug: 'club-hr', feature: 'F-02' });
 
+    // The live view (V2 A): the build's own page at desktop and phone sizes while it builds.
+    shell.step({ type: 'live', url: null, note: 'Waiting for the build to install its packages.', reloads: false });
+    const live = await screen.findByRole('region', { name: 'Live view' });
+    await within(live).findByText('Waiting for the build to install its packages.');
+    expect(live.querySelectorAll('iframe')).toHaveLength(0);
+    shell.step({ type: 'live', url: 'http://127.0.0.1:5173/', note: 'Live: the build’s own copy, updating as it changes.', reloads: false });
+    const desktop = (await screen.findByTitle('Desktop live view of the build')) as HTMLIFrameElement;
+    const phone = screen.getByTitle('Phone live view of the build') as HTMLIFrameElement;
+    expect(desktop.getAttribute('src')).toBe('http://127.0.0.1:5173/');
+    expect(phone.getAttribute('src')).toBe('http://127.0.0.1:5173/');
+    expect(desktop.getAttribute('sandbox')).toBe('allow-scripts allow-same-origin allow-forms');
+    expect(desktop.style.width).toBe('1280px');
+    expect(phone.style.width).toBe('390px');
+    // Next.js and Vite update the page themselves, so a new step doesn't reload it.
+    shell.step({ type: 'step', text: 'Edit src/rota.tsx' });
+    await within(steps).findByText('Edit src/rota.tsx');
+    expect(screen.getByTitle('Desktop live view of the build')).toBe(desktop);
+    shell.step({ type: 'live', url: null, note: 'Live view closed: the build is done. The final pictures follow.', reloads: false });
+    await within(live).findByText('Live view closed: the build is done. The final pictures follow.');
+    expect(screen.queryByTitle('Desktop live view of the build')).toBeNull();
+
     shell.done({
       run: RUN,
       using: 'Using: Sonnet 5.5, file edits, shell',
@@ -153,6 +174,20 @@ describe('Build screen', () => {
     expect(within(result).getByText(/^Checklist rules: advice \(doesn’t stop Keep\)/)).toBeTruthy();
     expect(within(result).getByText('src/rota.tsx:3 (Accessibility): Every image needs alt text.')).toBeTruthy();
     expect(within(result).getByText('Phone: Sent to your phone: issue #12 on o/r.')).toBeTruthy();
+  });
+
+  it('reloads a plain page in the live view as the build changes it', async () => {
+    const shell = fakeShell();
+    render(<Build invoke={shell.invoke} makeChannel={shell.makeChannel} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Build F-01 (costs up to £0.80 ($1.01))' }));
+    shell.step({ type: 'using', using: 'Using: Sonnet 5.5, file edits, shell', run: RUN });
+    shell.step({ type: 'live', url: 'http://127.0.0.1:4000/', note: 'Live: the build’s own copy, updating as it changes.', reloads: true });
+    const before = await screen.findByTitle('Phone live view of the build');
+    shell.step({ type: 'step', text: 'Write index.html' });
+    await screen.findByText('Write index.html');
+    const after = screen.getByTitle('Phone live view of the build');
+    expect(after).not.toBe(before); // a fresh frame shows the new page
+    expect(after.getAttribute('src')).toBe('http://127.0.0.1:4000/');
   });
 
   it('says plainly when the tests still fail after the fix attempts', async () => {

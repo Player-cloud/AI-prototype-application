@@ -5,7 +5,9 @@ export type MakeChannel = <T>(onMessage: (message: T) => void) => unknown;
 
 export interface RunInfo { path: string; branch: string; feature: string; base: string }
 export interface BuildStep { text: string; refused?: string }
-export type BuildEvent = { type: 'using'; using: string; run: RunInfo } | ({ type: 'step' } & BuildStep);
+/** The build's own page while the model works (V2 A); url is null while there's nothing to show. */
+export interface LiveView { url: string | null; note: string; reloads: boolean }
+export type BuildEvent = { type: 'using'; using: string; run: RunInfo } | ({ type: 'step' } & BuildStep) | ({ type: 'live' } & LiveView);
 
 /** One free check (9b). Advice-only checks don't stop Keep. */
 export interface Check { name: string; passed: boolean; advisory?: boolean; detail?: string }

@@ -39,6 +39,10 @@ The **Build** screen lists finished plans and their features. Press **Build F-01
 
 After the model finishes, the project's own tests run in the copy (`pnpm test`, or the package manager its lock file shows; packages are installed first if the copy has none). If they fail, the model gets up to 2 fix attempts with the end of the test output, inside what's left of the run's limit. It's told never to skip, delete or weaken tests. The result shows whether the tests pass and the end of their output; a build whose tests fail can't be kept. The data folder syncs after each build.
 
+## Live view (V2)
+
+While the model works, the Build screen shows the build's own page live, at desktop and phone sizes, so you can watch it take shape. The app starts the page in the build's copy as soon as there is one to show (`next dev` or `vite` once its packages are installed, or a plain `index.html`), only on this computer (127.0.0.1), and starts it again if it stops (5 tries at most). Next.js and Vite update the page themselves; a plain page is reloaded as the build changes it. The model is told not to start its own dev server. The live view closes when the model is done, before the free checks and the final pictures, and always when a build fails or is stopped. It costs nothing.
+
 ## Free checks (step 9)
 
 After the tests, three free checks run in the build's copy (no model, no cost):

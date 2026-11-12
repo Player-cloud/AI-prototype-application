@@ -66,7 +66,7 @@ describe('build_feature', () => {
   });
 
   /** A fake agent: tries a write in its copy, a push and a write outside, then reports. */
-  type Seen = { task?: BuildTask; maxUsd?: number; answers: unknown[]; prompts?: string[]; caps?: number[]; previous?: unknown[] };
+  type Seen = { task?: BuildTask; maxUsd?: number; answers: unknown[]; prompts?: string[]; caps?: number[]; previous?: unknown[]; watched?: string[]; liveStops?: number };
   /** opts.tests: what each test run gives (passes when it runs out); opts.fail: the model errors. */
   function deps(seen: Seen, withBuild = true, opts: { tests?: boolean[]; fail?: string; checks?: { name: string; passed: boolean; free: boolean; detail?: string; advisory?: boolean }[] } = {}): Deps {
     const results = [...(opts.tests ?? [])];
@@ -112,6 +112,16 @@ describe('build_feature', () => {
         return 'Sonnet 5.5';
       },
       now: () => NOW,
+      // The live view (V2 A): shows the copy at once, and counts how often it's stopped.
+      live(dir: string, onChange: (s: { url: string | null; note: string; reloads: boolean }) => void) {
+        (seen.watched ??= []).push(dir);
+        onChange({ url: 'http://127.0.0.1:5173/', note: 'Live: the build’s own copy, updating as it changes.', reloads: false });
+        return {
+          async stop() {
+            seen.liveStops = (seen.liveStops ?? 0) + 1;
+          },
+        };
+      },
       async pictures(_dir, out, previous) {
         (seen.previous ??= []).push(previous);
         const path = join(out, 'desktop.png');
@@ -161,10 +171,10 @@ describe('build_feature', () => {
   }
 
   it('builds one feature in its own copy, refusing what the gatekeeper or the copy rule stops', async () => {
-    const seen = { answers: [] as unknown[] } as { task?: BuildTask; maxUsd?: number; answers: unknown[] };
+    const seen: Seen = { answers: [] };
     const d = deps(seen);
     const settings = { dataFolder: data, codeFolders: { 'club-hr': code } };
-    const events: { type: string; text?: string; using?: string }[] = [];
+    const events: { type: string; text?: string; using?: string; url?: string | null; note?: string }[] = [];
     const call = await plan(d, settings, { emit: (e) => events.push(e as (typeof events)[number]) });
     await writeFile(join(data, 'rules.md'), '- Ask first.\n');
     const dbPath = join(root, 'history.sqlite');
@@ -195,7 +205,17 @@ describe('build_feature', () => {
 
     // The screen saw the Using line first, then each step as it happened.
     expect(events[0]).toMatchObject({ type: 'using', using: 'Using: Sonnet 5.5, file edits, shell, tests' });
-    expect(events.slice(1).map((e) => e.text)).toEqual(out.steps.map((s: { text: string }) => s.text));
+    expect(events.filter((e) => e.type === 'step').map((e) => e.text)).toEqual(out.steps.map((s: { text: string }) => s.text));
+
+    // While the model worked, the screen could watch the copy live (V2 A). The live view closed
+    // before the free checks and final pictures, which start the page themselves.
+    expect(seen.watched).toEqual([out.run.path]);
+    expect(events[1]).toMatchObject({ type: 'live', url: 'http://127.0.0.1:5173/' });
+    const closed = events.findIndex((e) => e.type === 'live' && e.url === null);
+    expect(events[closed]?.note).toBe('Live view closed: the build is done. The final pictures follow.');
+    expect(events[closed + 1]).toMatchObject({ type: 'step', text: 'Running free checks' });
+    expect(seen.liveStops).toBeGreaterThanOrEqual(1);
+    expect(seen.task?.prompt).toContain('Don’t start another dev server');
 
     // Then the project's tests ran in the copy and passed first time; the data folder sync was tried.
     expect(out.steps.slice(-10).map((s: { text: string }) => s.text)).toEqual([
@@ -317,6 +337,8 @@ describe('build_feature', () => {
     expect((await build()).error).toMatch(/^Claude is overloaded Sonnet 5.5 has now failed 3 times in a row, so it’s switched off\. Switch it back on in Tools/);
     const health = JSON.parse(await readFile(join(data, 'tool-health', 'sonnet-5-5.json'), 'utf8'));
     expect(health.off.reason).toBe('3 failures in a row (last: Claude is overloaded).');
+    // A failed build still closes its live view, so nothing keeps running in the copy.
+    expect(seen.liveStops).toBe(3);
 
     // Switched off: refused before any copy is made or money spent.
     const runs = git(code, 'worktree', 'list').trim().split('\n').length;
