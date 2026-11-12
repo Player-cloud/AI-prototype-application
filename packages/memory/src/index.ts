@@ -59,6 +59,8 @@ export { changedFiles, looksLikeKey, rateTool, realGit, setRating, syncDataRepo,
 
 export {
   KEEP_FAILURES,
+  causeWords,
+  countsAgainst,
   checkHealth,
   emptyHealth,
   healthNote,
@@ -69,6 +71,7 @@ export {
   switchOff,
   switchOn,
   writeHealth,
+  type FailureCause,
   type ToolFailure,
   type ToolHealth,
 } from './health.js';

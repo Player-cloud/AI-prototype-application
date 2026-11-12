@@ -64,6 +64,8 @@ export function pickClaudeModel(job: Job, opts: { sensitive?: boolean; multiFile
   return CLAUDE_MODEL_BY_JOB[job];
 }
 
+export { failureCause, type Cause } from './causes.js';
+
 export { BUILD_TOOLS, claudeEnv, sandboxEnv, createClaudeAdapter, preToolUseHook, stepText, friendlyError, redact, type ClaudeAdapterOptions, type QueryFn, type SdkMessage } from './claude.js';
 
 /** Plain name for a model id, e.g. "claude-haiku-5-5" -> "Haiku 5.5". */

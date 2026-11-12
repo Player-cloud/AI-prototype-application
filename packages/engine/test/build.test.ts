@@ -539,22 +539,22 @@ describe('build_feature', () => {
   it('switches the build model off after 3 failures in a row, and refuses it until switched back on', async () => {
     const seen: Seen = { answers: [] };
     const settings = { dataFolder: data, codeFolders: { 'club-hr': code } };
-    const d = deps(seen, true, { fail: 'Claude is overloaded' });
+    const d = deps(seen, true, { fail: 'Claude ended without an answer' });
     let tick = 0;
     d.now = () => new Date(NOW.getTime() + 1000 * tick++); // each run gets its own copy
     const call = await plan(d, settings);
     const build = () => call('build_feature', { settings, slug: 'club-hr', feature: 'F-01', provider: 'claude', apiKey: FAKE_KEY, dbPath: null });
-    expect((await build()).error).toMatch(/^Claude is overloaded \(Saved here/);
-    expect((await build()).error).toMatch(/^Claude is overloaded \(Saved here/);
-    expect((await build()).error).toMatch(/^Claude is overloaded Sonnet 5.5 has now failed 3 times in a row, so it’s switched off\. Switch it back on in Tools/);
+    expect((await build()).error).toMatch(/^Claude ended without an answer \(Saved here/);
+    expect((await build()).error).toMatch(/^Claude ended without an answer \(Saved here/);
+    expect((await build()).error).toMatch(/^Claude ended without an answer Sonnet 5.5 has now failed 3 times in a row, so it’s switched off\. Switch it back on in Tools/);
     const health = JSON.parse(await readFile(join(data, 'tool-health', 'sonnet-5-5.json'), 'utf8'));
-    expect(health.off.reason).toBe('3 failures in a row (last: Claude is overloaded).');
+    expect(health.off.reason).toBe('3 failures in a row (last: Claude ended without an answer).');
     // A failed build still closes its live view, so nothing keeps running in the copy.
     expect(seen.liveStops).toBe(3);
 
     // Switched off: refused before any copy is made or money spent.
     const runs = git(code, 'worktree', 'list').trim().split('\n').length;
-    expect((await build()).error).toBe('Sonnet 5.5 is switched off: 3 failures in a row (last: Claude is overloaded). Switch it back on in Tools to use it again.');
+    expect((await build()).error).toBe('Sonnet 5.5 is switched off: 3 failures in a row (last: Claude ended without an answer). Switch it back on in Tools to use it again.');
     expect(git(code, 'worktree', 'list').trim().split('\n')).toHaveLength(runs);
 
     // The Tools screen lists it (it isn't in the ledger) with the flag for its button.
@@ -564,7 +564,7 @@ describe('build_feature', () => {
     expect(overview.result.tools.find((t: { name: string }) => t.name === 'Sonnet 5.5')).toMatchObject({
       status: 'not in the ledger yet',
       switchedOff: true,
-      health: 'Switched off: 3 failures in a row (last: Claude is overloaded).',
+      health: 'Switched off: 3 failures in a row (last: Claude ended without an answer).',
     });
 
     // Switching it back on clears the count; the sync fails here (not a git clone) but the file is saved.
@@ -573,6 +573,33 @@ describe('build_feature', () => {
     const after = JSON.parse(await readFile(join(data, 'tool-health', 'sonnet-5-5.json'), 'utf8'));
     expect(after).toMatchObject({ off: null, consecutiveFailures: 0, retestDue: true });
     expect((await call('tool_switch_on', { settings, tool: 'Sonnet 5.5' })).error).toBe('Sonnet 5.5 isn’t switched off.');
+  });
+
+  it('doesn’t switch the model off for failures that aren’t its fault, and says so (Q-3)', async () => {
+    const settings = { dataFolder: data, codeFolders: { 'club-hr': code } };
+    const opts: { fail: string } = { fail: '' };
+    const d = deps({ answers: [] }, true, opts);
+    let tick = 0;
+    d.now = () => new Date(NOW.getTime() + 1000 * tick++);
+    const call = await plan(d, settings);
+    const build = () => call('build_feature', { settings, slug: 'club-hr', feature: 'F-01', provider: 'claude', apiKey: FAKE_KEY, dbPath: null });
+    for (const [fail, words] of [
+      ['Stopped: this run would have gone over its cost limit.', 'the run hit its cost limit'],
+      ['Could not reach Claude. Check the internet connection.', 'the internet connection dropped'],
+      ['529 overloaded_error', 'the provider was busy or down'],
+    ] as const) {
+      opts.fail = fail;
+      for (let i = 0; i < 3; i++) {
+        const err = (await build()).error as string;
+        expect(err).toContain(`Not counted against Sonnet 5.5: ${words}.`);
+        expect(err).not.toContain('switched off');
+      }
+      const health = JSON.parse(await readFile(join(data, 'tool-health', 'sonnet-5-5.json'), 'utf8'));
+      expect(health).toMatchObject({ off: null, consecutiveFailures: 0 });
+    }
+    // Nothing was switched off, so a good run still goes ahead.
+    opts.fail = '';
+    expect((await build()).error).toBeUndefined();
   });
 
   it('once joshua has chosen tools for a project, only builds with an approved model, and adds the project’s rules (CI-7)', async () => {

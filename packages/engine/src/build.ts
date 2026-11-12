@@ -15,6 +15,8 @@ import { mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import type { CheckResult, LiveState, Picture, PicturesResult } from '@aip/checks';
+import type { FailureCause } from '@aip/memory';
+import { failureCause } from '@aip/models';
 import type { ModelAdapter, Provider, ToolDecision } from '@aip/models';
 import { readBudget, recordSpend } from './budget.ts';
 import { compareClaims, type Claim } from './claims.ts';
@@ -376,10 +378,13 @@ export async function buildFeature(
         return out.text.trim();
       } catch (err) {
         if (stopped(signal)) throw new Error('Stopped.');
-        const off = await noteRun(settings, runInfo, { ok: false, error: (err as Error).message }, now);
+        // Q-3: only the model's own fault counts towards switching it off.
+        const cause: FailureCause = failureCause((err as Error).message);
+        const off = await noteRun(settings, runInfo, { ok: false, error: (err as Error).message, cause }, now);
+        const notCounted = cause === 'model' ? '' : ` Not counted against ${tool}: ${(await import('@aip/memory')).causeWords(cause)}.`;
         const sync = await syncAfter(settings, `Build ${p.slug} ${p.feature}: ${tool} failed`);
         const more = off ? ` ${tool} has now failed ${OFF_AFTER} times in a row, so it’s switched off. Switch it back on in Tools when you’re ready.` : '';
-        throw new Error(`${(err as Error).message}${more}${sync ? ` (${sync})` : ''}`);
+        throw new Error(`${(err as Error).message}${notCounted}${more}${sync ? ` (${sync})` : ''}`);
       }
     };
 
@@ -500,13 +505,13 @@ export async function buildFeature(
  * Records one model run in its health record (only when a data folder is set). Returns true when
  * this failure switched the tool off: OFF_AFTER failures in a row (D-2). Off never uninstalls.
  */
-async function noteRun(settings: AppSettings, t: { tool: string; id: string; version: string }, run: { ok: boolean; error?: string }, now: Date): Promise<boolean> {
+async function noteRun(settings: AppSettings, t: { tool: string; id: string; version: string }, run: { ok: true } | { ok: false; error?: string; cause: FailureCause }, now: Date): Promise<boolean> {
   if (!settings.dataFolder) return false;
   const m = await import('@aip/memory');
   // CI-1: the model ID is its version. A new one marks old evidence stale; a good run clears it.
   const computer = (await import('@aip/checks')).computerId();
   let h = m.recordRun(m.noteVersion(await m.readHealth(settings.dataFolder, t.tool, t.id), t.version, computer), run, now, computer);
-  const off = !run.ok && !h.off && h.consecutiveFailures >= OFF_AFTER;
+  const off = !run.ok && m.countsAgainst(run.cause) && !h.off && h.consecutiveFailures >= OFF_AFTER;
   if (off) h = m.switchOff(h, `${OFF_AFTER} failures in a row (last: ${h.failures.at(-1)?.error ?? 'unknown'}).`, now);
   await m.writeHealth(settings.dataFolder, h);
   return off;
@@ -539,7 +544,7 @@ async function noteCheckTools(settings: AppSettings, checks: CheckResult[], pict
     for (const use of c.checkToolUses(checks, picturesTaken, c.checkToolVersions())) {
       const before = await m.readHealth(settings.dataFolder, use.name, use.id);
       const seen = use.version ? m.noteVersion(before, use.version, computer) : before;
-      const after = m.recordRun(seen, use.ok ? { ok: true } : { ok: false, error: use.error }, now, computer);
+      const after = m.recordRun(seen, use.ok ? { ok: true } : { ok: false, error: use.error, cause: 'tool' }, now, computer);
       await m.writeHealth(settings.dataFolder, after);
       if (seen.stale && !before.stale) lines.push(`${use.name} updated to ${use.version}: ${after.stale ? 'it didn’t work this time, so it’s marked for a retest.' : 'it worked in this build, so its evidence is up to date.'}`);
     }

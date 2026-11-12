@@ -4,12 +4,14 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   KEEP_FAILURES,
+  checkHealth,
   emptyHealth,
   healthNote,
   listHealth,
   noteVersion,
   readHealth,
   recordRun,
+  causeWords,
   switchOff,
   switchOn,
   writeHealth,
@@ -34,7 +36,7 @@ describe('tool health records', () => {
 
   it('a good retest clears the stale mark and the new version becomes the tested one', () => {
     let h = noteVersion(noteVersion(emptyHealth('oc'), '1.2.0'), '1.3.0');
-    h = recordRun(h, { ok: false, error: 'timed out' }, T1);
+    h = recordRun(h, { ok: false, error: 'timed out', cause: 'model' }, T1);
     expect(h).toMatchObject({ stale: true, retestDue: true, consecutiveFailures: 1, lastRetest: { at: T1.toISOString(), ok: false } });
     h = recordRun(h, { ok: true }, T2);
     expect(h).toMatchObject({ stale: false, retestDue: false, testedVersion: '1.3.0', consecutiveFailures: 0, lastOk: T2.toISOString(), lastRetest: { ok: true } });
@@ -43,20 +45,20 @@ describe('tool health records', () => {
 
   it('counts failures in a row, keeps the newest, and never keeps key-shaped text', () => {
     let h = emptyHealth('oc');
-    for (let i = 0; i < KEEP_FAILURES + 5; i++) h = recordRun(h, { ok: false, error: `  error\n${i}  ` }, T1);
+    for (let i = 0; i < KEEP_FAILURES + 5; i++) h = recordRun(h, { ok: false, error: `  error\n${i}  `, cause: 'model' }, T1);
     expect(h.consecutiveFailures).toBe(KEEP_FAILURES + 5);
     expect(h.failures).toHaveLength(KEEP_FAILURES);
     expect(h.failures.at(-1)?.error).toBe(`error ${KEEP_FAILURES + 4}`);
     expect(healthNote(h)).toBe(`${KEEP_FAILURES + 5} failures in a row.`);
 
     // Obviously fake test value, not a real key.
-    h = recordRun(h, { ok: false, error: 'bad key sk-ant-test-0000000000000000' }, T1);
+    h = recordRun(h, { ok: false, error: 'bad key sk-ant-test-0000000000000000', cause: 'model' }, T1);
     expect(h.failures.at(-1)?.error).toBe('Failed (the message looked like it held a key, so it wasn’t kept).');
     expect(recordRun(h, { ok: true }, T2).consecutiveFailures).toBe(0);
   });
 
   it('switching off keeps the tool; switching on resets the count and retests', () => {
-    let h = recordRun(emptyHealth('oc'), { ok: false, error: 'x' }, T1);
+    let h = recordRun(emptyHealth('oc'), { ok: false, error: 'x', cause: 'model' }, T1);
     h = switchOff(h, '3 failures in a row.', T1);
     expect(healthNote(h)).toBe('Switched off: 3 failures in a row.');
     h = switchOn(h);
@@ -129,5 +131,52 @@ describe('versions per computer (CI-2)', () => {
     expect(h.computers.joshu).toMatchObject({ version: '4.14.0', testedVersion: '4.0.0', stale: true });
     const on = noteVersion(switchOn(noteVersion(emptyHealth('x'), '1', 'joshu')), '1', 'joshu');
     expect(on.retestDue).toBe(true);
+  });
+});
+
+  describe('only the model’s or the tool’s own failures count (Q-3)', () => {
+  const fail = (h: ReturnType<typeof emptyHealth>, cause: Parameters<typeof causeWords>[0]) => recordRun(h, { ok: false, error: `e ${cause}`, cause }, T1);
+
+  it('3 cost-limit stops in a row never reach the count, but are recorded', () => {
+    let h = emptyHealth('Sonnet 5.5', 'sonnet');
+    for (let i = 0; i < 3; i++) h = fail(h, 'budget');
+    expect(h.consecutiveFailures).toBe(0);
+    expect(h.failures.map((f) => f.cause)).toEqual(['budget', 'budget', 'budget']);
+    expect(healthNote(h)).toBe('Last failure not counted: the run hit its cost limit.');
+  });
+
+  it('3 model faults count', () => {
+    let h = emptyHealth('Sonnet 5.5', 'sonnet');
+    for (let i = 0; i < 3; i++) h = fail(h, 'model');
+    expect(h.consecutiveFailures).toBe(3);
+  });
+
+  it('model, budget, model, model: the budget stop doesn’t reset the count, so the third model fault is the third', () => {
+    let h = emptyHealth('Sonnet 5.5', 'sonnet');
+    const counts: number[] = [];
+    for (const c of ['model', 'budget', 'model', 'model'] as const) {
+      h = fail(h, c);
+      counts.push(h.consecutiveFailures);
+    }
+    expect(counts).toEqual([1, 1, 2, 3]);
+  });
+
+  it('a success still resets the count, and tool failures count', () => {
+    let h = fail(fail(emptyHealth('oc'), 'tool'), 'tool');
+    expect(h.consecutiveFailures).toBe(2);
+    h = recordRun(h, { ok: true }, T2);
+    expect(h.consecutiveFailures).toBe(0);
+  });
+
+  it('unknown causes are shown but don’t count', () => {
+    const h = fail(emptyHealth('oc'), 'unknown');
+    expect(h.consecutiveFailures).toBe(0);
+    expect(healthNote(h)).toBe('Last failure not counted: the cause isn’t clear.');
+  });
+
+  it('old records without a cause read fine, as unknown', () => {
+    const h = checkHealth(JSON.parse('{"consecutiveFailures": 2, "failures": [{"at": "x", "error": "y"}, {"at": "x", "error": "z", "cause": "nonsense"}]}'), 'oc');
+    expect(h.consecutiveFailures).toBe(2);
+    expect(h.failures.map((f) => f.cause)).toEqual(['unknown', 'unknown']);
   });
 });

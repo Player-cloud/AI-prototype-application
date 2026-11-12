@@ -11,7 +11,35 @@ import { join } from 'node:path';
 import { slugify } from './projects.js';
 import { looksLikeKey } from './sync.js';
 
-export interface ToolFailure { at: string; error: string }
+/**
+ * Why a run failed (Q-3). 'model' is a model's own fault and 'tool' is a tool's own fault; only
+ * these two count towards switching off. The rest (cost limit, network, provider, setup, a Stop,
+ * or not clear) are recorded so they show, but never count. A record from before Q-3 has no
+ * cause and reads as 'unknown'.
+ */
+export type FailureCause = 'model' | 'tool' | 'budget' | 'network' | 'provider' | 'setup' | 'stopped' | 'unknown';
+const CAUSES: readonly string[] = ['model', 'tool', 'budget', 'network', 'provider', 'setup', 'stopped', 'unknown'];
+
+export interface ToolFailure { at: string; error: string; cause?: FailureCause }
+
+/** Only the model's or the tool's own fault counts towards switching off. */
+export function countsAgainst(cause: FailureCause): boolean {
+  return cause === 'model' || cause === 'tool';
+}
+
+/** The cause in plain words, for messages ("the run hit its cost limit"). */
+export function causeWords(cause: FailureCause): string {
+  switch (cause) {
+    case 'model': return 'the model got it wrong';
+    case 'tool': return 'the tool failed';
+    case 'budget': return 'the run hit its cost limit';
+    case 'network': return 'the internet connection dropped';
+    case 'provider': return 'the provider was busy or down';
+    case 'setup': return 'the API key or credit needs attention';
+    case 'stopped': return 'you stopped it';
+    default: return 'the cause isn’t clear';
+  }
+}
 
 /**
  * CI-2: versions per computer. joshua's PC and laptop can have different versions of a tool; each
@@ -88,9 +116,11 @@ function cleanError(error: string): string {
 
 /**
  * Records one use of the tool. A success resets the failure count; if a retest was due, it
- * also clears the stale mark. A failure adds to the count and the failure list.
+ * also clears the stale mark. A failure goes in the failure list with
+ * its cause; it adds to the count only when the cause is the model's or the tool's own fault
+ * (Q-3). Any other cause leaves the count as it was (it doesn't reset it either).
  */
-export function recordRun(h: ToolHealth, run: { ok: boolean; error?: string }, now: Date, computer?: string): ToolHealth {
+export function recordRun(h: ToolHealth, run: { ok: true } | { ok: false; error?: string; cause: FailureCause }, now: Date, computer?: string): ToolHealth {
   const at = now.toISOString();
   const c = computer ? h.computers[computer] : undefined;
   const due = h.retestDue || (c?.retestDue ?? false);
@@ -105,8 +135,8 @@ export function recordRun(h: ToolHealth, run: { ok: boolean; error?: string }, n
       ...(c && computer && (c.retestDue || c.stale) ? { computers: { ...h.computers, [computer]: { ...c, stale: false, retestDue: false, testedVersion: c.version } } } : {}),
     };
   }
-  const failures = [...h.failures, { at, error: cleanError(run.error ?? '') }].slice(-KEEP_FAILURES);
-  return { ...h, consecutiveFailures: h.consecutiveFailures + 1, failures, lastRetest };
+  const failures = [...h.failures, { at, error: cleanError(run.error ?? ''), cause: run.cause }].slice(-KEEP_FAILURES);
+  return { ...h, consecutiveFailures: h.consecutiveFailures + (countsAgainst(run.cause) ? 1 : 0), failures, lastRetest };
 }
 
 /** Switches the tool off (it stays installed). */
@@ -133,6 +163,7 @@ export function checkHealth(raw: unknown, tool: string, id = slugify(tool)): Too
   const failures = Array.isArray(r.failures)
     ? r.failures
         .filter((f): f is ToolFailure => typeof f === 'object' && f !== null && typeof (f as ToolFailure).at === 'string' && typeof (f as ToolFailure).error === 'string')
+        .map((f) => ({ ...f, cause: CAUSES.includes(f.cause as string) ? (f.cause as FailureCause) : ('unknown' as const) }))
         .slice(-KEEP_FAILURES)
     : [];
   const off = typeof r.off === 'object' && r.off !== null && typeof (r.off as { at?: unknown }).at === 'string'
@@ -216,5 +247,7 @@ export function healthNote(h: ToolHealth): string {
   if (h.stale) parts.push(`Updated to ${h.version} since it was tested. It gets a quick retest next time it’s used.`);
   else if (h.retestDue) parts.push('It gets a quick retest next time it’s used.');
   if (h.consecutiveFailures > 0) parts.push(`${h.consecutiveFailures} failure${h.consecutiveFailures === 1 ? '' : 's'} in a row.`);
+  const last = h.failures.at(-1);
+  if (last && last.cause && !countsAgainst(last.cause)) parts.push(`Last failure not counted: ${causeWords(last.cause)}.`);
   return parts.join(' ');
 }
