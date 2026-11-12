@@ -114,7 +114,7 @@ async fn settings_save(
 /// else is refused. Only plain pass-throughs belong here. Nothing that touches keys, writes the
 /// settings, spends money or runs a build (those keep their own commands), and nothing the phone
 /// path uses on its own.
-const ENGINE_METHODS: [&str; 34] = [
+const ENGINE_METHODS: [&str; 38] = [
     "spend_summary",
     "gate_rules",
     "settings_check",
@@ -149,6 +149,10 @@ const ENGINE_METHODS: [&str; 34] = [
     "code_folder_check",
     "code_folder_create",
     "run_revert",
+    "decisions_get",
+    "decision_add",
+    "blocker_add",
+    "blocker_close",
 ];
 
 fn engine_method(method: &str) -> Result<&'static str, String> {
@@ -482,7 +486,19 @@ mod tests {
         for m in old {
             assert_eq!(engine_method(m), Ok(m), "{m} was lost");
         }
-        assert_eq!(old.len() + 1, ENGINE_METHODS.len(), "only run_revert was added since");
+        assert_eq!(old.len() + 5, ENGINE_METHODS.len(), "only run_revert and the four decisions methods were added since");
+    }
+
+    #[test]
+    fn decisions_and_blockers_are_allowed_and_need_no_token() {
+        // Plain text in joshua's own data folder, kept in the history: no key, no money, no outside service.
+        for m in ["decisions_get", "decision_add", "blocker_add", "blocker_close"] {
+            assert_eq!(engine_method(m), Ok(m), "{m} is missing");
+        }
+        // There is no way to edit or delete a decision.
+        for m in ["decision_edit", "decision_delete", "blocker_delete"] {
+            assert!(engine_method(m).is_err(), "{m} must not exist");
+        }
     }
 
     #[test]

@@ -30,7 +30,7 @@ const WAITING = {
   findings: [] as Finding[],
 };
 
-function fakeShell(opts: { map?: Record<string, unknown>; fail?: string; runs?: (typeof WAITING)[]; asks?: { id: number; at: string; slug: string; feature: string; branch: string; tool: string; input: string; reason: string }[] } = {}) {
+function fakeShell(opts: { blockers?: { id: string; date: string; text: string; feature?: string; open: boolean }[]; map?: Record<string, unknown>; fail?: string; runs?: (typeof WAITING)[]; asks?: { id: number; at: string; slug: string; feature: string; branch: string; tool: string; input: string; reason: string }[] } = {}) {
   let runs = [...(opts.runs ?? [])];
   let asks = [...(opts.asks ?? [])];
   const calls: { cmd: string; args?: Record<string, unknown> }[] = [];
@@ -96,6 +96,7 @@ function fakeShell(opts: { map?: Record<string, unknown>; fail?: string; runs?: 
         { slug: 'club-hr', name: 'Club HR', status: 'Spec ready', finished: true, updatedAt: '' },
       ] as T;
     }
+    if (cmd === 'decisions_get') return { version: 1, decisions: [], blockers: opts.blockers ?? [] } as T;
     if (cmd === 'project_map') return { version: 1, updatedAt: null, features: opts.map ?? {} } as T;
     if (cmd === 'interview_get' && p.slug === 'club-hr') {
       return { interview: { features: [{ id: 'F-01', name: 'Login', what: '' }, { id: 'F-02', name: 'Rota', what: '' }] } } as T;
@@ -128,6 +129,56 @@ describe('Build screen: project map', () => {
     const feature = (await screen.findByRole('option', { name: 'F-02 Rota' })).parentElement as HTMLSelectElement;
     fireEvent.change(feature, { target: { value: 'F-02' } });
     expect(await screen.findByText('New feature: no files yet.')).toBeTruthy();
+  });
+});
+
+describe('Build screen: open blockers', () => {
+  const blockers = [
+    { id: 'BLK-1', date: '2026-11-12', text: 'Waiting for the logo', feature: 'F-01', open: true },
+    { id: 'BLK-2', date: '2026-11-12', text: 'Old problem', feature: 'F-01', open: false },
+    { id: 'BLK-3', date: '2026-11-12', text: 'Rota data missing', feature: 'F-02', open: true },
+  ];
+  const builds = (shell: ReturnType<typeof fakeShell>) => shell.calls.filter((c) => c.cmd === 'build_feature').length;
+
+  it('shows the open blocker before Build, and asks inline Yes or No; No builds nothing', async () => {
+    const shell = fakeShell({ blockers });
+    render(<Build invoke={shell.invoke} makeChannel={shell.makeChannel} />);
+    const alert = await screen.findByRole('alert', { name: 'Blocked' });
+    expect(alert.textContent).toContain('Blocked: Waiting for the logo (BLK-1, F-01)');
+    expect(alert.textContent).not.toContain('Old problem');
+    expect(alert.textContent).not.toContain('Rota data missing');
+    fireEvent.click(screen.getByRole('button', { name: /^Build F-01/ }));
+    expect(await screen.findByText(/Build it anyway\?/)).toBeTruthy();
+    expect(builds(shell)).toBe(0);
+    fireEvent.click(screen.getByRole('button', { name: 'No' }));
+    expect(screen.queryByText(/Build it anyway\?/)).toBeNull();
+    expect(builds(shell)).toBe(0);
+  });
+
+  it('builds when joshua says Yes', async () => {
+    const shell = fakeShell({ blockers });
+    render(<Build invoke={shell.invoke} makeChannel={shell.makeChannel} />);
+    await screen.findByRole('alert', { name: 'Blocked' });
+    fireEvent.click(screen.getByRole('button', { name: /^Build F-01/ }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Yes, build anyway' }));
+    await waitFor(() => expect(builds(shell)).toBe(1));
+  });
+
+  it('builds at once, with no question, when the feature has no open blocker', async () => {
+    const shell = fakeShell({ blockers: [blockers[1]!, blockers[2]!] });
+    render(<Build invoke={shell.invoke} makeChannel={shell.makeChannel} />);
+    await screen.findByText(/^Build F-01/, { selector: 'button' });
+    await waitFor(() => expect(shell.calls.some((c) => c.cmd === 'decisions_get')).toBe(true));
+    expect(screen.queryByRole('alert', { name: 'Blocked' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /^Build F-01/ }));
+    await waitFor(() => expect(builds(shell)).toBe(1));
+    expect(screen.queryByText(/Build it anyway\?/)).toBeNull();
+  });
+
+  it('a blocker with no feature blocks every feature', async () => {
+    const shell = fakeShell({ blockers: [{ id: 'BLK-9', date: 'x', text: 'No budget', open: true }] });
+    render(<Build invoke={shell.invoke} makeChannel={shell.makeChannel} />);
+    expect((await screen.findByRole('alert', { name: 'Blocked' })).textContent).toContain('Blocked: No budget (BLK-9, whole project)');
   });
 });
 

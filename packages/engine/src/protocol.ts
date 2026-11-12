@@ -36,6 +36,13 @@
  *  - project_map: {settings, project} -> the project's map (projects/<project>/map.json): per feature the
  *    files and tests its kept builds changed (repo-relative, forward slashes). An empty map when
  *    there is none yet. Free; changes nothing.
+ *  - decisions_get: {settings, slug} -> projects/<slug>/decisions.json: decisions joshua made and blockers
+ *    (open or closed). Empty when there is none. Free; changes nothing.
+ *  - decision_add: {settings, slug, text, why?, feature?, dbPath?} -> appends a decision (DEC-n; never edited
+ *    or deleted). Text is capped at 500 characters and refused if it looks like a key. In the history.
+ *  - blocker_add: {settings, slug, text, feature?, dbPath?} -> adds an open blocker (BLK-n). In the history.
+ *  - blocker_close: {settings, slug, id, note?, dbPath?} -> closes a blocker with an optional note. In the history.
+ *    Builds are told the newest decisions; an open blocker makes the Build screen ask first (the engine still builds).
  *  - environment_check: {settings} -> checks this computer (Node, pnpm, git, browser, check tools),
  *    saves it as environments/<computer>.json in the data folder and syncs. Free.
  *  - tool_rate: {settings, tool, rating} -> saves a 1–5 rating in ledger.md and syncs the data repo.
@@ -121,6 +128,7 @@ import { setupPhone } from './phone.ts';
 import { checkUpdates, decideUpdateNow } from './updates.ts';
 import { approveProjectTools, projectTools } from './project-tools.ts';
 import { readMap } from './project-map.ts';
+import { addBlocker, addDecision, closeBlocker, readDecisions } from './decisions.ts';
 import { capabilityCentre } from './centre.ts';
 import type { CheckResult } from '@aip/checks';
 import type { Job, ModelAdapter, Provider } from '@aip/models';
@@ -387,6 +395,22 @@ const HANDLERS: Record<string, Handler> = {
   project_map: (params) => {
     const p = obj(params);
     return readMap(checkSettings(p.settings), str(p, 'project'));
+  },
+  decisions_get: (params) => {
+    const p = obj(params);
+    return readDecisions(checkSettings(p.settings), str(p, 'slug'));
+  },
+  decision_add: (params, deps) => {
+    const p = obj(params);
+    return addDecision(checkSettings(p.settings), str(p, 'slug'), { text: p.text, why: p.why, feature: p.feature }, optionalPath(p, 'dbPath'), deps.now?.() ?? new Date());
+  },
+  blocker_add: (params, deps) => {
+    const p = obj(params);
+    return addBlocker(checkSettings(p.settings), str(p, 'slug'), { text: p.text, feature: p.feature }, optionalPath(p, 'dbPath'), deps.now?.() ?? new Date());
+  },
+  blocker_close: (params, deps) => {
+    const p = obj(params);
+    return closeBlocker(checkSettings(p.settings), str(p, 'slug'), { id: p.id, note: p.note }, optionalPath(p, 'dbPath'), deps.now?.() ?? new Date());
   },
   environment_check: (params, deps) => environmentCheck(checkSettings(obj(params).settings), deps.now?.() ?? new Date()),
   tool_rate: (params, deps) => {

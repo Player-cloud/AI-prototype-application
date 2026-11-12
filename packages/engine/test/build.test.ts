@@ -303,6 +303,23 @@ describe('build_feature', () => {
     expect(prompt).toContain('- …and 10 more');
   });
 
+  it('tells the build the project’s decisions (the newest 10), not its blockers', async () => {
+    const seen: Seen = { answers: [] };
+    const settings = { dataFolder: data, codeFolders: { 'club-hr': code } };
+    const call = await plan(deps(seen), settings);
+    const dbPath = join(root, 'history.sqlite');
+    for (let i = 1; i <= 12; i++) await call('decision_add', { settings, slug: 'club-hr', text: `Rule number ${i}`, dbPath });
+    await call('blocker_add', { settings, slug: 'club-hr', text: 'Waiting for the logo', feature: 'F-01', dbPath });
+    const r = await call('build_feature', { settings, slug: 'club-hr', feature: 'F-01', provider: 'claude', apiKey: FAKE_KEY, dbPath });
+    expect(r.error).toBeUndefined(); // an open blocker never stops the engine: joshua decides in the window
+    const prompt = seen.task!.prompt;
+    expect(prompt).toContain('Decisions joshua made — follow them:');
+    expect(prompt.split('\n').filter((l) => /^- DEC-\d+:/.test(l))).toHaveLength(10);
+    expect(prompt).toContain('- DEC-12: Rule number 12');
+    expect(prompt).not.toContain('Rule number 2\n');
+    expect(prompt).not.toContain('Waiting for the logo');
+  });
+
   it('asks for the done-list ids in test names, and marks each line from the test run', async () => {
     const settings = { dataFolder: data, codeFolders: { 'club-hr': code } };
     const seen: Seen = { answers: [] };

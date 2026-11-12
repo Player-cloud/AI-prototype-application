@@ -40,6 +40,7 @@ function fakeShell() {
 
   let settings = { dataFolder: '/data', codeFolders: {} as Record<string, string> };
   let approved: string[] | null = null;
+  const record = { decisions: [] as { id: string; date: string; text: string; why?: string }[], blockers: [] as { id: string; date: string; text: string; feature?: string; open: boolean; closedAt?: string; closedNote?: string }[] };
   const invoke: Invoke = routeEngine(async <T,>(cmd: string, args?: Record<string, unknown>) => {
     if (cmd === 'interview_suggest') {
       calls.push({ method: 'suggest', params: args ?? {} });
@@ -62,6 +63,17 @@ function fakeShell() {
       for (const [k, v] of Object.entries(settings.codeFolders)) if (!v) delete settings.codeFolders[k];
       calls.push({ method: 'settings_save', params: args ?? {} });
       return structuredClone(settings) as T;
+    }
+    if (cmd === 'decisions_get' || cmd === 'decision_add' || cmd === 'blocker_add' || cmd === 'blocker_close') {
+      const a = args ?? {};
+      if (cmd !== 'decisions_get') calls.push({ method: cmd, params: a });
+      if (cmd === 'decision_add') {
+        if (String(a.text).startsWith('sk-')) throw 'The decision looks like it has a key or password in it.';
+        record.decisions.push({ id: `DEC-${record.decisions.length + 1}`, date: '2026-11-12', text: a.text as string, ...(a.why ? { why: a.why as string } : {}) });
+      }
+      if (cmd === 'blocker_add') record.blockers.push({ id: `BLK-${record.blockers.length + 1}`, date: '2026-11-12', text: a.text as string, ...(a.feature ? { feature: a.feature as string } : {}), open: true });
+      if (cmd === 'blocker_close') record.blockers = record.blockers.map((b) => (b.id === a.id ? { ...b, open: false, closedAt: '2026-11-12', ...(a.note ? { closedNote: a.note as string } : {}) } : b));
+      return { version: 1, ...structuredClone(record), summary: cmd === 'decisions_get' ? '' : 'Saved.' } as T;
     }
     if (cmd === 'project_tools' || cmd === 'project_tools_approve') {
       if (cmd === 'project_tools_approve') {
@@ -223,6 +235,46 @@ describe('Projects: plan interview', () => {
     expect(await within(ptools).findByText('Approved 2 tools for club-hr. Synced with GitHub.')).toBeTruthy();
     expect(shell.calls.find((c) => c.method === 'project_tools_approve')?.params).toEqual({ slug: 'club-hr', tools: ['secretlint', 'axe-core'] });
     expect(within(ptools).getByText(/You approved 2\. Builds for this project only use an approved model/)).toBeTruthy();
+  });
+
+  it('lists, adds decisions and blockers, and closes a blocker with a note', async () => {
+    const shell = fakeShell();
+    render(<Projects invoke={shell.invoke} />);
+    await screen.findByText(/No projects yet/);
+    fireEvent.change(screen.getByLabelText('Project name'), { target: { value: 'Club HR' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Start planning' }));
+    const panel = await screen.findByRole('region', { name: 'Decisions and blockers' });
+    expect(await within(panel).findByText('No decisions yet.')).toBeTruthy();
+    expect(within(panel).getByText('Nothing is blocking this project.')).toBeTruthy();
+
+    fireEvent.change(within(panel).getByLabelText('Decision'), { target: { value: 'Use SQLite' } });
+    fireEvent.change(within(panel).getByLabelText('Why (optional)'), { target: { value: 'No server' } });
+    fireEvent.click(within(panel).getByRole('button', { name: 'Add decision' }));
+    const list = await within(panel).findByRole('list', { name: 'Decisions' });
+    expect(list.textContent).toContain('DEC-1');
+    expect(list.textContent).toContain('Use SQLite');
+    expect(list.textContent).toContain('Why: No server');
+    expect(shell.calls.find((c) => c.method === 'decision_add')?.params).toEqual({ slug: 'club-hr', text: 'Use SQLite', why: 'No server' });
+
+    // A refusal is shown in plain words and nothing is added.
+    fireEvent.change(within(panel).getByLabelText('Decision'), { target: { value: 'sk-ant-abcdefghijklmnop' } });
+    fireEvent.click(within(panel).getByRole('button', { name: 'Add decision' }));
+    expect((await within(panel).findByRole('alert')).textContent).toContain('looks like it has a key');
+    expect(within(panel).getByRole('list', { name: 'Decisions' }).querySelectorAll('li')).toHaveLength(1);
+
+    fireEvent.change(within(panel).getByLabelText('Blocker'), { target: { value: 'Waiting for the logo' } });
+    fireEvent.click(within(panel).getByRole('button', { name: 'Add blocker' }));
+    const open = await within(panel).findByRole('list', { name: 'Open blockers' });
+    expect(open.textContent).toContain('BLK-1');
+    expect(open.textContent).toContain('Waiting for the logo');
+
+    fireEvent.click(within(panel).getByRole('button', { name: 'Close blocker BLK-1' }));
+    fireEvent.change(within(panel).getByLabelText('Note for closing BLK-1'), { target: { value: 'Logo arrived' } });
+    fireEvent.click(within(panel).getByRole('button', { name: 'Close BLK-1' }));
+    const closed = await within(panel).findByRole('list', { name: 'Closed blockers' });
+    expect(closed.textContent).toContain('BLK-1 closed 2026-11-12: Waiting for the logo (Logo arrived)');
+    expect(within(panel).getByText('Nothing is blocking this project.')).toBeTruthy();
+    expect(shell.calls.find((c) => c.method === 'blocker_close')?.params).toEqual({ slug: 'club-hr', id: 'BLK-1', note: 'Logo arrived' });
   });
 
   it('lets you go back to a confirmed stage, saving what you typed first', async () => {

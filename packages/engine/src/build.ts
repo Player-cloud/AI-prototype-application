@@ -140,6 +140,16 @@ async function featureHint(settings: AppSettings, slug: string, feature: string)
   }
 }
 
+/** Decisions joshua made for this project (newest few, short), for the build prompt. Never fails a build. */
+async function decisionsFor(settings: AppSettings, slug: string): Promise<string> {
+  try {
+    const { readDecisions, decisionsHint } = await import('./decisions.ts');
+    return settings.dataFolder ? decisionsHint(await readDecisions(settings, slug)) : '';
+  } catch {
+    return '';
+  }
+}
+
 /** The done-list lines with their ids, and the ask to put the id in each test's name. Empty with no lines. */
 export function doneListPrompt(criteria: { id: string; text: string }[]): string[] {
   if (criteria.length === 0) return [];
@@ -419,7 +429,7 @@ export async function buildFeature(
     const { parseDoneList } = await import('@aip/checks');
     const criteria = parseDoneList(renderSpec(interview, new Date(interview.specAt ?? now))[`done/${p.feature}.md`] ?? '');
     const prompt =
-      buildPrompt(interview, p.feature, specText(interview, new Date(interview.specAt ?? now)), criteria) + (await answersFor(settings, p.slug)) + (await projectGuidance(settings, p.slug)) + (await featureHint(settings, p.slug, p.feature)) + (await guidance(settings, rulesFirst));
+      buildPrompt(interview, p.feature, specText(interview, new Date(interview.specAt ?? now)), criteria) + (await answersFor(settings, p.slug)) + (await projectGuidance(settings, p.slug)) + (await featureHint(settings, p.slug, p.feature)) + (await decisionsFor(settings, p.slug)) + (await guidance(settings, rulesFirst));
     let summary = await once(prompt, adapter);
 
     const runTests = deps.runTests ?? (await import('@aip/checks')).runTests;

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Invoke } from '../engine';
-import { listProjects, openProject, projectMap, type Feature, type MapFeature, type ProjectRow } from '../projects';
+import { getDecisions, listProjects, openBlockersFor, openProject, projectMap, type Decisions, type Feature, type MapFeature, type ProjectRow } from '../projects';
 import { getSettings } from '../settings';
 import { CHECK_NAME, LEVEL_HEADING, LEVEL_ORDER, approvePackages, findingsAt, costSoFar, DONE_MARK, doneList, neverCheckedLine, endedWords, endedEarly, compareWorkflows, decideAsk, decideRun, keepable, revertRun, listAsks, listRuns, listWork, needsPackageOk, pollPhone, rateRun, startBuild, stopBuild, type BuildResult, type BuildRun, type AskRequest, type BuildStep, type LiveView, type MakeChannel, type WorkItem, type WorkflowRow } from '../build';
 
@@ -97,6 +97,8 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
   const [reload, setReload] = useState(0);
   const [map, setMap] = useState<Record<string, MapFeature>>({});
   const lastReload = useRef(0);
+  const [decisions, setDecisions] = useState<Decisions | null>(null);
+  const [sure, setSure] = useState(false);
 
   useEffect(() => {
     if (!invoke) return;
@@ -152,6 +154,22 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
     };
   }, [invoke, slug, runsKey]);
 
+  // Blockers: read when the project changes. Advice only, so a failure is quiet.
+  useEffect(() => {
+    if (!invoke || !slug) return;
+    let live = true;
+    setDecisions(null);
+    getDecisions(invoke, slug).then(
+      (d) => live && setDecisions(d),
+      () => undefined,
+    );
+    return () => {
+      live = false;
+    };
+  }, [invoke, slug]);
+
+  useEffect(() => setSure(false), [slug, feature]);
+
   // CI-4: the comparison follows the builds (new, kept, undone or rated). It's advice, so a failure is quiet.
   useEffect(() => {
     if (!invoke || !runsKey) return;
@@ -183,6 +201,8 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
       </section>
     );
   }
+
+  const blockers = openBlockersFor(decisions, feature);
 
   async function onBuild() {
     if (!invoke || !makeChannel) return;
@@ -370,9 +390,32 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
               Stop
             </button>
           ) : (
-            <button type="button" disabled={!slug || !feature} onClick={() => void onBuild()}>
+            <button type="button" disabled={!slug || !feature} onClick={() => (blockers.length > 0 ? setSure(true) : void onBuild())}>
               Build {feature} (costs up to {limit})
             </button>
+          )}
+        </div>
+      )}
+      {blockers.length > 0 && !running && (
+        <div className="key-note bad" role="alert" aria-label="Blocked">
+          <ul>
+            {blockers.map((b) => (
+              <li key={b.id}>
+                Blocked: {b.text} ({b.id}
+                {b.feature ? `, ${b.feature}` : ', whole project'})
+              </li>
+            ))}
+          </ul>
+          {sure && (
+            <p className="key-controls">
+              Something is blocking {feature}. Build it anyway?{' '}
+              <button type="button" onClick={() => { setSure(false); void onBuild(); }}>
+                Yes, build anyway
+              </button>
+              <button type="button" onClick={() => setSure(false)}>
+                No
+              </button>
+            </p>
           )}
         </div>
       )}
