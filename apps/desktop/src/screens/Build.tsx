@@ -520,7 +520,11 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
           <h3>Ways of building compared</h3>
           <ul>
             {workflows.map((w) => (
-              <li key={w.model}>{w.text}</li>
+              <li key={w.model}>
+                {w.text}
+                <br />
+                <span className={`confidence ${w.confidence.level}`}>{w.confidence.text}</span>
+              </li>
             ))}
           </ul>
           <p className="muted">From real builds on this computer, all projects. The app only advises: the model for each job stays your choice.</p>

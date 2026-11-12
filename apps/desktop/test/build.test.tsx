@@ -42,7 +42,7 @@ function fakeShell(opts: { map?: Record<string, unknown>; fail?: string; runs?: 
     if (cmd === 'run_list') return runs as T;
     if (cmd === 'workflow_compare') {
       return (runs.length
-        ? [{ model: 'claude-sonnet-5-5', name: 'Sonnet 5.5', finished: 0, kept: 0, safetyFailures: 0, text: 'Sonnet 5.5: no build kept or undone yet, 1 waiting.' }]
+        ? [{ model: 'claude-sonnet-5-5', name: 'Sonnet 5.5', finished: 0, kept: 0, safetyFailures: 0, text: 'Sonnet 5.5: no build kept or undone yet, 1 waiting.', confidence: { level: 'low', counted: 0, lastBuild: '12 Nov 2026', failed: 0, notCounted: 0, text: 'Low confidence: 0 builds counted, last build 12 Nov 2026, 0 failed (model or tool fault), 0 not counted, no kept builds yet.' } }]
         : []) as T;
     }
     if (cmd === 'work_poll') {
@@ -315,6 +315,7 @@ describe('Build screen', () => {
     // CI-4: each way of building, compared from real builds; advice only.
     const compared = await screen.findByRole('region', { name: 'Ways of building compared' });
     expect(within(compared).getByText('Sonnet 5.5: no build kept or undone yet, 1 waiting.')).toBeTruthy();
+    expect(within(compared).getByText(/^Low confidence: 0 builds counted, last build 12 Nov 2026,.*no kept builds yet\.$/).className).toBe('confidence low');
     expect(compared.textContent).toContain('the model for each job stays your choice');
     // It needs joshua, and it's on his phone, where he can reply.
     const needs = await screen.findByRole('region', { name: 'Needs you' });
