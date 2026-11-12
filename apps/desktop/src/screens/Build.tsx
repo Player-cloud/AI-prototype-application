@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Invoke } from '../engine';
 import { listProjects, openProject, projectMap, type Feature, type MapFeature, type ProjectRow } from '../projects';
 import { getSettings } from '../settings';
-import { CHECK_NAME, LEVEL_HEADING, LEVEL_ORDER, approvePackages, findingsAt, costSoFar, endedWords, endedEarly, compareWorkflows, decideAsk, decideRun, keepable, listAsks, listRuns, listWork, needsPackageOk, pollPhone, rateRun, startBuild, stopBuild, type BuildResult, type BuildRun, type AskRequest, type BuildStep, type LiveView, type MakeChannel, type WorkItem, type WorkflowRow } from '../build';
+import { CHECK_NAME, LEVEL_HEADING, LEVEL_ORDER, approvePackages, findingsAt, costSoFar, DONE_MARK, doneList, neverCheckedLine, endedWords, endedEarly, compareWorkflows, decideAsk, decideRun, keepable, listAsks, listRuns, listWork, needsPackageOk, pollPhone, rateRun, startBuild, stopBuild, type BuildResult, type BuildRun, type AskRequest, type BuildStep, type LiveView, type MakeChannel, type WorkItem, type WorkflowRow } from '../build';
 
 type Note = { text: string; bad: boolean } | null;
 
@@ -425,6 +425,19 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
               <pre className="test-output">{result.tests.output}</pre>
             </details>
           )}
+          {doneList(result.findings) && (
+            <div role="region" aria-label="Done list">
+              <h3>Done list</h3>
+              <p>{neverCheckedLine(doneList(result.findings)!)}</p>
+              <ul className="check-list">
+                {doneList(result.findings)!.map((l) => (
+                  <li key={l.id} className={l.status === 'tested' ? 'ok' : l.status === 'failed' ? 'bad' : 'note'}>
+                    {DONE_MARK[l.status]} · {l.id}: {l.text}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           <h3>Pictures</h3>
           <p className="muted">{result.picturesNote}</p>
           {result.pictures.length > 0 && (
@@ -441,7 +454,7 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
             <>
               <h3>Free checks</h3>
               {LEVEL_ORDER.map((level) => {
-                const at = findingsAt(result.findings, level);
+                const at = findingsAt(result.findings, level).filter((f) => f.check !== 'done-list' || level === 'block');
                 if (at.length === 0) return null;
                 return (
                   <div key={level} className={`finding-group ${level}`} role="group" aria-label={LEVEL_HEADING[level]}>

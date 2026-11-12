@@ -30,6 +30,28 @@ export function findingsAt(findings: Finding[], level: FindingLevel): Finding[] 
   return findings.filter((f) => f.level === level);
 }
 
+export type CoverageStatus = 'tested' | 'failed' | 'not-checked';
+export interface DoneLine { id: string; text: string; status: CoverageStatus }
+
+/** The done-list lines out of a build's coverage finding. null for an old row or a feature with no lines. */
+export function doneList(findings: Finding[]): DoneLine[] | null {
+  const f = findings.find((x) => x.check === 'done-list');
+  if (!f?.detail) return null;
+  const out: DoneLine[] = [];
+  for (const line of f.detail.split('\n')) {
+    const m = /^(D\d+) (✓ tested|✗ failed|– not checked): (.*)$/.exec(line);
+    if (m) out.push({ id: m[1]!, text: m[3]!, status: m[2] === '✓ tested' ? 'tested' : m[2] === '✗ failed' ? 'failed' : 'not-checked' });
+  }
+  return out.length ? out : null;
+}
+
+export const DONE_MARK: Record<CoverageStatus, string> = { tested: '✓ tested', failed: '✗ failed', 'not-checked': '– not checked' };
+
+/** "2 of 5 done-list lines were never checked". */
+export function neverCheckedLine(lines: DoneLine[]): string {
+  return `${lines.filter((l) => l.status === 'not-checked').length} of ${lines.length} done-list lines were never checked`;
+}
+
 /** Something the model's summary claims, beside what the app found (V2 B). null: the app didn't check it. */
 export interface Claim { topic: string; agrees: boolean | null; note: string }
 

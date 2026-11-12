@@ -25,7 +25,7 @@ import { guidance } from './learn.ts';
 import { usingLine } from './using.ts';
 import { adviceFor } from './workflows.ts';
 import { QUESTIONS_PROMPT, answersFor, questionsIn, shortenKeepingQuestions } from './questions.ts';
-import type { Interview } from './interview.ts';
+import { renderSpec, type Interview } from './interview.ts';
 import { getInterview } from './projects.ts';
 import { specText } from './review.ts';
 import { startRun, type StartedRun } from './runs.ts';
@@ -140,12 +140,22 @@ async function featureHint(settings: AppSettings, slug: string, feature: string)
   }
 }
 
-export function buildPrompt(iv: Interview, feature: string, spec: string): string {
+/** The done-list lines with their ids, and the ask to put the id in each test's name. Empty with no lines. */
+export function doneListPrompt(criteria: { id: string; text: string }[]): string[] {
+  if (criteria.length === 0) return [];
+  return [
+    `The done list has ids. Write at least one test per line and put the line’s id at the start of the test name, like it('D2: shows an error when the name is empty'). The app links tests to lines only by that id.`,
+    ...criteria.map((c) => `${c.id}: ${c.text}`),
+  ];
+}
+
+export function buildPrompt(iv: Interview, feature: string, spec: string, criteria: { id: string; text: string }[] = []): string {
   const f = iv.features.find((x) => x.id === feature);
   return [
     `Build feature ${feature}${f ? ` (${f.name})` : ''} of the web app "${iv.name}", and only that feature.`,
     'You are working in a separate copy of the project’s repo; it is your current folder. Change files only here.',
     `Build it so every check in done/${feature}.md passes. Add or update tests for it, and run them.`,
+    ...doneListPrompt(criteria),
     'Keep changes small. Don’t push, deploy, install things globally or call outside services: those need joshua’s OK and will be refused.',
     'Never read or write key files (.env, *.pem).',
     'The app already runs this copy’s page (next dev, vite or index.html) so joshua can watch it change. Don’t start another dev server: two in one folder clash.',
@@ -406,8 +416,10 @@ export async function buildFeature(
       }
     };
 
+    const { parseDoneList } = await import('@aip/checks');
+    const criteria = parseDoneList(renderSpec(interview, new Date(interview.specAt ?? now))[`done/${p.feature}.md`] ?? '');
     const prompt =
-      buildPrompt(interview, p.feature, specText(interview, new Date(interview.specAt ?? now))) + (await answersFor(settings, p.slug)) + (await projectGuidance(settings, p.slug)) + (await featureHint(settings, p.slug, p.feature)) + (await guidance(settings, rulesFirst));
+      buildPrompt(interview, p.feature, specText(interview, new Date(interview.specAt ?? now)), criteria) + (await answersFor(settings, p.slug)) + (await projectGuidance(settings, p.slug)) + (await featureHint(settings, p.slug, p.feature)) + (await guidance(settings, rulesFirst));
     let summary = await once(prompt, adapter);
 
     const runTests = deps.runTests ?? (await import('@aip/checks')).runTests;
@@ -469,6 +481,9 @@ export async function buildFeature(
     for (const line of await noteCheckTools(settings, checks, shots.pictures.length > 0, now)) add({ text: line });
     const { canKeep, toFindings } = await import('@aip/checks');
     const findings = toFindings(checks);
+    const { coverageFinding, linkCriteria } = await import('@aip/checks');
+    const covered = coverageFinding(linkCriteria(criteria, tests.cases ?? []));
+    if (covered) findings.push(covered);
     const keep = canKeep([{ ...tests, name: 'tests' }, ...checks]);
     const synced = await syncAfter(settings, `Build ${p.slug} ${p.feature}`);
     if (p.dbPath && buildId !== null) {
@@ -495,7 +510,7 @@ export async function buildFeature(
       advice,
       steps,
       summary: shortenKeepingQuestions(summary, 2000),
-      claims: compareClaims(summary, [{ ...tests, name: 'tests' }, ...checks]),
+      claims: compareClaims(summary, [{ ...tests, name: 'tests' }, ...checks, ...(covered ? [{ name: 'done-list', passed: covered.level === 'pass', free: true, ...(covered.level === 'warn' ? { advisory: true } : {}), detail: covered.title }] : [])]),
       questions: questionsIn(summary),
       model,
       costUsd: spentUsd,

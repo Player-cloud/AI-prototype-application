@@ -9,6 +9,7 @@ import { execFile } from 'node:child_process';
 import { access, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { CheckResult } from './index.js';
+import { parseTestCases } from './coverage.js';
 
 export interface ExecResult { code: number; output: string }
 export type Exec = (cmd: string, args: string[], cwd: string, timeoutMs: number) => Promise<ExecResult>;
@@ -64,6 +65,16 @@ export async function packageManager(dir: string): Promise<'pnpm' | 'yarn' | 'np
 
 const tail = (t: string) => (t.length > KEEP_OUTPUT ? `…${t.slice(-KEEP_OUTPUT)}` : t).trim();
 
+/**
+ * Vitest and jest only print passing test names when asked, and the done-list coverage needs them.
+ * So for those two (and only those, when the script is one plain command) the same tests run with the names switched on. Other runners run as before.
+ */
+export function nameFlags(pm: 'pnpm' | 'yarn' | 'npm', script: string): string[] {
+  const flag = /\bvitest\b/.test(script) ? '--reporter=verbose' : /\bjest\b/.test(script) ? '--verbose' : '';
+  if (!flag || /&&|\|\||[;|]/.test(script) || /--reporters?\b|--verbose\b/.test(script)) return [];
+  return pm === 'npm' ? ['--', flag] : [flag];
+}
+
 export async function runTests(dir: string, exec: Exec = realExec): Promise<CheckResult> {
   let pkg: { scripts?: Record<string, string> };
   try {
@@ -77,6 +88,7 @@ export async function runTests(dir: string, exec: Exec = realExec): Promise<Chec
     const install = await exec(pm, INSTALL_ARGS, dir, TEN_MINUTES);
     if (install.code !== 0) return { name: 'tests', passed: false, free: true, detail: `Installing packages failed:\n${tail(install.output)}` };
   }
-  const r = await exec(pm, ['test'], dir, TEN_MINUTES);
-  return { name: 'tests', passed: r.code === 0, free: true, detail: tail(r.output) };
+  const r = await exec(pm, ['test', ...nameFlags(pm, pkg.scripts.test)], dir, TEN_MINUTES);
+  const cases = parseTestCases(r.output);
+  return { name: 'tests', passed: r.code === 0, free: true, detail: tail(r.output), ...(cases.length ? { cases } : {}) };
 }

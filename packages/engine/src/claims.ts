@@ -25,6 +25,7 @@ interface Topic {
 
 const TOPICS: Topic[] = [
   { topic: 'Tests', words: /\b(tests?|specs?)\b/i, check: 'tests' },
+  { topic: 'Done list', words: /\b(done[- ](list|file|checks?)|every (done )?(check|line|criteri\w+)|all (the )?(checks|criteria|requirements))\b/i, check: 'done-list' },
   { topic: 'Package audit', words: /\b(audit(ed|s)?|vulnerabilit(y|ies))\b/i, check: 'audit' },
   { topic: 'Secret scan', words: /\b(secrets?|api keys?|credentials?|\.env)\b/i, check: 'secrets' },
   { topic: 'Accessibility', words: /\b(accessib\w*|a11y|alt text|aria|screen readers?)\b/i, check: 'axe' },

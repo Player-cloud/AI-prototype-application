@@ -176,7 +176,7 @@ describe('build_feature', () => {
   /** A fake agent: tries a write in its copy, a push and a write outside, then reports. */
   type Seen = { task?: BuildTask; maxUsd?: number; answers: unknown[]; prompts?: string[]; caps?: number[]; previous?: unknown[]; watched?: string[]; liveStops?: number; homes?: string[]; removed?: string[] };
   /** opts.tests: what each test run gives (passes when it runs out); opts.fail: the model errors. */
-  function deps(seen: Seen, withBuild = true, opts: { tests?: boolean[]; fail?: string; noted?: string; tries?: [string, Record<string, unknown>][]; at?: Date; checks?: { name: string; passed: boolean; free: boolean; detail?: string; advisory?: boolean }[] } = {}): Deps {
+  function deps(seen: Seen, withBuild = true, opts: { tests?: boolean[]; cases?: { name: string; passed: boolean }[]; fail?: string; noted?: string; tries?: [string, Record<string, unknown>][]; at?: Date; checks?: { name: string; passed: boolean; free: boolean; detail?: string; advisory?: boolean }[] } = {}): Deps {
     const results = [...(opts.tests ?? [])];
     const adapter: ModelAdapter = {
       provider: 'claude',
@@ -265,7 +265,7 @@ describe('build_feature', () => {
       },
       async runTests() {
         const passed = results.length ? results.shift()! : true;
-        return { name: 'tests', passed, free: true, detail: passed ? '3 passed' : 'FAIL rota.test.ts: expected 2, got 3' };
+        return { name: 'tests', passed, free: true, detail: passed ? '3 passed' : 'FAIL rota.test.ts: expected 2, got 3', ...(opts.cases ? { cases: opts.cases } : {}) };
       },
     };
   }
@@ -301,6 +301,40 @@ describe('build_feature', () => {
     expect(prompt).toContain('Files this feature touched in earlier builds');
     expect(prompt.split('\n').filter((l) => /^- src\/f\d+\.ts$/.test(l))).toHaveLength(30);
     expect(prompt).toContain('- …and 10 more');
+  });
+
+  it('asks for the done-list ids in test names, and marks each line from the test run', async () => {
+    const settings = { dataFolder: data, codeFolders: { 'club-hr': code } };
+    const seen: Seen = { answers: [] };
+    const call = await plan(deps(seen), settings);
+    const dbPath = join(root, 'history.sqlite');
+    const r = await call('build_feature', { settings, slug: 'club-hr', feature: 'F-01', provider: 'claude', apiKey: FAKE_KEY, dbPath });
+    const prompt = seen.task!.prompt;
+    expect(prompt).toContain('put the line’s id at the start of the test name');
+    expect(prompt).toContain("it('D2:");
+    expect(prompt).toContain('D1: A member can sign in');
+    // No test names an id: the line is not checked, and that is advice only.
+    const f = r.result.findings.find((x: { check: string }) => x.check === 'done-list');
+    expect(f).toMatchObject({ level: 'warn', detail: 'D1 – not checked: A member can sign in' });
+    expect(r.result.keep.keep).toBe(true);
+    expect((await call('run_list', { dbPath, slug: 'club-hr' })).result[0].findings.at(-1).check).toBe('done-list');
+  });
+
+  it('marks a line tested when a passing test names its id', async () => {
+    const settings = { dataFolder: data, codeFolders: { 'club-hr': code } };
+    const call = await plan(deps({ answers: [] }, true, { cases: [{ name: 'D1: a member can sign in', passed: true }] }), settings);
+    const ok = await call('build_feature', { settings, slug: 'club-hr', feature: 'F-01', provider: 'claude', apiKey: FAKE_KEY, dbPath: join(root, 'history.sqlite') });
+    expect(ok.result.findings.at(-1)).toMatchObject({ check: 'done-list', level: 'pass', detail: 'D1 ✓ tested: A member can sign in' });
+  });
+
+  it('a linked failing test blocks Keep, as the failing tests already do', async () => {
+    const settings = { dataFolder: data, codeFolders: { 'club-hr': code } };
+    const seen: Seen = { answers: [] };
+    const call = await plan(deps(seen, true, { tests: [false, false, false, false], cases: [{ name: 'D1: a member can sign in', passed: false }] }), settings);
+    const r = await call('build_feature', { settings, slug: 'club-hr', feature: 'F-01', provider: 'claude', apiKey: FAKE_KEY, dbPath: join(root, 'history.sqlite') });
+    expect(r.result.findings.at(-1)).toMatchObject({ check: 'done-list', level: 'block' });
+    // The same blockers as without coverage: just the tests.
+    expect(r.result.keep).toEqual({ keep: false, blocking: ['tests'] });
   });
 
   it('builds one feature in its own copy, refusing what the gatekeeper or the copy rule stops', async () => {
@@ -373,7 +407,7 @@ describe('build_feature', () => {
     expect(out.screensChanged).toBeNull();
     // Advice-only findings are reported but don't stop Keep.
     expect(out.keep).toEqual({ keep: true, blocking: [] });
-    expect(out.findings.map((f: { check: string }) => f.check)).toEqual(['secrets', 'audit', 'checklist', 'axe', 'phone-overflow']);
+    expect(out.findings.map((f: { check: string }) => f.check)).toEqual(['secrets', 'audit', 'checklist', 'axe', 'phone-overflow', 'done-list']);
     expect(out.tests).toEqual({ passed: true, output: '3 passed', fixAttempts: 0 });
     expect(out.synced).toMatch(/^Saved here, but not synced yet: .*not a git clone/);
 
