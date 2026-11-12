@@ -1,10 +1,10 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtemp, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { BuildTask, ModelAdapter } from '@aip/models';
-import { checkStep, runCapUsd, staysInside } from '../src/build.ts';
+import { checkStep, runCapUsd, staysInside, staysInsideReal } from '../src/build.ts';
 import { checkSettings } from '../src/settings.ts';
 import { handleLine, type Deps, type Live } from '../src/protocol.ts';
 
@@ -23,7 +23,7 @@ describe('build run rules', () => {
     expect(() => checkSettings({ runCapGbp: 0 })).toThrow('Cost limit per build run (£) must be a number from 0.05 to 50');
   });
 
-  it('keeps every tool call inside the feature’s copy, then asks the gatekeeper', () => {
+  it('keeps every tool call inside the feature’s copy, then asks the gatekeeper', async () => {
     const run = join(tmpdir(), 'club-hr-runs', 'F-01-x');
     const s = checkSettings({});
     expect(staysInside(run, { file_path: join(run, 'src', 'a.ts') })).toBe(true);
@@ -36,13 +36,53 @@ describe('build run rules', () => {
     expect(staysInside(run, { command: 'cat /etc/passwd' })).toBe(false);
     expect(staysInside(run, { command: 'ls ~/.ssh' })).toBe(false);
     expect(staysInside(run, { command: 'type C:\\Users\\joshu\\secret.txt' })).toBe(false);
-    expect(checkStep(s, run, 'Edit', { file_path: '/elsewhere/a.ts' })).toEqual({ allow: false, reason: 'Only files in this feature’s own copy can be used.' });
-    expect(checkStep(s, run, 'Bash', { command: 'git push origin main' })).toEqual({
+    expect(await checkStep(s, run, 'Edit', { file_path: '/elsewhere/a.ts' })).toEqual({ allow: false, reason: 'Only files in this feature’s own copy can be used.' });
+    expect(await checkStep(s, run, 'Bash', { command: 'git push origin main' })).toEqual({
       allow: false,
       reason: 'Gatekeeper (push): pushing code needs joshua\'s OK. Not done; joshua will be asked later.',
     });
-    expect(checkStep(s, run, 'Read', { file_path: join(run, '.env') })).toEqual({ allow: false, reason: 'Gatekeeper (key-files): reading or writing key files is never allowed' });
-    expect(checkStep(s, run, 'Bash', { command: 'pnpm test' })).toEqual({ allow: true });
+    expect(await checkStep(s, run, 'Read', { file_path: join(run, '.env') })).toEqual({ allow: false, reason: 'Gatekeeper (key-files): reading or writing key files is never allowed' });
+    expect(await checkStep(s, run, 'Bash', { command: 'pnpm test' })).toEqual({ allow: true });
+  });
+});
+
+describe('links inside the copy', () => {
+  let base = '';
+  let run = '';
+  let outside = '';
+  beforeEach(async () => {
+    base = await mkdtemp(join(tmpdir(), 'aip-links-'));
+    run = join(base, 'copy');
+    outside = join(base, 'outside');
+    await mkdir(join(run, 'src'), { recursive: true });
+    await mkdir(outside);
+    await writeFile(join(outside, 'secret.txt'), 'secret');
+    await writeFile(join(run, 'src', 'a.ts'), 'x');
+    // A junction on Windows needs no admin; a plain folder link everywhere else.
+    await symlink(outside, join(run, 'link'), process.platform === 'win32' ? 'junction' : 'dir');
+  });
+  afterEach(async () => {
+    await rm(base, { recursive: true, force: true });
+  });
+
+  it('refuses a file reached through a link that points outside the copy', async () => {
+    expect(staysInside(run, { file_path: join(run, 'link', 'secret.txt') })).toBe(true); // the words alone look fine
+    expect(await staysInsideReal(run, { file_path: join(run, 'link', 'secret.txt') })).toBe(false);
+    expect(await staysInsideReal(run, { file_path: 'link/secret.txt' })).toBe(false);
+    expect(await staysInsideReal(run, { path: 'link' })).toBe(false);
+    expect(await staysInsideReal(run, { file_path: join(run, 'link', 'new.txt') })).toBe(false);
+  });
+
+  it('allows a normal file and a new file in the copy', async () => {
+    expect(await staysInsideReal(run, { file_path: join(run, 'src', 'a.ts') })).toBe(true);
+    expect(await staysInsideReal(run, { file_path: 'src/new/deeper/b.ts' })).toBe(true);
+    expect(await staysInsideReal(run, { command: 'pnpm test' })).toBe(true);
+  });
+
+  it('checkStep refuses a Read through the link with the copy-only reason', async () => {
+    const d = await checkStep(checkSettings({}), run, 'Read', { file_path: join(run, 'link', 'secret.txt') });
+    expect(d).toEqual({ allow: false, reason: 'Only files in this feature’s own copy can be used.' });
+    expect(await checkStep(checkSettings({}), run, 'Read', { file_path: join(run, 'src', 'a.ts') })).toEqual({ allow: true });
   });
 });
 
