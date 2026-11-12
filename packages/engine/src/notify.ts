@@ -8,6 +8,9 @@ import type { WorkItem } from '@aip/memory';
 import { GitHub, messagesRepo, type Fetch } from './github.ts';
 import type { AppSettings } from './settings.ts';
 
+/** Marks the app's own posts, so it never reads them as joshua's replies (10c). */
+export const SIGNATURE = '_Posted by AI Prototype._';
+
 export interface BuildNews {
   slug: string;
   feature: string;
@@ -38,9 +41,9 @@ export function buildBody(n: BuildNews): string {
     '',
     '> ' + (n.summary.trim().slice(0, 1500) || 'No summary.').replace(/\n/g, '\n> '),
     '',
-    'Keep or Undo it in the app on your PC.',
+    'Reply here with **keep**, **undo**, or a rating from **1** to **5**, or use the app on your PC. The app reads replies about once a minute while it’s open.',
     '',
-    '_Posted by AI Prototype._',
+    SIGNATURE,
   ].join('\n');
 }
 
@@ -98,7 +101,7 @@ export async function closeBuild(
   if (!item?.issue || !token) return '';
   try {
     const gh = new GitHub(token, await messagesRepo(settings), fetchImpl);
-    await gh.comment(item.issue, `${note}\n\n_Done on the PC. Posted by AI Prototype._`);
+    await gh.comment(item.issue, `${note} (Done on the PC.)\n\n${SIGNATURE}`);
     await gh.close(item.issue);
     return `Closed issue #${item.issue} on your phone.`;
   } catch (err) {

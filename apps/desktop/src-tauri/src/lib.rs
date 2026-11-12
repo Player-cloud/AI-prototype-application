@@ -274,6 +274,23 @@ fn github_token() -> Option<String> {
     keys::load(&OsKeyring, "github").ok()
 }
 
+/// How often the app reads replies from joshua's phone while it's open (step 10c).
+const PHONE_POLL: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// One look at the phone replies. Nothing happens without a GitHub token or a settings file.
+fn poll_phone(app: &tauri::AppHandle) -> Result<serde_json::Value, String> {
+    let Some(token) = github_token() else { return Ok(serde_json::json!({ "done": [], "changed": false })) };
+    let saved = settings::read(&settings_path(app)?)?;
+    let state = app.state::<Engine>();
+    engine_call(&state, "work_poll", serde_json::json!({ "settings": saved, "dbPath": spend_path(app)?, "githubToken": token }))
+}
+
+/// Checks phone replies now (the Build screen also asks about once a minute while it's shown).
+#[tauri::command]
+async fn work_poll(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
+    poll_phone(&app)
+}
+
 /// The "Needs you" panel: open work items, oldest first (step 10b).
 #[tauri::command]
 async fn work_list(app: tauri::AppHandle, state: tauri::State<'_, Engine>) -> Result<serde_json::Value, String> {
@@ -384,7 +401,16 @@ pub fn run() {
     tauri::Builder::default()
         .manage(Engine(Mutex::new(helper)))
         .manage(Build(Mutex::new(None)))
-        .invoke_handler(tauri::generate_handler![version, engine_status, key_status, key_save, key_remove, test_model, settings_get, settings_save, data_overview, spend_summary, tool_rate, tool_switch_on, data_sync, gate_rules, history_list, history_undo, project, interview_suggest, interview_review, build_feature, build_stop, run_list, run_decide, run_rate, github_test, work_list])
+        .setup(|app| {
+            // Reads phone replies in the background, so keep/undo from the phone works with any screen open.
+            let handle = app.handle().clone();
+            std::thread::spawn(move || loop {
+                std::thread::sleep(PHONE_POLL);
+                let _ = poll_phone(&handle);
+            });
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![version, engine_status, key_status, key_save, key_remove, test_model, settings_get, settings_save, data_overview, spend_summary, tool_rate, tool_switch_on, data_sync, gate_rules, history_list, history_undo, project, interview_suggest, interview_review, build_feature, build_stop, run_list, run_decide, run_rate, github_test, work_list, work_poll])
         .run(tauri::generate_context!())
         .expect("error while running the app");
 }

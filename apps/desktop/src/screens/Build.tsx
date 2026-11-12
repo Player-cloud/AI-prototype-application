@@ -2,11 +2,14 @@ import { useEffect, useState } from 'react';
 import type { Invoke } from '../engine';
 import { listProjects, openProject, type Feature, type ProjectRow } from '../projects';
 import { getSettings } from '../settings';
-import { CHECK_NAME, decideRun, keepable, listRuns, listWork, rateRun, startBuild, stopBuild, type BuildResult, type BuildRun, type BuildStep, type MakeChannel, type WorkItem } from '../build';
+import { CHECK_NAME, decideRun, keepable, listRuns, listWork, pollPhone, rateRun, startBuild, stopBuild, type BuildResult, type BuildRun, type BuildStep, type MakeChannel, type WorkItem } from '../build';
 
 type Note = { text: string; bad: boolean } | null;
 
 const STATUS: Record<BuildRun['status'], string> = { built: 'waiting for Keep or Undo', kept: 'kept', undone: 'undone' };
+
+/** How often the screen refreshes Builds and Needs you, to show what was done from the phone. */
+const REFRESH_MS = 30_000;
 
 /** "£0.80 ($1.01)" */
 export function limitText(gbp: number, gbpPerUsd: number): string {
@@ -68,6 +71,16 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
     };
   }, [invoke, slug]);
 
+  // Replies from the phone are read in the background (about once a minute); keep the lists fresh.
+  useEffect(() => {
+    if (!invoke || !slug) return;
+    const t = setInterval(() => {
+      listWork(invoke).then(setWork, () => undefined);
+      listRuns(invoke, slug).then(setRuns, () => undefined);
+    }, REFRESH_MS);
+    return () => clearInterval(t);
+  }, [invoke, slug]);
+
   if (!invoke || !makeChannel) {
     return (
       <section className="card">
@@ -125,6 +138,12 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
     }
   }
 
+  const checkPhone = () =>
+    act('Reading replies from your phone…', async () => {
+      const r = await pollPhone(invoke!);
+      return { text: r.done.length ? r.done.join(' ') : 'No new replies from your phone.', learned: [] };
+    });
+
   const decide = (r: BuildRun, keep: boolean) =>
     act(keep ? `Keeping ${r.feature}…` : `Undoing ${r.feature}…`, async () => {
       const d = await decideRun(invoke!, r.id, keep);
@@ -163,6 +182,11 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
               </li>
             ))}
           </ul>
+          {work.some((w) => w.issue) && (
+            <button type="button" disabled={busy || running} onClick={() => void checkPhone()}>
+              Check phone replies now
+            </button>
+          )}
         </div>
       )}
       {projects && projects.length === 0 && (
