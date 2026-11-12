@@ -332,6 +332,17 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
           <p className="muted">
             Built in {result.run.path} on branch {result.run.branch}. Your own copy wasn’t touched.
           </p>
+          {result.questions && result.questions.length > 0 && (
+            <div role="region" aria-label="The model’s questions">
+              <h3>The model’s questions</h3>
+              <p className="muted">It carried on with the safest choice. Answer from the build’s issue on your phone (“answer 1: …”); later builds of this project follow your answers.</p>
+              <ol>
+                {result.questions.map((q) => (
+                  <li key={q}>{q}</li>
+                ))}
+              </ol>
+            </div>
+          )}
           <h3>Tests</h3>
           <p>{result.tests.passed ? 'All tests pass.' : 'Tests fail.'}</p>
           {result.tests.output && (

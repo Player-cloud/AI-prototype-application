@@ -24,6 +24,11 @@ export interface BuildNews {
   summary: string;
   /** What the summary claims, checked against the app's own results (V2 B): "✓ Tests: …". */
   claims?: string[];
+  /** D: the model's questions (it carried on with the safest choice meanwhile). */
+  questions?: string[];
+  /** D: the build's pictures on the data repo, and a note when they couldn't go there. */
+  pictures?: { name: string; url: string }[];
+  picturesNote?: string;
 }
 
 export function buildTitle(n: BuildNews): string {
@@ -46,6 +51,17 @@ export function buildBody(n: BuildNews): string {
     '> ' + (n.summary.trim().slice(0, 1500) || 'No summary.').replace(/\n/g, '\n> '),
     '',
     ...(n.claims?.length ? ['What the app found about those claims:', '', ...n.claims.map((c) => `- ${c}`), ''] : []),
+    ...(n.pictures?.length ? ['Pictures:', '', ...n.pictures.map((p) => `![${p.name}](${p.url})`), ''] : n.picturesNote ? [`Pictures: ${n.picturesNote}`, ''] : []),
+    ...(n.questions?.length
+      ? [
+          'The model’s questions (it carried on with the safest choice meanwhile):',
+          '',
+          ...n.questions.map((q, i) => `${i + 1}. ${q}`),
+          '',
+          'To answer, reply **answer 1:** and your answer (or **answer 2:** and so on). Later builds of this project follow your answers.',
+          '',
+        ]
+      : []),
     'Reply here with **keep**, **undo**, or a rating from **1** to **5**, or use the app on your PC. The app reads replies about once a minute while it’s open.',
     '',
     SIGNATURE,
@@ -118,4 +134,41 @@ export async function closeBuild(
 export function listWork(dbPath: string): Promise<WorkItem[]> {
   // The phone-control issue is a place to give orders, not something waiting for joshua.
   return withItems(dbPath, (w) => w.listOpen().filter((i) => i.kind === 'build'));
+}
+
+/** Picture names that are safe as file names. */
+const SAFE_NAME = /^[a-z0-9-]{1,40}$/;
+
+/**
+ * D: puts the build's pictures on the private data repo (pictures/<slug>/<run>-<name>.png) so the
+ * build's issue can show them on the phone. Only when they reached GitHub; otherwise a note.
+ */
+export async function publishPictures(
+  settings: AppSettings,
+  slug: string,
+  runId: number,
+  pictures: { name: string; path: string }[],
+): Promise<{ links: { name: string; url: string }[]; note: string }> {
+  if (!pictures.length) return { links: [], note: '' };
+  if (!settings.dataFolder) return { links: [], note: 'on your PC only (no data folder set).' };
+  const { copyFile, mkdir } = await import('node:fs/promises');
+  const { join } = await import('node:path');
+  const m = await import('@aip/memory');
+  if (!m.SLUG.test(slug)) return { links: [], note: 'on your PC only.' };
+  const dir = join(settings.dataFolder, 'pictures', slug);
+  await mkdir(dir, { recursive: true });
+  const files: { name: string; file: string }[] = [];
+  for (const p of pictures) {
+    if (!SAFE_NAME.test(p.name)) continue;
+    const file = `${runId}-${p.name}.png`;
+    await copyFile(p.path, join(dir, file));
+    files.push({ name: p.name, file });
+  }
+  try {
+    await m.syncDataRepo(settings.dataFolder, `Pictures for ${slug} build ${runId}`);
+  } catch (err) {
+    return { links: [], note: `on your PC only for now: ${(err as Error).message}` };
+  }
+  const repo = await messagesRepo(settings);
+  return { links: files.map((f) => ({ name: f.name, url: `https://github.com/${repo}/blob/HEAD/pictures/${slug}/${f.file}?raw=true` })), note: '' };
 }

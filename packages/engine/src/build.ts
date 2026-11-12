@@ -19,6 +19,7 @@ import { gate } from './gate.ts';
 import { guidance } from './learn.ts';
 import { usingLine } from './using.ts';
 import { adviceFor } from './workflows.ts';
+import { QUESTIONS_PROMPT, answersFor, questionsIn, shortenKeepingQuestions } from './questions.ts';
 import type { Interview } from './interview.ts';
 import { getInterview } from './projects.ts';
 import { specText } from './review.ts';
@@ -58,6 +59,8 @@ export interface BuildResult {
   summary: string;
   /** What the summary claims, beside what the app's own tests and checks found (V2 B). */
   claims: Claim[];
+  /** D: what the model had to guess, for joshua to answer (it carried on with the safest choice). */
+  questions: string[];
   model: string;
   /** What every model run in this build cost together. */
   costUsd: number | null;
@@ -94,6 +97,7 @@ export function buildPrompt(iv: Interview, feature: string, spec: string): strin
     'Never read or write key files (.env, *.pem).',
     'The app already runs this copy’s page (next dev, vite or index.html) so joshua can watch it change. Don’t start another dev server: two in one folder clash.',
     'When you’re done, reply with a short plain-words summary of what you changed and what the tests showed.',
+    QUESTIONS_PROMPT,
     '',
     spec,
   ].join('\n');
@@ -258,7 +262,8 @@ export async function buildFeature(
       }
     };
 
-    const prompt = buildPrompt(interview, p.feature, specText(interview, new Date(interview.specAt ?? now))) + (await guidance(settings, rulesFirst));
+    const prompt =
+      buildPrompt(interview, p.feature, specText(interview, new Date(interview.specAt ?? now))) + (await answersFor(settings, p.slug)) + (await guidance(settings, rulesFirst));
     let summary = await once(prompt, adapter);
 
     const runTests = deps.runTests ?? (await import('@aip/checks')).runTests;
@@ -337,7 +342,7 @@ export async function buildFeature(
           costUsd: spentUsd,
           testsPassed: tests.passed,
           fixAttempts: fixes,
-          summary: summary.slice(0, 2000),
+          summary: shortenKeepingQuestions(summary, 2000),
           checks: checks.map((c) => ({ name: c.name, passed: c.passed, advisory: c.advisory ?? false, detail: c.detail ?? '' })),
           pictures: shots.pictures,
           ms: Math.max(0, (deps.now?.() ?? new Date()).getTime() - now.getTime()),
@@ -352,8 +357,9 @@ export async function buildFeature(
       using,
       advice,
       steps,
-      summary: summary.slice(0, 2000),
+      summary: shortenKeepingQuestions(summary, 2000),
       claims: compareClaims(summary, [{ ...tests, name: 'tests' }, ...checks]),
+      questions: questionsIn(summary),
       model,
       costUsd: spentUsd,
       tests: { passed: tests.passed, output: tests.detail ?? '', fixAttempts: fixes },

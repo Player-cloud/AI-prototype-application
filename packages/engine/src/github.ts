@@ -23,7 +23,8 @@ export async function messagesRepo(settings: AppSettings): Promise<string> {
   const { realGit } = await import('@aip/memory');
   let url = '';
   try {
-    url = await realGit(['remote', 'get-url', 'origin'], settings.dataFolder);
+    // The URL as configured (not rewritten by insteadOf), which names the GitHub repo.
+    url = await realGit(['config', '--get', 'remote.origin.url'], settings.dataFolder);
   } catch {
     throw new Error(`${settings.dataFolder} isn’t a git clone with a GitHub remote, so the app can’t post messages.`);
   }
