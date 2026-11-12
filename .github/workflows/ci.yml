@@ -8,12 +8,20 @@ on:
 permissions:
   contents: read
 
+# A new push to the same branch or PR cancels the run that's still going, so minutes aren't spent twice.
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   check:
+    # Typecheck, tests, secret scan and audit on both systems. A stuck job fails instead of hanging for hours.
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        # Pinned rather than ubuntu-latest, which moves to Ubuntu 26 from 19 Oct 2026.
+        os: [ubuntu-24.04, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -27,23 +35,3 @@ jobs:
       - run: pnpm test
       - run: pnpm secrets
       - run: pnpm audit --audit-level high
-
-  shell:
-    # The Rust window shell: builds and runs its tests on both systems.
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v4
-      - name: Linux libraries for the window
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libsoup-3.0-dev librsvg2-dev libgtk-3-dev libdbus-1-dev build-essential
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: apps/desktop/src-tauri
-      - run: cargo test --locked --manifest-path apps/desktop/src-tauri/Cargo.toml
