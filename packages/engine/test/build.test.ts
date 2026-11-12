@@ -258,6 +258,27 @@ describe('build_feature', () => {
     expect((await call('run_list', { dbPath, slug: 'club-hr' })).result[0].pictures).toEqual([{ name: 'desktop', path: out.pictures[0].path, hash: 'h1' }]);
   });
 
+  it('records the versions in use, so an update marks old evidence stale until it works again (CI-1)', async () => {
+    const seen: Seen = { answers: [] };
+    const settings = { dataFolder: data, codeFolders: { 'club-hr': code } };
+    const call = await plan(deps(seen), settings);
+    // axe-core's evidence is for an older version than the one installed now.
+    await mkdir(join(data, 'tool-health'), { recursive: true });
+    await writeFile(join(data, 'tool-health', 'axe-core.json'), JSON.stringify({ tool: 'axe-core', version: '4.0.0', testedVersion: '4.0.0' }));
+    const out = (await call('build_feature', { settings, slug: 'club-hr', feature: 'F-01', provider: 'claude', apiKey: FAKE_KEY, dbPath: null })).result;
+    const health = async (id: string) => JSON.parse(await readFile(join(data, 'tool-health', `${id}.json`), 'utf8'));
+    const { checkToolVersions } = await import('@aip/checks');
+    const axe = checkToolVersions()['axe-core'];
+
+    // The build model's ID is its version; the first one seen is the baseline.
+    expect(await health('sonnet-5-5')).toMatchObject({ id: 'sonnet-5-5', tool: 'Sonnet 5.5', version: 'claude-sonnet-5-5', testedVersion: 'claude-sonnet-5-5', stale: false });
+    // axe-core updated and worked in this build, so its evidence is now for the new version.
+    expect(await health('axe-core')).toMatchObject({ version: axe, testedVersion: axe, stale: false, retestDue: false });
+    expect(out.steps.map((x: { text: string }) => x.text)).toContain(`axe-core updated to ${axe}: it worked in this build, so its evidence is up to date.`);
+    expect(await health('secretlint')).toMatchObject({ tool: 'secretlint', consecutiveFailures: 0 });
+    expect(await health('playwright')).toMatchObject({ tool: 'Playwright', consecutiveFailures: 0 });
+  });
+
   it('does nothing when stopped before it starts', async () => {
     const seen = { answers: [] as unknown[] };
     const stop = new AbortController();

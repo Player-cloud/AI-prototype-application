@@ -95,7 +95,9 @@ You can answer from your phone: reply on the issue with **keep**, **undo**, or a
 
 ## Tool health
 
-Each tool has a small health record in the data repo, `tool-health/<tool>.json`: the version in use, the version its test evidence is for, and its recent failures. When a tool updates, its old evidence is marked stale and it gets a quick retest the next time it's used. A good run clears the mark. The Tools page shows this under each tool, for example "2 failures in a row." Each build model run counts as a use of that model (for example "Sonnet 5.5"); a Stop doesn't count. After 3 failures in a row the model is switched off, you're told, and builds refuse it until you press **Switch … back on** on the Tools page (it's then retested on its next use). Switching a tool off never uninstalls it.
+Each tool has a stable ID: its card's file name in `tools/` (for example `haiku`), or its ledger name as a slug when it has no card. Cards are matched to ledger lines by best fit, the same whatever the line order; a card can also name its line exactly with `Ledger: <name>`, and say `Kind:` (model, tool, plugin, skill, mod, agent or workflow) and `Version:`. Anything not written shows as unknown on the Tools page.
+
+Each tool has a small health record in the data repo, `tool-health/<id>.json`: the version in use, the version its test evidence is for, and its recent failures. The app notes the versions in use on every build: the build model's ID, and the installed versions of secretlint, axe-core and Playwright. When a tool updates, its old evidence is marked stale and it gets a quick retest the next time it's used; for the check tools that's the same build, and the step list says so. A good run clears the mark. The Tools page shows this under each tool, for example "2 failures in a row." Each build model run counts as a use of that model (for example "Sonnet 5.5"); a Stop doesn't count. After 3 failures in a row the model is switched off, you're told, and builds refuse it until you press **Switch … back on** on the Tools page (it's then retested on its next use). Switching a tool off never uninstalls it.
 
 ## Undo
 

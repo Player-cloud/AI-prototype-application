@@ -1,8 +1,15 @@
 import { useEffect, useState } from 'react';
 import type { Invoke } from '../engine';
-import { STATE_LABEL, getDataOverview, rateTool, savedPercent, switchToolOn, syncData, type DataOverview, type ToolState } from '../data';
+import { STATE_LABEL, getDataOverview, rateTool, savedPercent, switchToolOn, syncData, type DataOverview, type ToolRow, type ToolState } from '../data';
 
 const ORDER: ToolState[] = ['on', 'trial', 'untested', 'off', 'unknown'];
+
+/** "4.15.0 (tested on 4.14.0)", or unknown when the app hasn't seen it in use yet (CI-1). */
+export function versionText(t: Pick<ToolRow, 'version' | 'testedVersion' | 'stale'>): string {
+  if (!t.version) return 'unknown (not seen in use yet)';
+  if (t.testedVersion && t.testedVersion !== t.version) return `${t.version} (its evidence is for ${t.testedVersion}${t.stale ? ', retest due' : ''})`;
+  return t.version;
+}
 
 export function Tools({ invoke }: { invoke: Invoke | null }) {
   const [data, setData] = useState<DataOverview | null>(null);
@@ -118,6 +125,12 @@ export function Tools({ invoke }: { invoke: Invoke | null }) {
               <dl className="tool-detail">
                 <dt>Status</dt>
                 <dd>{t.status}</dd>
+                <dt>ID</dt>
+                <dd>{t.id ?? 'unknown'}</dd>
+                <dt>Kind</dt>
+                <dd>{t.kind ?? 'unknown'}</dd>
+                <dt>Version</dt>
+                <dd>{versionText(t)}</dd>
                 {t.useWhen && (<><dt>Use when</dt><dd>{t.useWhen}</dd></>)}
                 {t.dontUseWhen && (<><dt>Don’t use when</dt><dd>{t.dontUseWhen}</dd></>)}
                 {t.evidence && (<><dt>Evidence</dt><dd>{t.evidence}</dd></>)}

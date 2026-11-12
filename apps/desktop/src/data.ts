@@ -3,7 +3,13 @@ import type { Invoke } from './engine';
 export type ToolState = 'on' | 'trial' | 'untested' | 'off' | 'unknown';
 
 export interface ToolRow {
+  /** Stable ID: the card's file name, or the name as a slug (CI-1). */
+  id: string;
   name: string;
+  kind: string;
+  /** The version in use and the one its evidence is for; null when never seen. */
+  version: string | null;
+  testedVersion: string | null;
   state: ToolState;
   status: string;
   job: string;

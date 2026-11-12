@@ -14,6 +14,8 @@ import { looksLikeKey } from './sync.js';
 export interface ToolFailure { at: string; error: string }
 
 export interface ToolHealth {
+  /** CI-1: the tool's stable ID (its card's file name, or its name as a slug); names the file. */
+  id: string;
   /** The tool's name as in ledger.md. */
   tool: string;
   /** The version last seen, or null if never seen. */
@@ -37,8 +39,8 @@ export interface ToolHealth {
 export const KEEP_FAILURES = 20;
 const MAX_ERROR_CHARS = 300;
 
-export function emptyHealth(tool: string): ToolHealth {
-  return { tool, version: null, testedVersion: null, stale: false, retestDue: false, consecutiveFailures: 0, failures: [], lastOk: null, lastRetest: null, off: null };
+export function emptyHealth(tool: string, id = slugify(tool)): ToolHealth {
+  return { id, tool, version: null, testedVersion: null, stale: false, retestDue: false, consecutiveFailures: 0, failures: [], lastOk: null, lastRetest: null, off: null };
 }
 
 /**
@@ -88,15 +90,14 @@ export function switchOn(h: ToolHealth): ToolHealth {
   return { ...h, off: null, consecutiveFailures: 0, retestDue: true };
 }
 
-function healthPath(folder: string, tool: string): string {
-  const slug = slugify(tool);
-  if (!slug) throw new Error(`“${tool}” can’t be used as a tool name.`);
-  return join(folder, 'tool-health', `${slug}.json`);
+function healthPath(folder: string, id: string): string {
+  if (!id || slugify(id) !== id) throw new Error(`“${id}” can’t be used as a tool ID.`);
+  return join(folder, 'tool-health', `${id}.json`);
 }
 
 /** Checks a parsed file, filling gaps, so a damaged file never stops the app. */
-export function checkHealth(raw: unknown, tool: string): ToolHealth {
-  const base = emptyHealth(tool);
+export function checkHealth(raw: unknown, tool: string, id = slugify(tool)): ToolHealth {
+  const base = emptyHealth(tool, id);
   if (typeof raw !== 'object' || raw === null) return base;
   const r = raw as Record<string, unknown>;
   const s = (v: unknown) => (typeof v === 'string' ? v : null);
@@ -110,6 +111,7 @@ export function checkHealth(raw: unknown, tool: string): ToolHealth {
     : null;
   const lr = r.lastRetest as { at?: unknown; ok?: unknown } | null | undefined;
   return {
+    id,
     tool,
     version: s(r.version),
     testedVersion: s(r.testedVersion),
@@ -123,24 +125,25 @@ export function checkHealth(raw: unknown, tool: string): ToolHealth {
   };
 }
 
-/** The tool's health, or a clean record if there's none yet. */
-export async function readHealth(folder: string, tool: string): Promise<ToolHealth> {
+/** The tool's health (by its stable ID), or a clean record if there's none yet. */
+export async function readHealth(folder: string, tool: string, id = slugify(tool)): Promise<ToolHealth> {
+  if (!id) throw new Error(`“${tool}” can’t be used as a tool name.`);
   try {
-    return checkHealth(JSON.parse(await readFile(healthPath(folder, tool), 'utf8')), tool);
+    return checkHealth(JSON.parse(await readFile(healthPath(folder, id), 'utf8')), tool, id);
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT' || err instanceof SyntaxError) return emptyHealth(tool);
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT' || err instanceof SyntaxError) return emptyHealth(tool, id);
     throw err;
   }
 }
 
 /** Saves it (temp file, then rename, so a crash never leaves half a file). Returns the repo path. */
 export async function writeHealth(folder: string, h: ToolHealth): Promise<string> {
-  const path = healthPath(folder, h.tool);
+  const path = healthPath(folder, h.id);
   await mkdir(join(folder, 'tool-health'), { recursive: true });
   const temp = `${path}.tmp-${process.pid}`;
   await writeFile(temp, `${JSON.stringify(h, null, 2)}\n`);
   await rename(temp, path);
-  return `tool-health/${slugify(h.tool)}.json`;
+  return `tool-health/${h.id}.json`;
 }
 
 /** Every tool's health, keyed by the file's slug. */
@@ -156,7 +159,7 @@ export async function listHealth(folder: string): Promise<Map<string, ToolHealth
     const slug = f.replace(/\.json$/, '');
     try {
       const raw = JSON.parse(await readFile(join(folder, 'tool-health', f), 'utf8')) as { tool?: unknown };
-      out.set(slug, checkHealth(raw, typeof raw.tool === 'string' ? raw.tool : slug));
+      out.set(slug, checkHealth(raw, typeof raw.tool === 'string' ? raw.tool : slug, slug));
     } catch {
       // a damaged file reads as no record
     }

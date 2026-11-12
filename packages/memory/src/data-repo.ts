@@ -7,6 +7,7 @@ import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parseCard, type ToolCard } from '@aip/tools';
 import { type Note } from './index.js';
+import { slugify } from './projects.js';
 
 /** One ledger line: "- Name | status | job | evidence | tokens/cost | rating: x". */
 export interface LedgerEntry { name: string; status: string; job: string; evidence: string; cost: string; rating: string }
@@ -16,6 +17,8 @@ export type ToolState = 'on' | 'trial' | 'untested' | 'off' | 'unknown';
 
 /** A ledger line joined with its tool card, if it has one. */
 export interface ToolView {
+  /** CI-1: the stable ID. The card's file name, or the ledger name as a slug when there's no card. */
+  id: string;
   name: string;
   state: ToolState;
   status: string;
@@ -65,23 +68,57 @@ export function toolState(status: string): ToolState {
 
 const plain = (t: string) => t.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 
-/** A card belongs to a ledger line when one name contains the other ("Claude Haiku 5.5" / "Haiku 5.5"). */
-function sameTool(entry: string, card: ToolCard): boolean {
+/**
+ * How well a ledger name fits a card: 3 = the card names it ("Ledger:" line), 2 = same name,
+ * 1 = one name holds the other ("Haiku 5.5" / "Claude Haiku 5.5"), 0 = no match.
+ */
+function fit(entry: string, card: ToolCard): number {
   const e = plain(entry);
-  return [plain(card.title), plain(card.name)].some((c) => c !== '' && (e.includes(c) || c.includes(e)));
+  if (card.ledger && plain(card.ledger) === e) return 3;
+  const names = [plain(card.title), plain(card.name)].filter((c) => c !== '');
+  if (names.includes(e) || slugify(entry) === card.name) return 2;
+  if (card.ledger) return 0; // a card that names its ledger line matches only that line
+  return names.some((c) => e.includes(c) || c.includes(e)) ? 1 : 0;
 }
 
+/**
+ * Joins ledger lines to cards. Each card goes to the ledger line that fits it best; on a tie,
+ * the shortest name ("EGM" before "EGM review"), so the result never depends on line order.
+ * Each line gets its stable ID: the card's file name, or its own name as a slug.
+ */
 export function joinTools(ledger: LedgerEntry[], cards: ToolCard[]): ToolView[] {
-  const used = new Set<ToolCard>();
-  const views: ToolView[] = ledger.map((e) => {
-    const card = cards.find((c) => !used.has(c) && sameTool(e.name, c)) ?? null;
-    if (card) used.add(card);
-    return { name: e.name, state: toolState(e.status), status: e.status, job: e.job, evidence: e.evidence, rating: e.rating, card };
+  const cardFor = new Map<number, ToolCard>();
+  for (const card of cards) {
+    let best = -1;
+    let bestFit = 0;
+    ledger.forEach((e, i) => {
+      if (cardFor.has(i)) return;
+      const f = fit(e.name, card);
+      if (f > bestFit || (f === bestFit && f > 0 && e.name.length < ledger[best]!.name.length)) {
+        best = i;
+        bestFit = f;
+      }
+    });
+    if (best >= 0) cardFor.set(best, card);
+  }
+  const views: ToolView[] = ledger.map((e, i) => {
+    const card = cardFor.get(i) ?? null;
+    return { id: card?.name ?? slugify(e.name), name: e.name, state: toolState(e.status), status: e.status, job: e.job, evidence: e.evidence, rating: e.rating, card };
   });
+  const used = new Set(cardFor.values());
   for (const c of cards) {
-    if (!used.has(c)) views.push({ name: c.title, state: 'unknown', status: 'not in the ledger yet', job: '', evidence: '', rating: '', card: c });
+    if (!used.has(c)) views.push({ id: c.name, name: c.title, state: 'unknown', status: 'not in the ledger yet', job: '', evidence: '', rating: '', card: c });
   }
   return views;
+}
+
+/** The stable ID for a tool name (as the ledger, a card or the app names it). */
+export function toolIdFor(tools: ToolView[], name: string): string {
+  const p = plain(name);
+  const hit =
+    tools.find((t) => t.id === name || plain(t.name) === p) ??
+    tools.find((t) => t.card && (plain(t.card.title) === p || plain(t.card.ledger) === p));
+  return hit?.id ?? slugify(name);
 }
 
 async function read(folder: string, file: string): Promise<string | null> {
