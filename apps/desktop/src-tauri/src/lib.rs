@@ -376,8 +376,13 @@ async fn history_undo(id: i64, app: tauri::AppHandle, state: tauri::State<'_, En
         "settings_saved",
         serde_json::json!({ "dbPath": db, "before": current, "after": restored, "undoes": { "id": id, "label": label } }),
     )?;
-    let summary = r.get("summary").and_then(|t| t.as_str()).unwrap_or("Undone.").to_string();
-    Ok(serde_json::json!({ "kind": "settings", "id": id, "label": label, "summary": summary }))
+    // CI-8: read the settings back from disk and check they really are the earlier ones.
+    let saved = settings::read(&path)?;
+    let check = engine_call(&state, "undo_check", serde_json::json!({ "dbPath": db, "id": id, "settings": saved }))?;
+    let checked = check.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
+    let check_text = check.get("text").and_then(|t| t.as_str()).unwrap_or("");
+    let summary = format!("{} {}", r.get("summary").and_then(|t| t.as_str()).unwrap_or("Undone."), check_text).trim().to_string();
+    Ok(serde_json::json!({ "kind": "settings", "id": id, "label": label, "summary": summary, "checked": checked }))
 }
 
 /// The tools, habits and rules in the data folder chosen in Settings (read-only).

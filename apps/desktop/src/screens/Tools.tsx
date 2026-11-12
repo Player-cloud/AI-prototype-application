@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { Invoke } from '../engine';
-import { STATE_LABEL, checkThisComputer, decideUpdate, getDataOverview, lookForUpdates, runExperiment, runFreeTests, rateTool, savedPercent, switchToolOn, syncData, type DataOverview, type Environment, type ToolRow, type ToolState } from '../data';
+import { STATE_LABEL, updatesToShow, checkThisComputer, decideUpdate, getDataOverview, lookForUpdates, runExperiment, runFreeTests, rateTool, savedPercent, switchToolOn, syncData, type DataOverview, type Environment, type ToolRow, type ToolState } from '../data';
 
 const ORDER: ToolState[] = ['on', 'trial', 'untested', 'off', 'unknown'];
 
@@ -290,30 +290,34 @@ export function Tools({ invoke }: { invoke: Invoke | null }) {
           </li>
         ))}
       </ul>
-      {(data.updates ?? []).some((u) => u.status === 'found' || u.status === 'approved') && (
+      {updatesToShow(data.updates ?? []).length > 0 && (
         <div className="updates" role="region" aria-label="Updates">
           <h3>Updates</h3>
-          <p className="muted">Found, not installed. The app never installs an update: after your OK it shows the command to run.</p>
+          <p className="muted">The app never installs or removes an update. After your OK it shows the command to run; once it’s installed, the next look checks it with its free tests and shows the command to go back.</p>
           <ul>
-            {data.updates!
-              .filter((u) => u.status === 'found' || u.status === 'approved')
-              .map((u) => (
-                <li key={`${u.package}@${u.to}`}>
-                  {u.text}
-                  {u.status === 'found' && (
-                    <>
-                      {' '}
-                      <button type="button" disabled={busy} onClick={() => decide(u.package, u.to, true)} aria-label={`OK ${u.package} ${u.to}`}>
-                        OK
-                      </button>
-                      <button type="button" disabled={busy} onClick={() => decide(u.package, u.to, false)} aria-label={`No to ${u.package} ${u.to}`}>
-                        No
-                      </button>
-                    </>
-                  )}
-                  {u.command && <code className="command">{u.command}</code>}
-                </li>
-              ))}
+            {updatesToShow(data.updates!).map((u) => (
+              <li key={`${u.package}@${u.to}`} className={u.check?.outcome === 'worse' ? 'warn' : undefined}>
+                {u.text}
+                {(u.status === 'found' || u.status === 'rolled back') && (
+                  <>
+                    {' '}
+                    <button type="button" disabled={busy} onClick={() => decide(u.package, u.to, true)} aria-label={`OK ${u.package} ${u.to}`}>
+                      OK
+                    </button>
+                    <button type="button" disabled={busy} onClick={() => decide(u.package, u.to, false)} aria-label={`No to ${u.package} ${u.to}`}>
+                      No
+                    </button>
+                  </>
+                )}
+                {u.status === 'approved' && u.command && <code className="command">{u.command}</code>}
+                {u.undoCommand && (
+                  <>
+                    {' '}
+                    <span className="muted">To go back:</span> <code className="command" aria-label={`Go back from ${u.package} ${u.to}`}>{u.undoCommand}</code>
+                  </>
+                )}
+              </li>
+            ))}
           </ul>
         </div>
       )}

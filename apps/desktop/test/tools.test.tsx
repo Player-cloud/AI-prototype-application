@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { Tools } from '../src/screens/Tools';
 import { savedPercent, type DataOverview, type ToolRow } from '../src/data';
 import type { Invoke } from '../src/engine';
@@ -198,6 +198,25 @@ describe('Tools page', () => {
     fireEvent.click(screen.getByRole('button', { name: 'OK @secretlint/node 13.1.0' }));
     expect(await screen.findByText(/^OK noted for @secretlint\/node 13\.1\.0\. To adopt it, run:/)).toBeTruthy();
     expect(calls.find((c) => c.cmd === 'update_decide')?.args).toEqual({ package: '@secretlint/node', to: '13.1.0', ok: true });
+  });
+
+  it('shows whether an installed update really worked, and the way back (CI-8)', async () => {
+    const calls: { cmd: string; args?: Record<string, unknown> }[] = [];
+    const updates = [
+      { package: '@secretlint/node', from: '11.7.1', to: '13.1.0', level: 'major', status: 'installed' as const, text: '@secretlint/node 11.7.1 → 13.1.0. Installed, but it did worse: Missed the private key.', command: '', undoCommand: 'pnpm --filter @aip/checks update @secretlint/node@11.7.1', check: { at: '', outcome: 'worse' as const, detail: 'Missed the private key.' } },
+      { package: 'vite', from: '8.3.7', to: '8.3.8', level: 'patch', status: 'rolled back' as const, text: 'vite 8.3.7 → 8.3.8. Rolled back to 8.3.7. Say OK again if you want it later.', command: 'pnpm --filter @aip/desktop update vite@8.3.8', undoCommand: '' },
+    ];
+    render(<Tools invoke={shell({ ...OVERVIEW, updates }, calls)} />);
+    const region = await screen.findByRole('region', { name: 'Updates' });
+    const back = within(region).getByLabelText('Go back from @secretlint/node 13.1.0');
+    expect(back.textContent).toBe('pnpm --filter @aip/checks update @secretlint/node@11.7.1');
+    expect(back.closest('li')!.className).toBe('warn');
+    expect(region.textContent).toContain('Rolled back to 8.3.7');
+    expect(region.textContent).not.toContain('update vite@8.3.8');
+    expect(within(region).queryByRole('button', { name: 'OK @secretlint/node 13.1.0' })).toBeNull();
+    fireEvent.click(within(region).getByRole('button', { name: 'OK vite 8.3.8' }));
+    await screen.findByText(/^OK noted/);
+    expect(calls.find((c) => c.cmd === 'update_decide')?.args).toEqual({ package: 'vite', to: '8.3.8', ok: true });
   });
 
   it('lists instructions that look out of date or clash, changing nothing (CI-7)', async () => {

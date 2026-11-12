@@ -58,7 +58,26 @@ export type DataOverview =
       docIssues?: string[];
     };
 
-export interface UpdateRow { package: string; from: string; to: string; level: string; status: 'found' | 'approved' | 'declined' | 'installed'; text: string; command: string }
+export interface UpdateRow {
+  package: string;
+  from: string;
+  to: string;
+  level: string;
+  status: 'found' | 'approved' | 'declined' | 'installed' | 'rolled back';
+  text: string;
+  command: string;
+  /** CI-8: once installed, the command that puts the old version back ('' otherwise). */
+  undoCommand?: string;
+  /** CI-8: whether it really worked, from its free tests after it was installed. */
+  check?: { at: string; outcome: 'passed' | 'worse' | 'blocked' | 'not run'; detail: string } | null;
+}
+
+/** CI-8: the updates worth showing: waiting ones, rolled-back ones, and the 10 newest installed. */
+export function updatesToShow(updates: UpdateRow[]): UpdateRow[] {
+  const open = updates.filter((u) => u.status === 'found' || u.status === 'approved' || u.status === 'rolled back');
+  const installed = updates.filter((u) => u.status === 'installed').slice(-10).reverse();
+  return [...open, ...installed];
+}
 
 /** CI-6: looks for newer versions of the app's packages (free). Installs nothing. */
 export async function lookForUpdates(invoke: Invoke): Promise<{ updates: UpdateRow[]; summary: string; synced: string }> {

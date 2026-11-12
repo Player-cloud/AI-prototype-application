@@ -88,6 +88,9 @@
  *  - history_list: {dbPath} -> the newest changes, newest first.
  *  - undo: {dbPath, id, settings} -> puts a change back if nothing has changed since. For settings it
  *    returns the earlier settings for the shell to save (then settings_saved with undoes).
+ *    CI-8: a file undo is checked at once ("Checked: the file is back as it was.").
+ *  - undo_check: {dbPath, id, settings} -> CI-8: checks the settings (read back after saving) or
+ *    the file now match what they were before change `id`: {ok, text}. Changes nothing.
  *    Both refuse to push anything key-shaped.
  *    ask and check also take an optional `settings` (model choices, prices, £/$ rate).
  *    The key comes from the window's password store for this one call and is never echoed back.
@@ -107,7 +110,7 @@ import { githubCheck } from './github.ts';
 import { closeBuild, listWork, postBuild, publishPictures } from './notify.ts';
 import { pollReplies } from './replies.ts';
 import { dataOverview, rateAndSync, switchToolOn, syncAfterUndo, syncNow } from './data.ts';
-import { historyList, settingsSaved, undoStart } from './history.ts';
+import { historyList, settingsSaved, undoCheck, undoStart } from './history.ts';
 import { parseSuggestions, suggestPrompt } from './suggest.ts';
 import { stageOf } from './interview.ts';
 import { reviewPrompt, reviewersFor, parseFindings, specText, type Finding } from './review.ts';
@@ -463,10 +466,17 @@ const HANDLERS: Record<string, Handler> = {
     if (typeof id !== 'number' || !Number.isInteger(id) || id < 1) throw new Error('id must be a whole number');
     const r = await undoStart(str(p, 'dbPath'), id, p.settings, deps.now?.() ?? new Date());
     if (r.kind === 'file') {
+      const checked = await undoCheck(str(p, 'dbPath'), id, null);
       const synced = await syncAfterUndo(settingsOrNull(p.settings) ?? DEFAULT_SETTINGS, r.path, r.label);
-      return { ...r, summary: synced ? `${r.summary} ${synced}` : r.summary };
+      return { ...r, checked: checked.ok, summary: [r.summary, checked.text, synced].filter(Boolean).join(' ') };
     }
     return r;
+  },
+  undo_check: (params) => {
+    const p = obj(params);
+    const id = p.id;
+    if (typeof id !== 'number' || !Number.isInteger(id) || id < 1) throw new Error('id must be a whole number');
+    return undoCheck(str(p, 'dbPath'), id, p.settings);
   },
   data_sync: (params) => syncNow(checkSettings(obj(params).settings)),
   workflow_compare: (params, deps) => {

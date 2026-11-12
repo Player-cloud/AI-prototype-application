@@ -76,6 +76,6 @@ export {
 export { KEEP_EVALS, SCREENING_BELOW, addEvals, evidenceNote, findRegressions, listEvals, readEvals, regressionNote, type Regression, type StoredEval } from './evals.js';
 export { KEEP_EXPERIMENTS, listExperiments, saveExperiment, type Experiment } from './experiments.js';
 export { workflowStats, type WorkflowStats } from './workflows.js';
-export { KEEP_UPDATES, decideUpdate, mergeUpdates, readUpdates, writeUpdates, type Found, type UpdateRecord, type UpdateStatus } from './updates.js';
+export { KEEP_UPDATES, checkedUpdate, decideUpdate, mergeUpdates, readUpdates, writeUpdates, type Found, type UpdateCheck, type UpdateCheckOutcome, type UpdateRecord, type UpdateStatus } from './updates.js';
 export { TOOL_ID, projectToolsText, readProjectRules, readProjectTools, writeProjectTools } from './project-tools.js';
 export { bulletLines, cardLines, checkDocs, contentWords, docIssueText, isNegative, sameSubject, type DocIssue, type DocIssueKind, type DocLine, type DocSource, type DocTool } from './doc-check.js';
