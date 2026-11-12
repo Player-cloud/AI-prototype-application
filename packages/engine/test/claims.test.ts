@@ -47,3 +47,12 @@ describe('honest build report', () => {
     expect(compareClaims('No secrets committed.', [tests(true)])[0]).toEqual({ topic: 'Secret scan', agrees: null, note: 'The app has no result for this in this build, so only the model says so.' });
   });
 });
+
+describe('done list claims', () => {
+  it('sets a done-list claim beside what the app found', () => {
+    const tests = { name: 'tests', passed: true, free: true };
+    const warn = { name: 'done-list', passed: false, free: true, advisory: true, detail: 'Done list: 2 of 3 lines were never checked (advice, doesn’t stop Keep)' };
+    expect(compareClaims('Every done check is covered.', [tests, warn])).toEqual([{ topic: 'Done list', agrees: false, note: 'The app checked this itself: see the notes below (advice, doesn’t stop Keep).' }]);
+    expect(compareClaims('Every done check is covered.', [tests, { ...warn, passed: true }])[0]).toMatchObject({ agrees: true });
+  });
+});

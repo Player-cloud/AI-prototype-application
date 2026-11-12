@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { Build, limitText } from '../src/screens/Build';
+import { doneList } from '../src/build';
 import type { BuildEvent, Finding, MakeChannel } from '../src/build';
 import type { Invoke } from '../src/engine';
 
@@ -266,6 +267,61 @@ describe('Build screen', () => {
     // A pass shows only its title.
     expect(within(groups[3] as HTMLElement).getByText('Secret scan: passed')).toBeTruthy();
     expect(within(groups[3] as HTMLElement).queryByText('No keys found')).toBeNull();
+  });
+
+  it('shows the done list with ✓ tested, ✗ failed and – not checked, and says how many were never checked', async () => {
+    const shell = fakeShell();
+    render(<Build invoke={shell.invoke} makeChannel={shell.makeChannel} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Build F-01 (costs up to £0.80 ($1.01))' }));
+    shell.done({
+      run: RUN,
+      using: 'Using: Sonnet 5.5',
+      steps: [],
+      summary: 'Done.',
+      claims: [],
+      modelName: 'Sonnet 5.5',
+      costText: '£0.33 ($0.42)',
+      tests: { passed: false, output: 'x', fixAttempts: 0 },
+      synced: '',
+      runId: 9,
+      findings: [
+        {
+          check: 'done-list',
+          level: 'block',
+          title: 'Done list: 1 of 3 lines have a failing test',
+          detail: 'D1 ✓ tested: A member can sign in\nD2 ✗ failed: A wrong password shows an error\nD3 – not checked: Sessions end after a day',
+          source: 'rule',
+        },
+      ],
+      keep: { keep: false, blocking: ['tests'] },
+      pictures: [],
+      screensChanged: null,
+      picturesNote: '',
+      phone: '',
+    });
+    const list = await screen.findByRole('region', { name: 'Done list' });
+    expect(within(list).getByText('1 of 3 done-list lines were never checked')).toBeTruthy();
+    expect([...list.querySelectorAll('li')].map((li) => [li.className, li.textContent])).toEqual([
+      ['ok', '✓ tested · D1: A member can sign in'],
+      ['bad', '✗ failed · D2: A wrong password shows an error'],
+      ['note', '– not checked · D3: Sessions end after a day'],
+    ]);
+  });
+
+  it('shows no done list for a build saved before coverage existed', async () => {
+    const shell = fakeShell();
+    render(<Build invoke={shell.invoke} makeChannel={shell.makeChannel} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Build F-01 (costs up to £0.80 ($1.01))' }));
+    shell.done({
+      run: RUN, using: 'u', steps: [], summary: 'Done.', claims: [], modelName: 'S', costText: '£0.33 ($0.42)',
+      tests: { passed: true, output: '', fixAttempts: 0 }, synced: '', runId: 9,
+      findings: [{ check: 'secrets', level: 'pass', title: 'Secret scan: passed', source: 'tool' }],
+      keep: { keep: true, blocking: [] }, pictures: [], screensChanged: null, picturesNote: '', phone: '',
+    });
+    await screen.findByRole('region', { name: 'Build result' });
+    expect(screen.queryByRole('region', { name: 'Done list' })).toBeNull();
+    expect(doneList([])).toBeNull();
+    expect(doneList([{ check: 'done-list', level: 'warn', title: 't', source: 'rule' }])).toBeNull();
   });
 
   it('reloads a plain page in the live view as the build changes it', async () => {

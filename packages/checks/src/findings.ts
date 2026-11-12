@@ -37,6 +37,7 @@ export const CHECK_TITLES: Record<string, string> = {
   audit: 'Package audit',
   dependencies: 'New packages',
   checklist: 'Checklist rules',
+  'done-list': 'Done list',
   axe: 'Accessibility',
   'phone-overflow': 'Phone width',
   pictures: 'Pictures',

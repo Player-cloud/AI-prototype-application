@@ -53,7 +53,7 @@ describe('runTests', () => {
         return { code: 0, output: 'Tests 3 passed' };
       };
       expect(await runTests(dir, pass)).toEqual({ name: 'tests', passed: true, free: true, detail: 'Tests 3 passed' });
-      expect(ran).toEqual(['npm install --ignore-scripts', 'npm test']);
+      expect(ran).toEqual(['npm install --ignore-scripts', 'npm test -- --reporter=verbose']);
 
       await mkdir(join(dir, 'node_modules'));
       ran.length = 0;
@@ -62,7 +62,7 @@ describe('runTests', () => {
         return { code: 1, output: `${'x'.repeat(KEEP_OUTPUT + 50)}\n1 failed` };
       };
       const r = await runTests(dir, fail);
-      expect(ran).toEqual(['npm test']);
+      expect(ran).toEqual(['npm test -- --reporter=verbose']);
       expect(r.passed).toBe(false);
       expect(r.detail?.endsWith('1 failed')).toBe(true);
       expect(r.detail?.length).toBeLessThanOrEqual(KEEP_OUTPUT + 1);
