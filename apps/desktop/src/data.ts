@@ -14,6 +14,10 @@ export interface ToolRow {
   byComputer?: string;
   /** CI-3: the latest repeatable-test results; '' when never tested (shown as untested). */
   tested?: string;
+  /** CI-5: tests that did worse after an update ('' when none). */
+  regression?: string;
+  /** A free test exists for it. */
+  testable?: boolean;
   state: ToolState;
   status: string;
   job: string;
@@ -46,7 +50,11 @@ export type DataOverview =
       environments?: Environment[];
       differences?: string[];
       clashes?: string[];
+      /** CI-5: the newest experiments; all proposals until joshua adopts one. */
+      experiments?: ExperimentRow[];
     };
+
+export interface ExperimentRow { id: string; capability: string; question: string; verdict: string; at: string; status: string }
 
 /** One computer's last environment check (CI-2). ok null: couldn't tell. */
 export interface EnvCheck { name: string; ok: boolean | null; detail: string }
@@ -54,7 +62,17 @@ export interface Environment { computer: string; checkedAt: string; os: string; 
 export interface EnvironmentReport { environment: Environment; differences: string[]; synced: string }
 
 /** CI-3: the free repeatable tests (planted problems each tool must find). */
-export interface EvalReport { results: { capability: string; suite: string; outcome: string; detail: string }[]; summary: string; synced: string }
+export interface EvalReport { results: { capability: string; suite: string; outcome: string; detail: string }[]; summary: string; regressions?: string[]; synced: string }
+
+/** CI-5: runs a tool's free test several times in a row (free) and saves it as a proposal. */
+export interface ExperimentReport { experiments: ExperimentRow[]; summary: string; synced: string }
+export async function runExperiment(invoke: Invoke, capability: string): Promise<ExperimentReport> {
+  try {
+    return await invoke<ExperimentReport>('experiment_run', { capability });
+  } catch (err) {
+    throw plain(err);
+  }
+}
 export async function runFreeTests(invoke: Invoke, capability?: string): Promise<EvalReport> {
   try {
     return await invoke<EvalReport>('eval_run', capability ? { capability } : {});

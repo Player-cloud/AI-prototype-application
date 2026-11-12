@@ -77,6 +77,13 @@ const shell = (answer: DataOverview | string, calls: { cmd: string; args?: Recor
         synced: 'Saved 2 files.',
       } as T;
     }
+    if (cmd === 'experiment_run') {
+      return {
+        experiments: [{ id: 'x', capability: String(args?.capability), question: 'Q?', verdict: 'Steady: passed in all 3 runs (4/4 cases right each time).', at: '2026-11-12T11:00:00Z', status: 'proposal' }],
+        summary: 'Steady: passed in all 3 runs (4/4 cases right each time). Nothing was changed: it’s a proposal. Cost: £0.00 ($0.00).',
+        synced: 'Saved 1 file.',
+      } as T;
+    }
     if (cmd !== 'data_overview') throw `unexpected ${cmd}`;
     if (typeof answer === 'string') throw answer;
     return answer as T;
@@ -151,6 +158,24 @@ describe('Tools page', () => {
     expect(screen.getByText(/passed \(4\/4\) on lapto.*a first look, not proof/)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: /EGM/ }));
     expect(screen.getByText('Untested (no repeatable test has run yet).')).toBeTruthy();
+  });
+
+  it('flags a tool that got worse after an update, and runs a free steadiness experiment (CI-5)', async () => {
+    const calls: { cmd: string; args?: Record<string, unknown> }[] = [];
+    const tools = [
+      row('secretlint', 'on', { testable: true, regression: 'Got worse after updating from 11.2.5 to 11.3.0 on lapto (secretlint-planted): passed (4/4) before, failed (3/4) now.' }),
+      row('EGM', 'on'),
+    ];
+    const experiments = [{ id: 'e1', capability: 'secretlint', question: 'Does secretlint give the same answer every time on this computer?', verdict: 'Steady: passed in all 3 runs (4/4 cases right each time).', at: '2026-11-12T11:00:00Z', status: 'proposal' }];
+    render(<Tools invoke={shell({ ...OVERVIEW, tools, experiments }, calls)} />);
+    expect((await screen.findByText(/^Got worse after updating from 11\.2\.5 to 11\.3\.0/)).className).toBe('tool-health warn');
+    expect(screen.getByRole('region', { name: 'Experiments' }).textContent).toContain('Steady: passed in all 3 runs (4/4 cases right each time). (a proposal: nothing was changed, 12 Nov)');
+    fireEvent.click(screen.getByRole('button', { name: /EGM/ }));
+    expect(screen.queryByRole('button', { name: /Is it steady/ })).toBeNull(); // no test, so nothing to experiment with
+    fireEvent.click(screen.getByRole('button', { name: /secretlint/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Is it steady? (runs its test 3 times, free)' }));
+    expect(await screen.findByText('Steady: passed in all 3 runs (4/4 cases right each time). Nothing was changed: it’s a proposal. Cost: £0.00 ($0.00). Saved 1 file.')).toBeTruthy();
+    expect(calls.find((c) => c.cmd === 'experiment_run')?.args).toEqual({ capability: 'secretlint' });
   });
 
   it('shows tool health under the tool, warning about failures', async () => {

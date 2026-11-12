@@ -118,6 +118,11 @@ Settings → Tools → **Run free tests** checks that each check tool still does
 
 Results are passed, failed or "couldn’t run here" (no browser, say), never a made-up score. Each names the tool's version and the computer, and is saved in the data repo as `evaluations/<id>.json` (last 30). A pass on a new version clears the "retest due" mark; a fail counts as a failure in tool health; "couldn’t run here" counts as neither. Fewer than 3 runs is shown as a first look, not proof. A tool with no test stays "Untested". Paid model tests come later, and only with joshua's OK.
 
+## Experiments and regression checks (Capability Intelligence)
+
+- **Regression check:** each time the free tests run, a tool's newest result is compared with its last result on a different version, on the same computer. If it now fails where it passed, or gets fewer cases right, the Tools page says "Got worse after updating from X to Y". Tests that couldn't run, and results with no version, are never compared.
+- **Experiments:** under a tool with a free test, **Is it steady?** runs that test 3 times in a row. It saves the question, the fixed inputs (the test and how many runs), what it measured (outcome, cases right and time for each run) and the result in the data repo as `experiments/<id>.json`. The result is a proposal: nothing is changed, switched off or installed because of it. Free: £0.00 ($0.00).
+
 ## Ways of building compared (Capability Intelligence)
 
 Each build is measured from start to finish: whether it was kept or undone, whether the tests passed first time, problems found by the app's own checks, the secret scan, cost in £ and $, and time. Missing numbers stay missing, and joshua's 1–5 rating is shown on its own, never mixed in. The Build screen shows **Ways of building compared** (from this computer's history), and each build starts with what the evidence says beside the Using line.

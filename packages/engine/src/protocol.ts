@@ -19,6 +19,9 @@
  *  - eval_run: {settings, capability?} -> runs the free repeatable tests (CI-3: planted problems each
  *    tool must find) on test data, saves results in the data folder's evaluations/, counts passes and
  *    failures in tool health, and syncs. Free.
+ *  - experiment_run: {settings, capability, runs?} -> CI-5: runs a tool's free test several times in a
+ *    row (default 3) and saves the experiment (question, fixed inputs, measures, result) in the data
+ *    folder's experiments/ as a proposal. Changes nothing else. Free.
  *  - environment_check: {settings} -> checks this computer (Node, pnpm, git, browser, check tools),
  *    saves it as environments/<computer>.json in the data folder and syncs. Free.
  *  - tool_rate: {settings, tool, rating} -> saves a 1–5 rating in ledger.md and syncs the data repo.
@@ -77,6 +80,7 @@
  *    The key comes from the window's password store for this one call and is never echoed back.
  */
 import { compareWorkflows } from './workflows.ts';
+import { runRepeatExperiment } from './experiments.ts';
 import type { CheckResult } from '@aip/checks';
 import type { Job, ModelAdapter, Provider } from '@aip/models';
 import { formatCost } from './money.ts';
@@ -295,6 +299,12 @@ const HANDLERS: Record<string, Handler> = {
     const p = obj(params);
     const capability = typeof p.capability === 'string' && p.capability ? p.capability : undefined;
     return runFreeTests(checkSettings(p.settings), { capability, now: deps.now?.() ?? new Date() });
+  },
+  experiment_run: (params, deps) => {
+    const p = obj(params);
+    const runs = typeof p.runs === 'number' ? p.runs : undefined;
+    const at = deps.now?.();
+    return runRepeatExperiment(checkSettings(p.settings), { capability: str(p, 'capability'), runs, now: at ? () => at : undefined });
   },
   environment_check: (params, deps) => environmentCheck(checkSettings(obj(params).settings), deps.now?.() ?? new Date()),
   tool_rate: (params, deps) => {
