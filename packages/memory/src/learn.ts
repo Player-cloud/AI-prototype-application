@@ -4,7 +4,7 @@
  * only with enough evidence, changed when the evidence changes, and dropped when it stops being
  * true. Only the app's own section of habits.md is touched; joshua's own lines are never changed.
  */
-import type { Run } from './runlog.js';
+import { MAINTENANCE_MODEL, type Run } from './runlog.js';
 
 export interface Learned {
   /** Stable id, so the same habit is updated rather than added twice. */
@@ -38,8 +38,10 @@ function checklistSays(run: Run): string[] {
 }
 
 /** What the evidence says, newest builds first. `nameOf` gives a model's plain name. */
-export function learnHabits(runs: Run[], nameOf: (model: string) => string): Learned[] {
+export function learnHabits(allRuns: Run[], nameOf: (model: string) => string): Learned[] {
   const out: Learned[] = [];
+  // Maintenance items are not feature builds: no model made them, so they teach nothing about models or checks.
+  const runs = allRuns.filter((r) => r.model !== MAINTENANCE_MODEL);
 
   // 1. Each build model: is it usually kept, or often undone?
   const decided = runs.filter((r) => r.status === 'kept' || r.status === 'undone' || r.status === 'reverted');

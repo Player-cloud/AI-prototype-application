@@ -39,6 +39,9 @@ export function describeSettingsChange(before: AppSettings, after: AppSettings):
     const a = after.codeFolders[slug];
     if (a !== b) parts.push(a ? `Code folder for ${slug} set to ${a}` : `Code folder for ${slug} cleared`);
   }
+  if (before.maintenance.patchUpdates !== after.maintenance.patchUpdates) {
+    parts.push(`Dev-tool patch updates by the app ${after.maintenance.patchUpdates ? 'on' : 'off'}`);
+  }
   const had = new Set(before.extraRules.map((r) => stable(r)));
   const has = new Set(after.extraRules.map((r) => stable(r)));
   for (const r of after.extraRules) if (!had.has(stable(r))) parts.push(`Added rule “${r.match}”`);

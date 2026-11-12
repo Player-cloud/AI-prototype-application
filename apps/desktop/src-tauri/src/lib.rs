@@ -114,7 +114,7 @@ async fn settings_save(
 /// else is refused. Only plain pass-throughs belong here. Nothing that touches keys, writes the
 /// settings, spends money or runs a build (those keep their own commands), and nothing the phone
 /// path uses on its own.
-const ENGINE_METHODS: [&str; 38] = [
+const ENGINE_METHODS: [&str; 39] = [
     "spend_summary",
     "gate_rules",
     "settings_check",
@@ -124,6 +124,7 @@ const ENGINE_METHODS: [&str; 38] = [
     "experiment_run",
     "update_check",
     "update_decide",
+    "maintenance_run",
     "capability_centre",
     "project_tools",
     "project_tools_approve",
@@ -486,7 +487,7 @@ mod tests {
         for m in old {
             assert_eq!(engine_method(m), Ok(m), "{m} was lost");
         }
-        assert_eq!(old.len() + 5, ENGINE_METHODS.len(), "only run_revert and the four decisions methods were added since");
+        assert_eq!(old.len() + 6, ENGINE_METHODS.len(), "only run_revert, the four decisions methods and maintenance_run were added since");
     }
 
     #[test]
@@ -499,6 +500,17 @@ mod tests {
         for m in ["decision_edit", "decision_delete", "blocker_delete"] {
             assert!(engine_method(m).is_err(), "{m} must not exist");
         }
+    }
+
+    #[test]
+    fn maintenance_run_is_allowed_and_cannot_be_sent_its_own_settings() {
+        // Off by default in the saved settings; it merges nothing and pushes nothing, so it needs no key.
+        assert_eq!(engine_method("maintenance_run"), Ok("maintenance_run"));
+        let sent = serde_json::json!({ "slug": "club-hr", "settings": { "maintenance": { "patchUpdates": true } } });
+        let out = engine_params(sent, serde_json::json!({ "maintenance": { "patchUpdates": false } }), "/d".into()).unwrap();
+        assert_eq!(out["settings"]["maintenance"]["patchUpdates"], serde_json::json!(false));
+        // No way to pick which package, version or branch from the window.
+        assert!(engine_method("maintenance_apply").is_err());
     }
 
     #[test]

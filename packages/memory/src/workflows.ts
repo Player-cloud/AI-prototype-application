@@ -6,7 +6,7 @@
  * memory measures; the engine decides what, if anything, to suggest.
  */
 import { countsAgainst, type FailureCause } from './health.js';
-import type { Run } from './runlog.js';
+import { MAINTENANCE_MODEL, type Run } from './runlog.js';
 
 export interface WorkflowStats {
   /** The workflow's key: the build model's ID. */
@@ -50,7 +50,7 @@ const notRun = (detail?: string) => (detail ?? '').startsWith('Not run');
 export function workflowStats(runs: Run[]): WorkflowStats[] {
   const by = new Map<string, Run[]>();
   // A build still running has nothing to measure yet.
-  for (const r of runs) if (r.status !== 'running') by.set(r.model, [...(by.get(r.model) ?? []), r]);
+  for (const r of runs) if (r.status !== 'running' && r.model !== MAINTENANCE_MODEL) by.set(r.model, [...(by.get(r.model) ?? []), r]);
   const out: WorkflowStats[] = [];
   for (const [model, all] of by) {
     // Builds that ended early have no tests, checks or timing to measure: only their cost and cause count.

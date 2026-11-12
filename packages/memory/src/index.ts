@@ -49,7 +49,7 @@ export { HEADING as LEARNED_HEADING, MIN_BUILDS, MIN_REPEATS, applyLearned, lear
 
 export { KEEP_ITEMS, WorkItems, type WorkItem, type WorkKind } from './workitems.js';
 
-export { KEEP_RUNS, RunLog, type NewRun, type Run, type RunCheck, type RunFinding, findingOfOldCheck, findingsFromStored, type RunPicture, type RunStatus, type RunCause, type RunFailure, type StartedRun } from './runlog.js';
+export { KEEP_RUNS, MAINTENANCE_MODEL, RunLog, type NewRun, type Run, type RunCheck, type RunFinding, findingOfOldCheck, findingsFromStored, type RunPicture, type RunStatus, type RunCause, type RunFailure, type StartedRun } from './runlog.js';
 
 export { ChangeLog, KEEP_CHANGES, MAX_CHANGE_CHARS, type Change, type ChangeKind, type NewChange } from './history.js';
 

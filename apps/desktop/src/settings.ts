@@ -21,6 +21,8 @@ export interface AppSettings {
   runCapGbp: number;
   /** Where each project's code is cloned on this computer, by project folder name. */
   codeFolders: Record<string, string>;
+  /** Self-maintenance (Q-5). Off unless joshua turns it on. */
+  maintenance: { patchUpdates: boolean };
 }
 
 export interface ExtraRule { match: string; reason: string }

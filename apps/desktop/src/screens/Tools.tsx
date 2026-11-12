@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { Invoke } from '../engine';
+import { MaintenancePanel } from './MaintenancePanel';
 import { STATE_LABEL, updatesToShow, checkThisComputer, decideUpdate, getDataOverview, lookForUpdates, runExperiment, runFreeTests, rateTool, savedPercent, switchToolOn, syncData, type DataOverview, type Environment, type ToolRow, type ToolState } from '../data';
 
 const ORDER: ToolState[] = ['on', 'trial', 'untested', 'off', 'unknown'];
@@ -321,6 +322,7 @@ export function Tools({ invoke }: { invoke: Invoke | null }) {
           </ul>
         </div>
       )}
+      {invoke && <MaintenancePanel invoke={invoke} />}
       {(data.docIssues ?? []).length > 0 && (
         <div className="doc-check" role="region" aria-label="Doc check">
           <h3>Instructions to check</h3>

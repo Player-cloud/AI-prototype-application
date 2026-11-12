@@ -99,6 +99,26 @@ export async function decideUpdate(invoke: Invoke, pkg: string, to: string, ok: 
   }
 }
 
+/** Q-5: one dev-tool patch update the app tried in a project's own copy. */
+export interface MaintenanceItem {
+  package: string;
+  from: string;
+  to: string;
+  outcome: 'waiting' | 'rolled back' | 'skipped';
+  detail: string;
+  runId: number | null;
+}
+export interface MaintenanceResult { ran: boolean; slug: string; summary: string; items: MaintenanceItem[]; githubNote: string }
+
+/** Q-5: prepares up to 3 dev-tool patch updates for one project. Does nothing unless Settings has it on. Never merges. */
+export async function runMaintenance(invoke: Invoke, slug: string): Promise<MaintenanceResult> {
+  try {
+    return await engine(invoke, 'maintenance_run', { slug });
+  } catch (err) {
+    throw plain(err);
+  }
+}
+
 export interface ExperimentRow { id: string; capability: string; question: string; verdict: string; at: string; status: string }
 
 /** One computer's last environment check (CI-2). ok null: couldn't tell. */
