@@ -158,7 +158,8 @@ export async function stopBuild(invoke: Invoke): Promise<boolean> {
 }
 
 /** CI-4: one way of building (the build model plus the app's fixed steps) and how it has done. */
-export interface WorkflowRow { model: string; name: string; text: string; finished: number; kept: number; safetyFailures: number }
+export interface WorkflowConfidence { level: 'low' | 'medium' | 'high'; counted: number; lastBuild: string; failed: number; notCounted: number; text: string }
+export interface WorkflowRow { model: string; name: string; text: string; finished: number; kept: number; safetyFailures: number; confidence: WorkflowConfidence }
 
 /** How each way of building has done in real builds on this computer. */
 export async function compareWorkflows(invoke: Invoke): Promise<WorkflowRow[]> {
