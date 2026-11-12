@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { Settings } from '../src/screens/Settings';
 import type { Invoke } from '../src/engine';
+import { routeEngine } from './shell';
 
 afterEach(cleanup);
 
@@ -13,7 +14,7 @@ const FAKE = 'sk-ant-test-0000000000000000';
 function fakeShell(initial: string[] = []) {
   const saved = new Set(initial);
   const calls: { cmd: string; args?: Record<string, unknown> }[] = [];
-  const invoke: Invoke = async <T,>(cmd: string, args?: Record<string, unknown>) => {
+  const invoke: Invoke = routeEngine(async <T,>(cmd: string, args?: Record<string, unknown>) => {
     calls.push({ cmd, args });
     const provider = String(args?.provider);
     if (cmd === 'key_save') {
@@ -21,7 +22,7 @@ function fakeShell(initial: string[] = []) {
       saved.add(provider);
     }
     if (cmd === 'key_remove') saved.delete(provider);
-    if (cmd === 'settings_get') return SETTINGS as T;
+    if (cmd === 'settings_check') return SETTINGS as T;
     if (cmd === 'gate_rules') return [] as T;
     if (cmd === 'history_list') return [] as T;
     if (cmd === 'phone_setup') return { issue: 5, url: 'https://github.com/o/r/issues/5', summary: 'Set up: issue #5 on o/r. Reply there from your phone with “projects” or “build <project> <feature>”.' } as T;
@@ -35,7 +36,7 @@ function fakeShell(initial: string[] = []) {
       return { ok: true, summary } as T;
     }
     return { provider, saved: saved.has(provider) } as T;
-  };
+  });
   return { invoke, calls };
 }
 
@@ -124,7 +125,7 @@ describe('Settings: API keys', () => {
     const shell = fakeShell(['anthropic']);
     render(<Settings invoke={shell.invoke} />);
     await within(row('Claude (Anthropic)')).findByText('Key saved');
-    expect(shell.calls.every((c) => ['key_status', 'key_save', 'key_remove', 'test_model', 'github_test', 'phone_setup', 'settings_get', 'spend_summary', 'gate_rules', 'history_list'].includes(c.cmd))).toBe(true);
+    expect(shell.calls.every((c) => ['key_status', 'key_save', 'key_remove', 'test_model', 'github_test', 'phone_setup', 'settings_check', 'spend_summary', 'gate_rules', 'history_list'].includes(c.cmd))).toBe(true);
   });
 
   it('tests the Claude connection and shows the reply and cost', async () => {

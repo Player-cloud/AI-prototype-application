@@ -89,28 +89,6 @@ fn spend_path(app: &tauri::AppHandle) -> Result<String, String> {
     Ok(dir.join("history.sqlite").to_string_lossy().into_owned())
 }
 
-/// This month's spend against the budget.
-#[tauri::command]
-async fn spend_summary(app: tauri::AppHandle, state: tauri::State<'_, Engine>) -> Result<serde_json::Value, String> {
-    let saved = settings::read(&settings_path(&app)?)?;
-    let db = spend_path(&app)?;
-    engine_call(&state, "spend_summary", serde_json::json!({ "settings": saved, "dbPath": db }))
-}
-
-/// The ask-first rules in plain words (the gatekeeper's, the app's guard, and joshua's own).
-#[tauri::command]
-async fn gate_rules(app: tauri::AppHandle, state: tauri::State<'_, Engine>) -> Result<serde_json::Value, String> {
-    let saved = settings::read(&settings_path(&app)?)?;
-    engine_call(&state, "gate_rules", serde_json::json!({ "settings": saved }))
-}
-
-/// Saved settings with defaults filled in by the engine.
-#[tauri::command]
-async fn settings_get(app: tauri::AppHandle, state: tauri::State<'_, Engine>) -> Result<serde_json::Value, String> {
-    let raw = settings::read(&settings_path(&app)?)?;
-    engine_call(&state, "settings_check", serde_json::json!({ "settings": raw }))
-}
-
 /// Checks the new settings in the engine, then saves the checked copy.
 #[tauri::command]
 async fn settings_save(
@@ -132,30 +110,75 @@ async fn settings_save(
     Ok(checked)
 }
 
-/// The engine methods the Projects screen may call. Anything else is refused.
-const PROJECT_METHODS: [&str; 9] = ["project_map", "interview_stages", "project_list", "interview_start", "interview_get", "interview_save", "interview_confirm", "code_folder_check", "code_folder_create"];
+/// Every engine method the window may call through the one generic `engine` command; anything
+/// else is refused. Only plain pass-throughs belong here. Nothing that touches keys, writes the
+/// settings, spends money or runs a build (those keep their own commands), and nothing the phone
+/// path uses on its own.
+const ENGINE_METHODS: [&str; 33] = [
+    "spend_summary",
+    "gate_rules",
+    "settings_check",
+    "data_overview",
+    "environment_check",
+    "eval_run",
+    "experiment_run",
+    "update_check",
+    "update_decide",
+    "capability_centre",
+    "project_tools",
+    "project_tools_approve",
+    "tool_rate",
+    "tool_switch_on",
+    "tool_trust",
+    "data_sync",
+    "history_list",
+    "run_list",
+    "workflow_compare",
+    "deps_approve",
+    "ask_list",
+    "ask_decide",
+    "work_list",
+    "run_rate",
+    "project_map",
+    "interview_stages",
+    "project_list",
+    "interview_start",
+    "interview_get",
+    "interview_save",
+    "interview_confirm",
+    "code_folder_check",
+    "code_folder_create",
+];
 
-fn project_method(method: &str) -> Result<&str, String> {
-    PROJECT_METHODS.iter().find(|m| **m == method).copied().ok_or_else(|| format!("not a project method: {method}"))
+fn engine_method(method: &str) -> Result<&'static str, String> {
+    ENGINE_METHODS.iter().find(|m| **m == method).copied().ok_or_else(|| format!("not an engine method the window may call: {method}"))
 }
 
-/// Projects and the plan interview. The saved settings (for the data folder) are added here.
+/// The params for a generic engine call. The saved settings and the spend file are always added
+/// here, replacing anything the window sent under those names, so the window can't pick them.
+fn engine_params(params: serde_json::Value, saved: serde_json::Value, db_path: String) -> Result<serde_json::Value, String> {
+    let mut map = match params {
+        serde_json::Value::Object(map) => map,
+        serde_json::Value::Null => serde_json::Map::new(),
+        _ => return Err("params must be an object".into()),
+    };
+    map.insert("settings".into(), saved);
+    map.insert("dbPath".into(), db_path.into());
+    Ok(serde_json::Value::Object(map))
+}
+
+/// One allow-listed engine method with the saved settings. Async so a slow engine never freezes
+/// the window.
 #[tauri::command]
-async fn project(
+async fn engine(
     method: String,
     params: serde_json::Value,
     app: tauri::AppHandle,
     state: tauri::State<'_, Engine>,
 ) -> Result<serde_json::Value, String> {
-    let method = project_method(&method)?;
+    let method = engine_method(&method)?;
     let saved = settings::read(&settings_path(&app)?)?;
-    let mut params = match params {
-        serde_json::Value::Object(map) => map,
-        serde_json::Value::Null => serde_json::Map::new(),
-        _ => return Err("params must be an object".into()),
-    };
-    params.insert("settings".into(), saved);
-    engine_call(&state, method, serde_json::Value::Object(params))
+    engine_call(&state, method, engine_params(params, saved, spend_path(&app)?)?)
 }
 
 /// The password-store name for an engine provider ("claude" is stored as "anthropic").
@@ -279,43 +302,12 @@ async fn build_stop(build: tauri::State<'_, Build>) -> Result<bool, String> {
     }
 }
 
-/// Saved feature builds for one project (or all), newest first.
-#[tauri::command]
-async fn run_list(slug: Option<String>, app: tauri::AppHandle, state: tauri::State<'_, Engine>) -> Result<serde_json::Value, String> {
-    engine_call(&state, "run_list", serde_json::json!({ "dbPath": spend_path(&app)?, "slug": slug.unwrap_or_default() }))
-}
-
-/// CI-4: how each way of building has done in real builds on this computer.
-#[tauri::command]
-async fn workflow_compare(app: tauri::AppHandle, state: tauri::State<'_, Engine>) -> Result<serde_json::Value, String> {
-    let saved = settings::read(&settings_path(&app)?)?;
-    engine_call(&state, "workflow_compare", serde_json::json!({ "settings": saved, "dbPath": spend_path(&app)? }))
-}
-
 /// Keep merges a build into joshua's own copy (never pushes); Undo removes the build's copy.
 #[tauri::command]
 async fn run_decide(id: i64, keep: bool, app: tauri::AppHandle, state: tauri::State<'_, Engine>) -> Result<serde_json::Value, String> {
     let saved = settings::read(&settings_path(&app)?)?;
     let method = if keep { "run_keep" } else { "run_undo" };
     engine_call(&state, method, serde_json::json!({ "settings": saved, "dbPath": spend_path(&app)?, "id": id, "githubToken": github_token() }))
-}
-
-/// joshua's OK for the new packages a build added; Keep is refused until then.
-#[tauri::command]
-async fn deps_approve(id: i64, app: tauri::AppHandle, state: tauri::State<'_, Engine>) -> Result<serde_json::Value, String> {
-    engine_call(&state, "deps_approve", serde_json::json!({ "dbPath": spend_path(&app)?, "id": id }))
-}
-
-/// Ask-first requests from builds that wait for joshua (the "Needs you" panel).
-#[tauri::command]
-async fn ask_list(app: tauri::AppHandle, state: tauri::State<'_, Engine>) -> Result<serde_json::Value, String> {
-    engine_call(&state, "ask_list", serde_json::json!({ "dbPath": spend_path(&app)? }))
-}
-
-/// joshua's answer to a request: Allow once (one time, 24 hours) or No.
-#[tauri::command]
-async fn ask_decide(id: i64, allow: bool, app: tauri::AppHandle, state: tauri::State<'_, Engine>) -> Result<serde_json::Value, String> {
-    engine_call(&state, "ask_decide", serde_json::json!({ "dbPath": spend_path(&app)?, "id": id, "allow": allow }))
 }
 
 /// The GitHub token for phone messages, when one is saved (step 10). Without one, nothing is posted.
@@ -357,25 +349,6 @@ async fn work_poll(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
     poll_phone(&app)
 }
 
-/// The "Needs you" panel: open work items, oldest first (step 10b).
-#[tauri::command]
-async fn work_list(app: tauri::AppHandle, state: tauri::State<'_, Engine>) -> Result<serde_json::Value, String> {
-    engine_call(&state, "work_list", serde_json::json!({ "dbPath": spend_path(&app)? }))
-}
-
-/// joshua's 1–5 rating for a build. The app may then update its learned habits (step 9d).
-#[tauri::command]
-async fn run_rate(id: i64, rating: u8, app: tauri::AppHandle, state: tauri::State<'_, Engine>) -> Result<serde_json::Value, String> {
-    let saved = settings::read(&settings_path(&app)?)?;
-    engine_call(&state, "run_rate", serde_json::json!({ "settings": saved, "dbPath": spend_path(&app)?, "id": id, "rating": rating }))
-}
-
-/// The newest changes, for Settings → History.
-#[tauri::command]
-async fn history_list(app: tauri::AppHandle, state: tauri::State<'_, Engine>) -> Result<serde_json::Value, String> {
-    engine_call(&state, "history_list", serde_json::json!({ "dbPath": spend_path(&app)? }))
-}
-
 /// One-click undo. Only puts a change back if nothing has changed since.
 #[tauri::command]
 async fn history_undo(id: i64, app: tauri::AppHandle, state: tauri::State<'_, Engine>) -> Result<serde_json::Value, String> {
@@ -401,109 +374,6 @@ async fn history_undo(id: i64, app: tauri::AppHandle, state: tauri::State<'_, En
     let check_text = check.get("text").and_then(|t| t.as_str()).unwrap_or("");
     let summary = format!("{} {}", r.get("summary").and_then(|t| t.as_str()).unwrap_or("Undone."), check_text).trim().to_string();
     Ok(serde_json::json!({ "kind": "settings", "id": id, "label": label, "summary": summary, "checked": checked }))
-}
-
-/// The tools, habits and rules in the data folder chosen in Settings (read-only).
-#[tauri::command]
-async fn data_overview(app: tauri::AppHandle, state: tauri::State<'_, Engine>) -> Result<serde_json::Value, String> {
-    let saved = settings::read(&settings_path(&app)?)?;
-    engine_call(&state, "data_overview", serde_json::json!({ "settings": saved }))
-}
-
-/// CI-3: runs the free repeatable tests (all, or one capability's) and saves the results.
-#[tauri::command]
-async fn eval_run(capability: Option<String>, app: tauri::AppHandle, state: tauri::State<'_, Engine>) -> Result<serde_json::Value, String> {
-    let saved = settings::read(&settings_path(&app)?)?;
-    engine_call(&state, "eval_run", serde_json::json!({ "settings": saved, "capability": capability.unwrap_or_default() }))
-}
-
-/// CI-5: runs one tool's free test several times in a row and saves the experiment as a proposal.
-#[tauri::command]
-async fn experiment_run(capability: String, runs: Option<u32>, app: tauri::AppHandle, state: tauri::State<'_, Engine>) -> Result<serde_json::Value, String> {
-    let saved = settings::read(&settings_path(&app)?)?;
-    let mut params = serde_json::json!({ "settings": saved, "capability": capability });
-    if let Some(n) = runs {
-        params["runs"] = serde_json::json!(n);
-    }
-    engine_call(&state, "experiment_run", params)
-}
-
-/// CI-6: looks for newer versions of the app's own packages (free). Installs nothing.
-#[tauri::command]
-async fn update_check(app: tauri::AppHandle, state: tauri::State<'_, Engine>) -> Result<serde_json::Value, String> {
-    let saved = settings::read(&settings_path(&app)?)?;
-    engine_call(&state, "update_check", serde_json::json!({ "settings": saved }))
-}
-
-/// CI-6: joshua's OK or no on one update. Still installs nothing.
-#[tauri::command]
-async fn update_decide(package: String, to: String, ok: bool, app: tauri::AppHandle, state: tauri::State<'_, Engine>) -> Result<serde_json::Value, String> {
-    let saved = settings::read(&settings_path(&app)?)?;
-    engine_call(&state, "update_decide", serde_json::json!({ "settings": saved, "package": package, "to": to, "ok": ok }))
-}
-
-/// UI-01: the Capability Centre, built only from real records (free, read-only).
-#[tauri::command]
-async fn capability_centre(app: tauri::AppHandle, state: tauri::State<'_, Engine>) -> Result<serde_json::Value, String> {
-    let saved = settings::read(&settings_path(&app)?)?;
-    let db = spend_path(&app)?;
-    engine_call(&state, "capability_centre", serde_json::json!({ "settings": saved, "dbPath": db }))
-}
-
-/// CI-7: a project's approved tools, the app's suggestions and the project's own rules (free).
-#[tauri::command]
-async fn project_tools(slug: String, app: tauri::AppHandle, state: tauri::State<'_, Engine>) -> Result<serde_json::Value, String> {
-    let saved = settings::read(&settings_path(&app)?)?;
-    engine_call(&state, "project_tools", serde_json::json!({ "settings": saved, "slug": slug }))
-}
-
-/// CI-7: saves joshua's choice of tools for a project (undoable from History), then syncs.
-#[tauri::command]
-async fn project_tools_approve(slug: String, tools: Vec<String>, app: tauri::AppHandle, state: tauri::State<'_, Engine>) -> Result<serde_json::Value, String> {
-    let saved = settings::read(&settings_path(&app)?)?;
-    let db = spend_path(&app)?;
-    engine_call(&state, "project_tools_approve", serde_json::json!({ "settings": saved, "slug": slug, "tools": tools, "dbPath": db }))
-}
-
-/// CI-2: checks this computer (free) and saves the result in the data folder, then syncs.
-#[tauri::command]
-async fn environment_check(app: tauri::AppHandle, state: tauri::State<'_, Engine>) -> Result<serde_json::Value, String> {
-    let saved = settings::read(&settings_path(&app)?)?;
-    engine_call(&state, "environment_check", serde_json::json!({ "settings": saved }))
-}
-
-/// Saves a 1–5 rating for a tool in the data repo's ledger, then syncs it to GitHub.
-#[tauri::command]
-async fn tool_rate(
-    tool: String,
-    rating: u8,
-    app: tauri::AppHandle,
-    state: tauri::State<'_, Engine>,
-) -> Result<serde_json::Value, String> {
-    let saved = settings::read(&settings_path(&app)?)?;
-    let db = spend_path(&app)?;
-    engine_call(&state, "tool_rate", serde_json::json!({ "settings": saved, "tool": tool, "rating": rating, "dbPath": db }))
-}
-
-/// Switches a tool that failed 3 times in a row back on (it's retested on next use), then syncs.
-#[tauri::command]
-async fn tool_switch_on(tool: String, app: tauri::AppHandle, state: tauri::State<'_, Engine>) -> Result<serde_json::Value, String> {
-    let saved = settings::read(&settings_path(&app)?)?;
-    engine_call(&state, "tool_switch_on", serde_json::json!({ "settings": saved, "tool": tool }))
-}
-
-/// joshua's trust action: Trust this tool (only for a checked tool) or Stop trusting. Nothing else sets "trusted".
-#[tauri::command]
-async fn tool_trust(tool: String, trust: String, app: tauri::AppHandle, state: tauri::State<'_, Engine>) -> Result<serde_json::Value, String> {
-    let saved = settings::read(&settings_path(&app)?)?;
-    engine_call(&state, "tool_trust", serde_json::json!({ "settings": saved, "tool": tool, "trust": trust }))
-}
-
-/// Commits data folder changes and syncs them with GitHub (never forces).
-#[tauri::command]
-async fn data_sync(app: tauri::AppHandle, state: tauri::State<'_, Engine>) -> Result<serde_json::Value, String> {
-    let saved = settings::read(&settings_path(&app)?)?;
-    engine_call(&state, "data_sync", serde_json::json!({ "settings": saved }))
 }
 
 /// Tests a saved key: free for OpenAI and DeepSeek, one tiny question for Claude.
@@ -550,7 +420,7 @@ pub fn run() {
             });
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![version, engine_status, key_status, key_save, key_remove, test_model, settings_get, settings_save, data_overview, environment_check, eval_run, experiment_run, update_check, update_decide, project_tools, project_tools_approve, capability_centre, spend_summary, tool_rate, tool_switch_on, tool_trust, data_sync, gate_rules, history_list, history_undo, project, interview_suggest, interview_review, build_feature, build_stop, run_list, workflow_compare, run_decide, deps_approve, ask_list, ask_decide, run_rate, github_test, work_list, work_poll, phone_setup])
+        .invoke_handler(tauri::generate_handler![version, engine_status, engine, key_status, key_save, key_remove, test_model, settings_save, interview_suggest, interview_review, build_feature, build_stop, run_decide, history_undo, github_test, work_poll, phone_setup])
         .run(tauri::generate_context!())
         .expect("error while running the app");
 }
@@ -582,15 +452,47 @@ mod tests {
     }
 
     #[test]
-    fn only_project_methods_pass() {
-        assert_eq!(project_method("interview_save"), Ok("interview_save"));
-        assert_eq!(project_method("code_folder_check"), Ok("code_folder_check"));
-        assert_eq!(project_method("code_folder_create"), Ok("code_folder_create"));
-        assert_eq!(project_method("project_map"), Ok("project_map"));
-        assert!(project_method("tool_rate").is_err());
-        assert!(project_method("tool_switch_on").is_err());
-        assert!(project_method("tool_trust").is_err());
-        assert!(project_method("ask").is_err());
+    fn unknown_methods_are_refused() {
+        assert!(engine_method("nope").is_err());
+        assert!(engine_method("").is_err());
+        assert!(engine_method("ask").is_err());
+        assert_eq!(engine_method("tool_rate"), Ok("tool_rate"));
+    }
+
+    #[test]
+    fn saved_settings_and_spend_file_replace_what_the_window_sent() {
+        let sent = serde_json::json!({ "slug": "club-hr", "settings": { "dataFolder": "/etc" }, "dbPath": "/elsewhere.sqlite" });
+        let out = engine_params(sent, serde_json::json!({ "dataFolder": "/mine" }), "/app/history.sqlite".into()).unwrap();
+        assert_eq!(out, serde_json::json!({ "slug": "club-hr", "settings": { "dataFolder": "/mine" }, "dbPath": "/app/history.sqlite" }));
+        let none = engine_params(serde_json::Value::Null, serde_json::json!({}), "/d".into()).unwrap();
+        assert_eq!(none, serde_json::json!({ "settings": {}, "dbPath": "/d" }));
+        assert!(engine_params(serde_json::json!([1]), serde_json::json!({}), "/d".into()).is_err());
+    }
+
+    #[test]
+    fn every_old_pass_through_method_is_still_allowed() {
+        let old = [
+            "spend_summary", "gate_rules", "settings_check", "data_overview", "environment_check", "eval_run", "experiment_run",
+            "update_check", "update_decide", "capability_centre", "project_tools", "project_tools_approve", "tool_rate",
+            "tool_switch_on", "tool_trust", "data_sync", "history_list", "run_list", "workflow_compare", "deps_approve",
+            "ask_list", "ask_decide", "work_list", "run_rate", "project_map", "interview_stages", "project_list",
+            "interview_start", "interview_get", "interview_save", "interview_confirm", "code_folder_check", "code_folder_create",
+        ];
+        for m in old {
+            assert_eq!(engine_method(m), Ok(m), "{m} was lost");
+        }
+        assert_eq!(old.len(), ENGINE_METHODS.len());
+    }
+
+    #[test]
+    fn keys_settings_writes_paid_and_phone_methods_are_not_generic() {
+        let kept = [
+            "ask", "check", "github_check", "build_feature", "interview_suggest", "interview_review", "run_keep", "run_undo",
+            "settings_saved", "undo", "undo_check", "phone_setup", "work_poll", "gate_check",
+        ];
+        for m in kept {
+            assert!(engine_method(m).is_err(), "{m} must not be generic");
+        }
     }
 
     #[test]

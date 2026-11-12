@@ -1,4 +1,4 @@
-import type { Invoke } from './engine';
+import { engine, type Invoke } from './engine';
 
 /** Makes a Tauri Channel that calls `onMessage` for each value Rust sends. Injected for tests. */
 export type MakeChannel = <T>(onMessage: (message: T) => void) => unknown;
@@ -186,7 +186,7 @@ export interface WorkflowRow { model: string; name: string; text: string; finish
 /** How each way of building has done in real builds on this computer. */
 export async function compareWorkflows(invoke: Invoke): Promise<WorkflowRow[]> {
   try {
-    return await invoke<WorkflowRow[]>('workflow_compare');
+    return await engine<WorkflowRow[]>(invoke, 'workflow_compare');
   } catch (err) {
     throw plain(err);
   }
@@ -195,7 +195,7 @@ export async function compareWorkflows(invoke: Invoke): Promise<WorkflowRow[]> {
 /** Saved builds for a project, newest first. */
 export async function listRuns(invoke: Invoke, slug: string): Promise<BuildRun[]> {
   try {
-    return await invoke<BuildRun[]>('run_list', { slug });
+    return await engine<BuildRun[]>(invoke, 'run_list', { slug });
   } catch (err) {
     throw plain(err);
   }
@@ -218,7 +218,7 @@ export function needsPackageOk(r: BuildRun): boolean {
 /** joshua's OK for the new packages a build added. After this, Keep is allowed (if nothing else blocks). */
 export async function approvePackages(invoke: Invoke, id: number): Promise<{ run: BuildRun; note: string; keep: { keep: boolean; blocking: string[] } }> {
   try {
-    return await invoke('deps_approve', { id });
+    return await engine(invoke, 'deps_approve', { id });
   } catch (err) {
     throw plain(err);
   }
@@ -226,7 +226,7 @@ export async function approvePackages(invoke: Invoke, id: number): Promise<{ run
 
 export async function rateRun(invoke: Invoke, id: number, rating: number): Promise<Rated> {
   try {
-    return await invoke<Rated>('run_rate', { id, rating });
+    return await engine<Rated>(invoke, 'run_rate', { id, rating });
   } catch (err) {
     throw plain(err);
   }
@@ -246,7 +246,7 @@ export interface WorkItem {
 /** The "Needs you" panel: open items, oldest first. */
 export async function listWork(invoke: Invoke): Promise<WorkItem[]> {
   try {
-    return await invoke<WorkItem[]>('work_list');
+    return await engine<WorkItem[]>(invoke, 'work_list');
   } catch (err) {
     throw plain(err);
   }
@@ -277,7 +277,7 @@ export interface AskRequest {
 /** The ask-first requests waiting in the "Needs you" panel, oldest first. */
 export async function listAsks(invoke: Invoke): Promise<AskRequest[]> {
   try {
-    return await invoke<AskRequest[]>('ask_list');
+    return await engine<AskRequest[]>(invoke, 'ask_list');
   } catch (err) {
     throw plain(err);
   }
@@ -286,7 +286,7 @@ export async function listAsks(invoke: Invoke): Promise<AskRequest[]> {
 /** Allow once lets that exact thing through one time (for 24 hours); No closes the request. */
 export async function decideAsk(invoke: Invoke, id: number, allow: boolean): Promise<{ note: string }> {
   try {
-    return await invoke<{ note: string }>('ask_decide', { id, allow });
+    return await engine<{ note: string }>(invoke, 'ask_decide', { id, allow });
   } catch (err) {
     throw plain(err);
   }

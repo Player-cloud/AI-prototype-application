@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { Projects } from '../src/screens/Projects';
 import type { Invoke } from '../src/engine';
+import { routeEngine } from './shell';
 import type { Interview, InterviewView, Patch, StageId } from '../src/projects';
 
 afterEach(cleanup);
@@ -39,7 +40,7 @@ function fakeShell() {
 
   let settings = { dataFolder: '/data', codeFolders: {} as Record<string, string> };
   let approved: string[] | null = null;
-  const invoke: Invoke = async <T,>(cmd: string, args?: Record<string, unknown>) => {
+  const invoke: Invoke = routeEngine(async <T,>(cmd: string, args?: Record<string, unknown>) => {
     if (cmd === 'interview_suggest') {
       calls.push({ method: 'suggest', params: args ?? {} });
       if (args?.stage === 'features') {
@@ -55,7 +56,7 @@ function fakeShell() {
       iv.review = { at: '', big: false, costText: '£0.01 ($0.01)', findings: [{ reviewer: 'plan', severity: 'could', text: 'Dark mode' }, { reviewer: 'plan', severity: 'must', text: 'No password reset', feature: 'F-01' }] };
       return { view: view(iv), summary: '2 findings, 1 must fix. Cost: £0.01 ($0.01).' } as T;
     }
-    if (cmd === 'settings_get') return structuredClone(settings) as T;
+    if (cmd === 'settings_check') return structuredClone(settings) as T;
     if (cmd === 'settings_save') {
       settings = structuredClone(args?.settings) as typeof settings;
       for (const [k, v] of Object.entries(settings.codeFolders)) if (!v) delete settings.codeFolders[k];
@@ -74,9 +75,9 @@ function fakeShell() {
       const r = { slug: args?.slug, approved, rows, rules: ['Use British English'] };
       return (cmd === 'project_tools' ? r : { ...r, summary: `Approved ${approved!.length} tools for club-hr.`, synced: 'Synced with GitHub.' }) as T;
     }
-    if (cmd !== 'project') throw `unexpected ${cmd}`;
-    const method = String(args?.method);
-    const p = (args?.params ?? {}) as Record<string, unknown>;
+    // Every other engine method is a project method; the switch below refuses anything it doesn't know.
+    const method = cmd;
+    const p = (args ?? {}) as Record<string, unknown>;
     calls.push({ method, params: p });
     const get = () => {
       const iv = projects.get(String(p.slug));
@@ -131,7 +132,7 @@ function fakeShell() {
       }
     }
     throw `unknown ${method}`;
-  };
+  });
   return { invoke, calls, projects };
 }
 
@@ -244,7 +245,7 @@ describe('Projects: plan interview', () => {
 
   it('opens an existing project from the list and shows refusals in plain words', async () => {
     const shell = fakeShell();
-    await shell.invoke('project', { method: 'interview_start', params: { name: 'Club HR' } });
+    await shell.invoke('engine', { method: 'interview_start', params: { name: 'Club HR' } });
     render(<Projects invoke={shell.invoke} />);
     const list = await screen.findByRole('list', { name: 'Projects' });
     fireEvent.click(within(list).getByRole('button', { name: /Club HR/ }));

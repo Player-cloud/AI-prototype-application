@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen, within } from '@testing-library/rea
 import { Tools } from '../src/screens/Tools';
 import { savedPercent, type DataOverview, type ToolRow } from '../src/data';
 import type { Invoke } from '../src/engine';
+import { routeEngine } from './shell';
 
 afterEach(cleanup);
 
@@ -46,7 +47,7 @@ const OVERVIEW: DataOverview = {
 };
 
 const shell = (answer: DataOverview | string, calls: { cmd: string; args?: Record<string, unknown> }[] = [], syncError = ''): Invoke =>
-  (async <T,>(cmd: string, args?: Record<string, unknown>) => {
+  routeEngine((async <T,>(cmd: string, args?: Record<string, unknown>) => {
     calls.push({ cmd, args });
     if (cmd === 'tool_rate' || cmd === 'data_sync' || cmd === 'tool_switch_on') {
       if (syncError) throw syncError;
@@ -92,7 +93,7 @@ const shell = (answer: DataOverview | string, calls: { cmd: string; args?: Recor
     if (cmd !== 'data_overview') throw `unexpected ${cmd}`;
     if (typeof answer === 'string') throw answer;
     return answer as T;
-  }) as Invoke;
+  }) as Invoke);
 
 describe('Tools page', () => {
   it('lists tools in use first with counts and the token saving', async () => {

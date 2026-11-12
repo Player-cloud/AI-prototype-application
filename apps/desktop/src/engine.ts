@@ -3,6 +3,14 @@ export type EngineStatus = { state: 'running'; version: string } | { state: 'sto
 /** Calls into the Rust shell. Injected so screens can be tested without Tauri. */
 export type Invoke = <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
 
+/**
+ * The one way to call an engine method through the shell. The Rust side only runs methods on its
+ * allow-list, and always adds the saved settings itself (anything sent as `settings` is replaced).
+ */
+export function engine<T>(invoke: Invoke, method: string, params: Record<string, unknown> = {}): Promise<T> {
+  return invoke<T>('engine', { method, params });
+}
+
 export function inTauri(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 }

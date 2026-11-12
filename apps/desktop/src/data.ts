@@ -1,4 +1,4 @@
-import type { Invoke } from './engine';
+import { engine, type Invoke } from './engine';
 
 export type ToolState = 'on' | 'trial' | 'untested' | 'off' | 'unknown';
 
@@ -84,7 +84,7 @@ export function updatesToShow(updates: UpdateRow[]): UpdateRow[] {
 /** CI-6: looks for newer versions of the app's packages (free). Installs nothing. */
 export async function lookForUpdates(invoke: Invoke): Promise<{ updates: UpdateRow[]; summary: string; synced: string }> {
   try {
-    return await invoke('update_check');
+    return await engine(invoke, 'update_check');
   } catch (err) {
     throw plain(err);
   }
@@ -93,7 +93,7 @@ export async function lookForUpdates(invoke: Invoke): Promise<{ updates: UpdateR
 /** CI-6: your OK or no on one update. The app still installs nothing. */
 export async function decideUpdate(invoke: Invoke, pkg: string, to: string, ok: boolean): Promise<{ update: UpdateRow; summary: string; synced: string }> {
   try {
-    return await invoke('update_decide', { package: pkg, to, ok });
+    return await engine(invoke, 'update_decide', { package: pkg, to, ok });
   } catch (err) {
     throw plain(err);
   }
@@ -113,14 +113,14 @@ export interface EvalReport { results: { capability: string; suite: string; outc
 export interface ExperimentReport { experiments: ExperimentRow[]; summary: string; synced: string }
 export async function runExperiment(invoke: Invoke, capability: string): Promise<ExperimentReport> {
   try {
-    return await invoke<ExperimentReport>('experiment_run', { capability });
+    return await engine<ExperimentReport>(invoke, 'experiment_run', { capability });
   } catch (err) {
     throw plain(err);
   }
 }
 export async function runFreeTests(invoke: Invoke, capability?: string): Promise<EvalReport> {
   try {
-    return await invoke<EvalReport>('eval_run', capability ? { capability } : {});
+    return await engine<EvalReport>(invoke, 'eval_run', capability ? { capability } : {});
   } catch (err) {
     throw plain(err);
   }
@@ -129,7 +129,7 @@ export async function runFreeTests(invoke: Invoke, capability?: string): Promise
 /** Checks this computer: free, changes nothing on it. */
 export async function checkThisComputer(invoke: Invoke): Promise<EnvironmentReport> {
   try {
-    return await invoke<EnvironmentReport>('environment_check');
+    return await engine<EnvironmentReport>(invoke, 'environment_check');
   } catch (err) {
     throw plain(err);
   }
@@ -137,7 +137,7 @@ export async function checkThisComputer(invoke: Invoke): Promise<EnvironmentRepo
 
 export async function getDataOverview(invoke: Invoke): Promise<DataOverview> {
   try {
-    return await invoke<DataOverview>('data_overview');
+    return await engine<DataOverview>(invoke, 'data_overview');
   } catch (err) {
     throw new Error(err instanceof Error ? err.message : String(err));
   }
@@ -151,7 +151,7 @@ function plain(err: unknown): Error {
 
 export async function rateTool(invoke: Invoke, tool: string, rating: number): Promise<SyncResult> {
   try {
-    return await invoke<SyncResult>('tool_rate', { tool, rating });
+    return await engine<SyncResult>(invoke, 'tool_rate', { tool, rating });
   } catch (err) {
     throw plain(err);
   }
@@ -160,7 +160,7 @@ export async function rateTool(invoke: Invoke, tool: string, rating: number): Pr
 /** Switches a switched-off tool back on; it gets a quick retest next time it's used. */
 export async function switchToolOn(invoke: Invoke, tool: string): Promise<SyncResult> {
   try {
-    return await invoke<SyncResult>('tool_switch_on', { tool });
+    return await engine<SyncResult>(invoke, 'tool_switch_on', { tool });
   } catch (err) {
     throw plain(err);
   }
@@ -175,7 +175,7 @@ export type Trust = 'unknown' | 'checked' | 'trusted';
  */
 export async function setTrust(invoke: Invoke, tool: string, trust: Trust): Promise<{ trust: Trust }> {
   try {
-    return await invoke<{ trust: Trust }>('tool_trust', { tool, trust });
+    return await engine<{ trust: Trust }>(invoke, 'tool_trust', { tool, trust });
   } catch (err) {
     throw plain(err);
   }
@@ -183,7 +183,7 @@ export async function setTrust(invoke: Invoke, tool: string, trust: Trust): Prom
 
 export async function syncData(invoke: Invoke): Promise<SyncResult> {
   try {
-    return await invoke<SyncResult>('data_sync');
+    return await engine<SyncResult>(invoke, 'data_sync');
   } catch (err) {
     throw plain(err);
   }
@@ -230,7 +230,7 @@ export type Centre =
 /** UI-01: every capability from real records only (free, read-only). */
 export async function getCentre(invoke: Invoke): Promise<Centre> {
   try {
-    return await invoke<Centre>('capability_centre');
+    return await engine<Centre>(invoke, 'capability_centre');
   } catch (err) {
     throw plain(err);
   }

@@ -5,6 +5,7 @@ import { Build, limitText } from '../src/screens/Build';
 import { doneList } from '../src/build';
 import type { BuildEvent, Finding, MakeChannel } from '../src/build';
 import type { Invoke } from '../src/engine';
+import { routeEngine } from './shell';
 
 afterEach(cleanup);
 
@@ -37,9 +38,9 @@ function fakeShell(opts: { map?: Record<string, unknown>; fail?: string; runs?: 
   let finish: ((v: unknown) => void) | null = null;
   let fail: ((e: unknown) => void) | null = null;
   const makeChannel: MakeChannel = <T,>(onMessage: (m: T) => void) => ({ onMessage });
-  const invoke: Invoke = async <T,>(cmd: string, args?: Record<string, unknown>) => {
+  const invoke: Invoke = routeEngine(async <T,>(cmd: string, args?: Record<string, unknown>) => {
     calls.push({ cmd, args });
-    if (cmd === 'settings_get') return { gbpPerUsd: 0.79, runCapGbp: 0.8 } as T;
+    if (cmd === 'settings_check') return { gbpPerUsd: 0.79, runCapGbp: 0.8 } as T;
     if (cmd === 'run_list') return runs as T;
     if (cmd === 'workflow_compare') {
       return (runs.length
@@ -84,19 +85,19 @@ function fakeShell(opts: { map?: Record<string, unknown>; fail?: string; runs?: 
         fail = rej;
       });
     }
-    const p = (args?.params ?? {}) as Record<string, unknown>;
-    if (args?.method === 'project_list') {
+    const p = (args ?? {}) as Record<string, unknown>;
+    if (cmd === 'project_list') {
       return [
         { slug: 'draft', name: 'Draft', status: 'Planning', finished: false, updatedAt: '' },
         { slug: 'club-hr', name: 'Club HR', status: 'Spec ready', finished: true, updatedAt: '' },
       ] as T;
     }
-    if (args?.method === 'project_map') return { version: 1, updatedAt: null, features: opts.map ?? {} } as T;
-    if (args?.method === 'interview_get' && p.slug === 'club-hr') {
+    if (cmd === 'project_map') return { version: 1, updatedAt: null, features: opts.map ?? {} } as T;
+    if (cmd === 'interview_get' && p.slug === 'club-hr') {
       return { interview: { features: [{ id: 'F-01', name: 'Login', what: '' }, { id: 'F-02', name: 'Rota', what: '' }] } } as T;
     }
-    throw `unexpected ${cmd} ${String(args?.method)}`;
-  };
+    throw `unexpected ${cmd}`;
+  });
   return {
     invoke,
     makeChannel,
@@ -113,7 +114,7 @@ describe('Build screen: project map', () => {
     expect(await screen.findByText('This feature touched before: 3 files, 1 test')).toBeTruthy();
     const list = screen.getByRole('list', { name: 'Files this feature touched before' });
     expect([...list.querySelectorAll('li')].map((li) => li.textContent)).toEqual(['src/Login.tsx', 'src/Login.test.tsx (test)', 'src/Session.ts']);
-    expect(shell.calls.find((c) => (c.args as { method?: string })?.method === 'project_map')?.args).toMatchObject({ params: { project: 'club-hr' } });
+    expect(shell.calls.find((c) => c.cmd === 'project_map')?.args).toMatchObject({ project: 'club-hr' });
   });
 
   it('says New feature for a feature with no files yet', async () => {

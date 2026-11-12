@@ -1,4 +1,4 @@
-import type { Invoke } from './engine';
+import { engine, type Invoke } from './engine';
 
 export type StageId = 'idea' | 'audience' | 'features' | 'checklist' | 'look' | 'tech' | 'done';
 
@@ -68,7 +68,7 @@ export interface Patch {
 /** Calls one of the engine's project methods through the shell; errors come back in plain words. */
 async function call<T>(invoke: Invoke, method: string, params: Record<string, unknown> = {}): Promise<T> {
   try {
-    return await invoke<T>('project', { method, params });
+    return await engine<T>(invoke, method, params);
   } catch (err) {
     throw new Error(err instanceof Error ? err.message : String(err));
   }
@@ -105,7 +105,7 @@ export interface ProjectTools { slug: string; approved: string[] | null; rows: P
 /** CI-7: the project's approved tools, the app's suggestions and its own rules (free). */
 export async function getProjectTools(invoke: Invoke, slug: string): Promise<ProjectTools> {
   try {
-    return await invoke<ProjectTools>('project_tools', { slug });
+    return await engine<ProjectTools>(invoke, 'project_tools', { slug });
   } catch (err) {
     throw new Error(err instanceof Error ? err.message : String(err));
   }
@@ -114,7 +114,7 @@ export async function getProjectTools(invoke: Invoke, slug: string): Promise<Pro
 /** CI-7: saves joshua's choice of tools for this project (undo it from History). */
 export async function approveProjectTools(invoke: Invoke, slug: string, tools: string[]): Promise<ProjectTools & { summary: string; synced: string }> {
   try {
-    return await invoke<ProjectTools & { summary: string; synced: string }>('project_tools_approve', { slug, tools });
+    return await engine<ProjectTools & { summary: string; synced: string }>(invoke, 'project_tools_approve', { slug, tools });
   } catch (err) {
     throw new Error(err instanceof Error ? err.message : String(err));
   }

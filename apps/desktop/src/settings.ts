@@ -1,4 +1,4 @@
-import type { Invoke } from './engine';
+import { engine, type Invoke } from './engine';
 
 /** The engine's provider names (the key rows use 'anthropic' for Claude). */
 export type EngineProvider = 'claude' | 'openai' | 'deepseek';
@@ -31,7 +31,7 @@ function message(err: unknown): string {
 
 export async function getSettings(invoke: Invoke): Promise<AppSettings> {
   try {
-    return await invoke<AppSettings>('settings_get');
+    return await engine<AppSettings>(invoke, 'settings_check');
   } catch (err) {
     throw new Error(message(err));
   }
@@ -66,7 +66,7 @@ export interface RuleView {
 
 export async function getRules(invoke: Invoke): Promise<RuleView[]> {
   try {
-    const rules = await invoke<RuleView[]>('gate_rules');
+    const rules = await engine<RuleView[]>(invoke, 'gate_rules');
     return Array.isArray(rules) ? rules : [];
   } catch (err) {
     throw new Error(message(err));
@@ -86,7 +86,7 @@ export interface SpendSummary {
 
 export async function getSpend(invoke: Invoke): Promise<SpendSummary | null> {
   try {
-    const s = await invoke<SpendSummary>('spend_summary');
+    const s = await engine<SpendSummary>(invoke, 'spend_summary');
     return s && typeof s.spentText === 'string' ? s : null;
   } catch {
     return null; // the budget form still works without it
@@ -124,7 +124,7 @@ export interface HistoryItem {
 
 export async function getHistory(invoke: Invoke): Promise<HistoryItem[]> {
   try {
-    const items = await invoke<HistoryItem[]>('history_list');
+    const items = await engine<HistoryItem[]>(invoke, 'history_list');
     return Array.isArray(items) ? items : [];
   } catch (err) {
     throw new Error(message(err));
