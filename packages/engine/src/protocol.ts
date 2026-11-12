@@ -22,6 +22,10 @@
  *  - experiment_run: {settings, capability, runs?} -> CI-5: runs a tool's free test several times in a
  *    row (default 3) and saves the experiment (question, fixed inputs, measures, result) in the data
  *    folder's experiments/ as a proposal. Changes nothing else. Free.
+ *  - update_check: {settings} -> CI-6: looks for newer versions of the app's own packages (free;
+ *    `pnpm outdated`, installs nothing), keeps them in the data folder's updates.json and syncs.
+ *  - update_decide: {settings, package, to, ok} -> joshua's OK or no on one update. Nothing is
+ *    installed: an OK gives back the command for joshua to run himself.
  *  - environment_check: {settings} -> checks this computer (Node, pnpm, git, browser, check tools),
  *    saves it as environments/<computer>.json in the data folder and syncs. Free.
  *  - tool_rate: {settings, tool, rating} -> saves a 1–5 rating in ledger.md and syncs the data repo.
@@ -87,6 +91,7 @@
 import { compareWorkflows } from './workflows.ts';
 import { runRepeatExperiment } from './experiments.ts';
 import { setupPhone } from './phone.ts';
+import { checkUpdates, decideUpdateNow } from './updates.ts';
 import type { CheckResult } from '@aip/checks';
 import type { Job, ModelAdapter, Provider } from '@aip/models';
 import { formatCost } from './money.ts';
@@ -322,6 +327,12 @@ const HANDLERS: Record<string, Handler> = {
     const runs = typeof p.runs === 'number' ? p.runs : undefined;
     const at = deps.now?.();
     return runRepeatExperiment(checkSettings(p.settings), { capability: str(p, 'capability'), runs, now: at ? () => at : undefined });
+  },
+  update_check: (params, deps) => checkUpdates(checkSettings(obj(params).settings), { now: deps.now?.() }),
+  update_decide: (params, deps) => {
+    const p = obj(params);
+    if (typeof p.ok !== 'boolean') throw new Error('Say OK or no.');
+    return decideUpdateNow(checkSettings(p.settings), str(p, 'package'), str(p, 'to'), p.ok, deps.now?.() ?? new Date());
   },
   environment_check: (params, deps) => environmentCheck(checkSettings(obj(params).settings), deps.now?.() ?? new Date()),
   tool_rate: (params, deps) => {

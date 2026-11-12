@@ -52,7 +52,29 @@ export type DataOverview =
       clashes?: string[];
       /** CI-5: the newest experiments; all proposals until joshua adopts one. */
       experiments?: ExperimentRow[];
+      /** CI-6: updates found, and your OK or no on each. */
+      updates?: UpdateRow[];
     };
+
+export interface UpdateRow { package: string; from: string; to: string; level: string; status: 'found' | 'approved' | 'declined' | 'installed'; text: string; command: string }
+
+/** CI-6: looks for newer versions of the app's packages (free). Installs nothing. */
+export async function lookForUpdates(invoke: Invoke): Promise<{ updates: UpdateRow[]; summary: string; synced: string }> {
+  try {
+    return await invoke('update_check');
+  } catch (err) {
+    throw plain(err);
+  }
+}
+
+/** CI-6: your OK or no on one update. The app still installs nothing. */
+export async function decideUpdate(invoke: Invoke, pkg: string, to: string, ok: boolean): Promise<{ update: UpdateRow; summary: string; synced: string }> {
+  try {
+    return await invoke('update_decide', { package: pkg, to, ok });
+  } catch (err) {
+    throw plain(err);
+  }
+}
 
 export interface ExperimentRow { id: string; capability: string; question: string; verdict: string; at: string; status: string }
 

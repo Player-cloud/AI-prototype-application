@@ -139,6 +139,12 @@ Results are passed, failed or "couldn’t run here" (no browser, say), never a m
 - **Regression check:** each time the free tests run, a tool's newest result is compared with its last result on a different version, on the same computer. If it now fails where it passed, or gets fewer cases right, the Tools page says "Got worse after updating from X to Y". Tests that couldn't run, and results with no version, are never compared.
 - **Experiments:** under a tool with a free test, **Is it steady?** runs that test 3 times in a row. It saves the question, the fixed inputs (the test and how many runs), what it measured (outcome, cases right and time for each run) and the result in the data repo as `experiments/<id>.json`. The result is a proposal: nothing is changed, switched off or installed because of it. Free: £0.00 ($0.00).
 
+## Updates (Capability Intelligence)
+
+Tools → **Look for updates** checks for newer versions of the app's own packages with `pnpm outdated`. It uses the same registry `pnpm install` already uses, and sends only package names. It's free and installs nothing. Each update found is saved in the data repo (`updates.json`) as found, OK'd, declined or installed, which are separate states. The app's tracked tools (secretlint, axe-core, Playwright, the Claude Agent SDK) are listed first, and a major update is marked "may change how it works".
+
+Press **OK** or **No** for each update. The app never installs one. After an OK it shows the exact command to run in the app folder, for example `pnpm --filter @aip/checks update @secretlint/node@13.1.0`. Then run `pnpm install` and **Run free tests**: a pass on the new version clears its retest mark, and a test that does worse is flagged. A declined update isn't suggested again.
+
 ## Ways of building compared (Capability Intelligence)
 
 Each build is measured from start to finish: whether it was kept or undone, whether the tests passed first time, problems found by the app's own checks, the secret scan, cost in £ and $, and time. Missing numbers stay missing, and joshua's 1–5 rating is shown on its own, never mixed in. The Build screen shows **Ways of building compared** (from this computer's history), and each build starts with what the evidence says beside the Using line.
