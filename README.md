@@ -107,6 +107,17 @@ joshua uses two computers, so tool versions are tracked per computer: a differen
 
 The Tools page also lists duplicate or clashing tools in the ledger: two lines with the same ID, two tools both on for the same job (a BACKUP is fine), or a card whose `Ledger:` line names a line that isn't there. This is advice only; nothing is switched on or off because of it.
 
+## Repeatable tests (Capability Intelligence)
+
+Settings → Tools → **Run free tests** checks that each check tool still does its job, using planted problems on test data (nothing private is used or sent anywhere). Free: £0.00 ($0.00).
+
+- secretlint must find a planted GitHub token and private key, flag a `.env` file, and stay quiet on a clean file.
+- The checklist rules must each find their planted problem and raise nothing on clean lines.
+- axe-core must find an image without alt text, an unlabelled box, a missing page language, and a page too wide for a phone.
+- Playwright must take the desktop and phone pictures.
+
+Results are passed, failed or "couldn’t run here" (no browser, say), never a made-up score. Each names the tool's version and the computer, and is saved in the data repo as `evaluations/<id>.json` (last 30). A pass on a new version clears the "retest due" mark; a fail counts as a failure in tool health; "couldn’t run here" counts as neither. Fewer than 3 runs is shown as a first look, not proof. A tool with no test stays "Untested". Paid model tests come later, and only with joshua's OK.
+
 ## Undo
 
 Every settings change and tool rating is kept in `history.sqlite` on this computer, with exactly what it was before and after. Settings → Change history lists them, each with an Undo button. Undo only puts a change back if nothing has changed it since; otherwise it says so and touches nothing. Undoing a rating also syncs the data repo. An undo can itself be undone (shown as Redo).

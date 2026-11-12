@@ -12,6 +12,8 @@ export interface ToolRow {
   testedVersion: string | null;
   /** The version on each computer, when more than one has used it (CI-2). */
   byComputer?: string;
+  /** CI-3: the latest repeatable-test results; '' when never tested (shown as untested). */
+  tested?: string;
   state: ToolState;
   status: string;
   job: string;
@@ -50,6 +52,16 @@ export type DataOverview =
 export interface EnvCheck { name: string; ok: boolean | null; detail: string }
 export interface Environment { computer: string; checkedAt: string; os: string; versions: Record<string, string>; checks: EnvCheck[] }
 export interface EnvironmentReport { environment: Environment; differences: string[]; synced: string }
+
+/** CI-3: the free repeatable tests (planted problems each tool must find). */
+export interface EvalReport { results: { capability: string; suite: string; outcome: string; detail: string }[]; summary: string; synced: string }
+export async function runFreeTests(invoke: Invoke, capability?: string): Promise<EvalReport> {
+  try {
+    return await invoke<EvalReport>('eval_run', capability ? { capability } : {});
+  } catch (err) {
+    throw plain(err);
+  }
+}
 
 /** Checks this computer: free, changes nothing on it. */
 export async function checkThisComputer(invoke: Invoke): Promise<EnvironmentReport> {

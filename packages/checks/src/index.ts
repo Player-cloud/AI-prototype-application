@@ -33,4 +33,5 @@ export { CHECKLIST_RULES, MAX_FINDINGS, auditCheck, changedSince, checklistCheck
 export { SIZES, browserChoice, freePort, serveCommand, takePictures, type Picture, type PicturesResult, type Serve } from './pictures.js';
 export { LivePreview, watchLive, type LiveOptions, type LiveState } from './live.js';
 export { CHECK_TOOLS, checkToolUses, checkToolVersions, type CheckTool, type ToolUse } from './versions.js';
+export { Blocked, RUBRIC, SUITES, overall, runSuites, type CaseResult, type EvalKind, type EvalResult, type EvalSuite, type Outcome } from './evals.js';
 export { browserPaths, checkEnvironment, compareComputers, computerId, versionIn, type EnvCheck, type EnvOptions, type Environment, type Run } from './environment.js';
