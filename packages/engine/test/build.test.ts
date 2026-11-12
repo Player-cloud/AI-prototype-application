@@ -289,6 +289,20 @@ describe('build_feature', () => {
     return call;
   }
 
+  it('adds the feature’s known files from the project map to the prompt, at most 30', async () => {
+    const seen: Seen = { answers: [] };
+    const settings = { dataFolder: data, codeFolders: { 'club-hr': code } };
+    const call = await plan(deps(seen), settings);
+    const files = Array.from({ length: 40 }, (_, i) => `src/f${i}.ts`);
+    await writeFile(join(data, 'projects', 'club-hr', 'map.json'), JSON.stringify({ version: 1, updatedAt: null, features: { 'F-01': { title: 'Login', files, tests: [], lastBuildId: 1, lastKeptAt: 'x' } } }));
+    const r = await call('build_feature', { settings, slug: 'club-hr', feature: 'F-01', provider: 'claude', apiKey: FAKE_KEY, dbPath: join(root, 'history.sqlite') });
+    expect(r.error).toBeUndefined();
+    const prompt = seen.task!.prompt;
+    expect(prompt).toContain('Files this feature touched in earlier builds');
+    expect(prompt.split('\n').filter((l) => /^- src\/f\d+\.ts$/.test(l))).toHaveLength(30);
+    expect(prompt).toContain('- …and 10 more');
+  });
+
   it('builds one feature in its own copy, refusing what the gatekeeper or the copy rule stops', async () => {
     const seen: Seen = { answers: [] };
     const d = deps(seen);

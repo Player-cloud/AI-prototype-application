@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Invoke } from '../engine';
-import { listProjects, openProject, type Feature, type ProjectRow } from '../projects';
+import { listProjects, openProject, projectMap, type Feature, type MapFeature, type ProjectRow } from '../projects';
 import { getSettings } from '../settings';
 import { CHECK_NAME, LEVEL_HEADING, LEVEL_ORDER, approvePackages, findingsAt, costSoFar, endedWords, endedEarly, compareWorkflows, decideAsk, decideRun, keepable, listAsks, listRuns, listWork, needsPackageOk, pollPhone, rateRun, startBuild, stopBuild, type BuildResult, type BuildRun, type AskRequest, type BuildStep, type LiveView, type MakeChannel, type WorkItem, type WorkflowRow } from '../build';
 
@@ -53,6 +53,26 @@ export function limitText(gbp: number, gbpPerUsd: number): string {
   return `£${gbp.toFixed(2)} ($${(gbp / gbpPerUsd).toFixed(2)})`;
 }
 
+/** Before a build: what this feature touched in earlier kept builds (the project map). */
+export function FeatureMap({ entry }: { entry: MapFeature | undefined }) {
+  if (!entry || entry.files.length === 0) return <p className="muted">New feature: no files yet.</p>;
+  const count = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+  return (
+    <details className="feature-map">
+      <summary>This feature touched before: {count(entry.files.length, 'file')}, {count(entry.tests.length, 'test')}</summary>
+      {entry.note && <p className="muted">{entry.note}</p>}
+      <ul aria-label="Files this feature touched before">
+        {entry.files.map((f) => (
+          <li key={f}>
+            <code>{f}</code>
+            {entry.tests.includes(f) ? ' (test)' : ''}
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
 /** Step 8c: pick a finished project and one feature, build it, and watch each step live. */
 export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChannel: MakeChannel | null }) {
   const [projects, setProjects] = useState<ProjectRow[] | null>(null);
@@ -75,6 +95,7 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
   const [asks, setAsks] = useState<AskRequest[]>([]);
   const [liveView, setLiveView] = useState<LiveView | null>(null);
   const [reload, setReload] = useState(0);
+  const [map, setMap] = useState<Record<string, MapFeature>>({});
   const lastReload = useRef(0);
 
   useEffect(() => {
@@ -117,8 +138,21 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
     };
   }, [invoke, slug]);
 
-  // CI-4: the comparison follows the builds (new, kept, undone or rated). It's advice, so a failure is quiet.
   const runsKey = runs.map((r) => `${r.id}:${r.status}:${r.rating ?? ''}`).join(',');
+  // The project map: refreshed with the builds (a Keep changes it). It's a hint, so a failure is quiet.
+  useEffect(() => {
+    if (!invoke || !slug) return;
+    let live = true;
+    projectMap(invoke, slug).then(
+      (m) => live && setMap(m.features),
+      () => live && setMap({}),
+    );
+    return () => {
+      live = false;
+    };
+  }, [invoke, slug, runsKey]);
+
+  // CI-4: the comparison follows the builds (new, kept, undone or rated). It's advice, so a failure is quiet.
   useEffect(() => {
     if (!invoke || !runsKey) return;
     let live = true;
@@ -333,6 +367,7 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
           )}
         </div>
       )}
+      {projects && projects.length > 0 && feature && <FeatureMap entry={map[feature]} />}
       {using && <p className="using-line">{using}</p>}
       {advice.length > 0 && (
         <ul className="advice" aria-label="What real builds say">

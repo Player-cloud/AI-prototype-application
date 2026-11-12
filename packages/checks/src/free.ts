@@ -54,7 +54,7 @@ export async function changedSince(dir: string, base: string, exec: Exec = realE
   return { files, added };
 }
 
-const KEY_FILE = /^(\.env(\..+)?|.+\.pem|.+\.key|id_rsa|id_ed25519)$/i;
+export const KEY_FILE = /^(\.env(\..+)?|.+\.pem|.+\.key|id_rsa|id_ed25519)$/i;
 
 /** secretlint, the same rules this repo's own `pnpm secrets` uses. Secret values are never shown. */
 export async function secretScan(dir: string, files: string[]): Promise<CheckResult> {

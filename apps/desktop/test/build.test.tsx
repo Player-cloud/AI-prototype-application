@@ -28,7 +28,7 @@ const WAITING = {
   findings: [] as Finding[],
 };
 
-function fakeShell(opts: { fail?: string; runs?: (typeof WAITING)[]; asks?: { id: number; at: string; slug: string; feature: string; branch: string; tool: string; input: string; reason: string }[] } = {}) {
+function fakeShell(opts: { map?: Record<string, unknown>; fail?: string; runs?: (typeof WAITING)[]; asks?: { id: number; at: string; slug: string; feature: string; branch: string; tool: string; input: string; reason: string }[] } = {}) {
   let runs = [...(opts.runs ?? [])];
   let asks = [...(opts.asks ?? [])];
   const calls: { cmd: string; args?: Record<string, unknown> }[] = [];
@@ -90,6 +90,7 @@ function fakeShell(opts: { fail?: string; runs?: (typeof WAITING)[]; asks?: { id
         { slug: 'club-hr', name: 'Club HR', status: 'Spec ready', finished: true, updatedAt: '' },
       ] as T;
     }
+    if (args?.method === 'project_map') return { version: 1, updatedAt: null, features: opts.map ?? {} } as T;
     if (args?.method === 'interview_get' && p.slug === 'club-hr') {
       return { interview: { features: [{ id: 'F-01', name: 'Login', what: '' }, { id: 'F-02', name: 'Rota', what: '' }] } } as T;
     }
@@ -103,6 +104,26 @@ function fakeShell(opts: { fail?: string; runs?: (typeof WAITING)[]; asks?: { id
     done: (v: unknown) => finish!(v),
   };
 }
+
+describe('Build screen: project map', () => {
+  it('shows how many files and tests the feature touched before, with the list, and asks the engine for this project', async () => {
+    const shell = fakeShell({ map: { 'F-01': { title: 'Login', files: ['src/Login.tsx', 'src/Login.test.tsx', 'src/Session.ts'], tests: ['src/Login.test.tsx'], lastBuildId: 3, lastKeptAt: '2026-11-12T09:00:00Z' } } });
+    render(<Build invoke={shell.invoke} makeChannel={shell.makeChannel} />);
+    expect(await screen.findByText('This feature touched before: 3 files, 1 test')).toBeTruthy();
+    const list = screen.getByRole('list', { name: 'Files this feature touched before' });
+    expect([...list.querySelectorAll('li')].map((li) => li.textContent)).toEqual(['src/Login.tsx', 'src/Login.test.tsx (test)', 'src/Session.ts']);
+    expect(shell.calls.find((c) => (c.args as { method?: string })?.method === 'project_map')?.args).toMatchObject({ params: { project: 'club-hr' } });
+  });
+
+  it('says New feature for a feature with no files yet', async () => {
+    const shell = fakeShell({ map: { 'F-01': { title: 'Login', files: ['a.ts'], tests: [], lastBuildId: 1, lastKeptAt: 'x' } } });
+    render(<Build invoke={shell.invoke} makeChannel={shell.makeChannel} />);
+    await screen.findByText('This feature touched before: 1 file, 0 tests');
+    const feature = (await screen.findByRole('option', { name: 'F-02 Rota' })).parentElement as HTMLSelectElement;
+    fireEvent.change(feature, { target: { value: 'F-02' } });
+    expect(await screen.findByText('New feature: no files yet.')).toBeTruthy();
+  });
+});
 
 describe('Build screen', () => {
   it('shows the most a run can cost in £ and $', () => {

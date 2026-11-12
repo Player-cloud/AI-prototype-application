@@ -133,7 +133,7 @@ async fn settings_save(
 }
 
 /// The engine methods the Projects screen may call. Anything else is refused.
-const PROJECT_METHODS: [&str; 8] = ["interview_stages", "project_list", "interview_start", "interview_get", "interview_save", "interview_confirm", "code_folder_check", "code_folder_create"];
+const PROJECT_METHODS: [&str; 9] = ["project_map", "interview_stages", "project_list", "interview_start", "interview_get", "interview_save", "interview_confirm", "code_folder_check", "code_folder_create"];
 
 fn project_method(method: &str) -> Result<&str, String> {
     PROJECT_METHODS.iter().find(|m| **m == method).copied().ok_or_else(|| format!("not a project method: {method}"))
@@ -586,6 +586,7 @@ mod tests {
         assert_eq!(project_method("interview_save"), Ok("interview_save"));
         assert_eq!(project_method("code_folder_check"), Ok("code_folder_check"));
         assert_eq!(project_method("code_folder_create"), Ok("code_folder_create"));
+        assert_eq!(project_method("project_map"), Ok("project_map"));
         assert!(project_method("tool_rate").is_err());
         assert!(project_method("tool_switch_on").is_err());
         assert!(project_method("tool_trust").is_err());

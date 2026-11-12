@@ -9,6 +9,7 @@
 import type { Run } from '@aip/memory';
 import type { AppSettings } from './settings.ts';
 import { checkCodeFolder, codeFolderOf, type Git } from './runs.ts';
+import { updateMapAfterKeep } from './project-map.ts';
 
 export type RunRow = Run;
 
@@ -136,8 +137,16 @@ export async function keepRun(settings: AppSettings, dbPath: string, id: number,
     }
     const mergeCommit = (await g(['rev-parse', 'HEAD'], folder)).trim();
     log.decide(id, 'kept', now, { mergeCommit, keptInto: status.branch });
+    // Project map: what this build changed (read before the build's branch goes). A map problem never fails Keep.
+    let mapNote: string;
+    try {
+      const changed = (await g(['diff', '--name-only', '-z', '--no-renames', `${run.base}..${run.branch}`], folder)).split('\0').filter(Boolean);
+      mapNote = await updateMapAfterKeep(settings, run.slug, { feature: run.feature, buildId: id, keptAt: now, changed }, folder);
+    } catch (err) {
+      mapNote = ` The project map wasn’t updated (${(err as Error).message.split('\n')[0]}).`;
+    }
     const left = await tidy(g, folder, run, 'merged');
-    return { run: log.get(id)!, note: `Kept ${run.feature} in your copy on ${status.branch}. Nothing was pushed.${left}` };
+    return { run: log.get(id)!, note: `Kept ${run.feature} in your copy on ${status.branch}. Nothing was pushed.${left}${mapNote}` };
   });
 }
 

@@ -119,3 +119,8 @@ export async function approveProjectTools(invoke: Invoke, slug: string, tools: s
     throw new Error(err instanceof Error ? err.message : String(err));
   }
 }
+
+/** What kept builds changed, per feature (the project map). Paths are repo-relative with forward slashes. */
+export interface MapFeature { title: string; files: string[]; tests: string[]; lastBuildId: number; lastKeptAt: string; note?: string }
+export interface ProjectMap { version: 1; updatedAt: string | null; features: Record<string, MapFeature> }
+export const projectMap = (invoke: Invoke, project: string) => call<ProjectMap>(invoke, 'project_map', { project });
