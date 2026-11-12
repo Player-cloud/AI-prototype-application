@@ -43,6 +43,7 @@ describe('build run rules', () => {
     });
     expect(await checkStep(s, run, 'Read', { file_path: join(run, '.env') })).toEqual({ allow: false, reason: 'Gatekeeper (key-files): reading or writing key files is never allowed' });
     expect(await checkStep(s, run, 'Bash', { command: 'pnpm test' })).toEqual({ allow: true });
+    expect(await checkStep(s, run, 'Bash', { command: 'docker ps' })).toEqual({ allow: true, note: "docker isn't on the list of known build commands; it needs joshua's OK" });
   });
 });
 
@@ -108,7 +109,7 @@ describe('build_feature', () => {
   /** A fake agent: tries a write in its copy, a push and a write outside, then reports. */
   type Seen = { task?: BuildTask; maxUsd?: number; answers: unknown[]; prompts?: string[]; caps?: number[]; previous?: unknown[]; watched?: string[]; liveStops?: number; homes?: string[]; removed?: string[] };
   /** opts.tests: what each test run gives (passes when it runs out); opts.fail: the model errors. */
-  function deps(seen: Seen, withBuild = true, opts: { tests?: boolean[]; fail?: string; checks?: { name: string; passed: boolean; free: boolean; detail?: string; advisory?: boolean }[] } = {}): Deps {
+  function deps(seen: Seen, withBuild = true, opts: { tests?: boolean[]; fail?: string; noted?: string; checks?: { name: string; passed: boolean; free: boolean; detail?: string; advisory?: boolean }[] } = {}): Deps {
     const results = [...(opts.tests ?? [])];
     const adapter: ModelAdapter = {
       provider: 'claude',
@@ -128,6 +129,7 @@ describe('build_feature', () => {
                 ['Bash', { command: 'git push origin main' }],
                 ['Write', { file_path: join(code, 'hack.md'), content: 'x' }],
               ];
+              if (opts.noted) tries.push(['Bash', { command: opts.noted }]);
               for (const [tool, input] of tries) {
                 task.onStep?.(`${tool} ${String(input.file_path ?? input.command)}`);
                 const d = await task.checkTool(tool, input);
@@ -309,6 +311,19 @@ describe('build_feature', () => {
       detail: 'login.md:1 (Security): Use https:// links.',
     });
     expect((await call('run_list', { dbPath, slug: 'club-hr' })).result[0].pictures).toEqual([{ name: 'desktop', path: out.pictures[0].path, hash: 'h1' }]);
+  });
+
+  it('adds a "Would ask" step for a command the new shell list would ask about, and still lets it run', async () => {
+    const seen: Seen = { answers: [] };
+    const call = await plan(deps(seen, true, { noted: 'docker ps' }), { dataFolder: data, codeFolders: { 'club-hr': code } });
+    const r = await call('build_feature', { settings: { dataFolder: data, codeFolders: { 'club-hr': code } }, slug: 'club-hr', feature: 'F-01', provider: 'claude', apiKey: FAKE_KEY, dbPath: join(root, 'history.sqlite') });
+    expect(r.error).toBeUndefined();
+    expect(seen.answers.map((a) => (a as { allow: boolean }).allow)).toEqual([true, false, false, true]);
+    expect(seen.answers[3]).toMatchObject({ allow: true, note: expect.stringContaining('docker') });
+    const texts = r.result.steps.map((s: { text: string }) => s.text);
+    expect(texts).toContain("Would ask joshua under the new shell list: docker isn't on the list of known build commands; it needs joshua's OK");
+    // Refusals are unchanged: only the two bad steps are refused, the noted one is not.
+    expect(r.result.steps.filter((s: { refused?: string }) => s.refused).map((s: { text: string }) => s.text)).toEqual(['Refused: Bash', 'Refused: Write']);
   });
 
   it('gives the build agent a throwaway home folder and removes it afterwards', async () => {

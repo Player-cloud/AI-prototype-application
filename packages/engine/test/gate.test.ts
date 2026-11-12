@@ -59,6 +59,9 @@ describe('rules for Settings', () => {
     expect(rules[0]).toMatchObject({ id: 'protect-rules', kind: 'never', source: 'gatekeeper' });
     expect(rules.find((r) => r.id === 'push')).toMatchObject({ kind: 'ask', source: 'gatekeeper' });
     expect(rules.find((r) => r.id === 'key-files')).toMatchObject({ kind: 'never' });
+    expect(rules.find((r) => r.id === 'shell-git')).toMatchObject({ kind: 'ask', source: 'gatekeeper' });
+    expect(rules.find((r) => r.id === 'shell-obfuscation')).toMatchObject({ kind: 'never', source: 'gatekeeper' });
+    expect(rules.find((r) => r.id === 'shell-allow-list')).toMatchObject({ kind: 'ask', source: 'gatekeeper' });
     expect(rules.at(-1)).toEqual({ id: 'yours-1', reason: 'payments need my OK', kind: 'ask', source: 'yours', match: 'stripe' });
   });
 

@@ -11,7 +11,7 @@ export interface Usage { inputTokens: number; outputTokens: number; costUsd: num
 export interface StepResult { text: string; usage: Usage }
 
 /** The app's answer before an agent tool runs: allow it, or refuse with a reason the model sees. */
-export type ToolDecision = { allow: true } | { allow: false; reason: string };
+export type ToolDecision = { allow: true; note?: string } | { allow: false; reason: string };
 
 /** A build task: the agent works in `cwd` with file and shell tools, each checked first. */
 export interface BuildTask {
