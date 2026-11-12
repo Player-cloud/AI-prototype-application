@@ -28,6 +28,34 @@ async function gitOf(git?: Git): Promise<Git> {
   return git ?? (await import('@aip/memory')).realGit;
 }
 
+/** Said when Keep is refused because the build added packages joshua hasn't OK'd (also on the phone). */
+export const NEEDS_APPROVAL = 'This build added new packages, and they need your OK first. Open the app on your PC, press “Approve new packages” on the build, then keep it.';
+
+export interface ApproveResult { run: Run; note: string; keep: { keep: boolean; blocking: string[] } }
+
+/**
+ * joshua's OK for the new packages of one waiting build. The build's saved `dependencies` check
+ * becomes passed (with who, when and which packages), and the OK goes in the change history.
+ * Keep then works from the saved checks, so nothing else is needed.
+ */
+export async function approveDeps(dbPath: string, id: number, now: Date): Promise<ApproveResult> {
+  const { NEW_PACKAGE } = await import('@aip/checks');
+  const { approvalRecorded } = await import('./history.ts');
+  const result = await withRuns(dbPath, (log) => {
+    const run = waiting(log, id);
+    const check = run.checks.find((c) => c.name === 'dependencies' && !c.passed && !c.advisory);
+    if (!check) throw new Error('This build has no new packages waiting for your OK.');
+    const packages = (check.detail ?? '').split('\n').filter((l) => l.startsWith(NEW_PACKAGE)).map((l) => l.slice(NEW_PACKAGE.length));
+    const detail = `Approved by joshua on ${now.toISOString().slice(0, 10)}: ${packages.join('; ')}`;
+    log.setChecks(id, run.checks.map((c) => (c === check ? { name: c.name, passed: true, detail } : c)));
+    return { run: log.get(id)!, detail, packages };
+  });
+  await approvalRecorded(dbPath, `Approved new packages for ${result.run.feature}: ${result.packages.join(', ')}`, result.detail, now);
+  const blocking = result.run.checks.filter((c) => !c.passed && !c.advisory).map((c) => c.name);
+  if (!result.run.testsPassed) blocking.unshift('tests');
+  return { run: result.run, note: `Approved the new packages for ${result.run.feature}: ${result.packages.join(', ')}.`, keep: { keep: blocking.length === 0, blocking } };
+}
+
 export function listRuns(dbPath: string, slug?: string): Promise<Run[]> {
   return withRuns(dbPath, (log) => log.list(slug));
 }
@@ -72,7 +100,9 @@ export async function keepRun(settings: AppSettings, dbPath: string, id: number,
     const run = waiting(log, id);
     if (!run.testsPassed) throw new Error('The tests fail, so this build can’t be kept. Undo it, or build the feature again.');
     const blocking = run.checks.filter((c) => !c.passed && !c.advisory).map((c) => c.name);
-    if (blocking.length) throw new Error(`These checks must pass before it can be kept: ${blocking.join(', ')}. Undo it, or build the feature again.`);
+    const others = blocking.filter((n) => n !== 'dependencies');
+    if (others.length) throw new Error(`These checks must pass before it can be kept: ${others.join(', ')}. Undo it, or build the feature again.`);
+    if (blocking.includes('dependencies')) throw new Error(NEEDS_APPROVAL);
     const folder = codeFolderOf(settings, run.slug);
     const status = await checkCodeFolder(folder, g);
     if (!status.clean) throw new Error(`Your copy (${folder}) has changes not committed yet. Commit them or put them aside, then press Keep again.`);

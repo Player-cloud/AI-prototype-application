@@ -106,6 +106,11 @@ export async function settingsSaved(
   );
 }
 
+/** Records joshua's OK for something (like new packages in a build). There's nothing to put back. */
+export async function approvalRecorded(dbPath: string, label: string, detail: string, now: Date) {
+  return withLog(dbPath, (log) => log.record({ at: now, kind: 'approval', label, target: '', before: '', after: detail }));
+}
+
 /** Records a change to a text file (e.g. ledger.md). */
 export async function fileChanged(dbPath: string, path: string, before: string, after: string, label: string, now: Date) {
   if (before === after) return null;
@@ -116,7 +121,7 @@ export interface HistoryItem {
   id: number;
   at: string;
   label: string;
-  kind: 'settings' | 'file';
+  kind: 'settings' | 'file' | 'approval';
   /** When this change was undone, or null. */
   undoneAt: string | null;
   /** True when this change was itself an undo. */
@@ -145,6 +150,7 @@ export async function undoStart(dbPath: string, id: number, currentRawSettings: 
   const change = await withLog(dbPath, (log) => log.get(id));
   if (!change) throw new Error('That change is no longer in the history.');
   if (change.undoneAt) throw new Error('That change has already been undone.');
+  if (change.kind === 'approval') throw new Error('An approval can’t be undone here. Undo the build instead.');
 
   if (change.kind === 'settings') {
     if (stable(settingsOrDefault(currentRawSettings)) !== change.after) throw new Error(`Settings ${CHANGED_SINCE}`);

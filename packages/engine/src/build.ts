@@ -221,7 +221,7 @@ export async function checkStep(settings: AppSettings, runPath: string, tool: st
 }
 
 /** Plain names for the step list. */
-const CHECK_NAMES: Record<string, string> = { secrets: 'Secret scan', audit: 'Package audit', checklist: 'Checklist rules', axe: 'Accessibility', 'phone-overflow': 'Phone width' };
+const CHECK_NAMES: Record<string, string> = { secrets: 'Secret scan', audit: 'Package audit', dependencies: 'New packages', checklist: 'Checklist rules', axe: 'Accessibility', 'phone-overflow': 'Phone width' };
 
 /** How many times a failing test run is handed back to the model to fix (inside the run's limit). */
 export const FIX_ATTEMPTS = 2;

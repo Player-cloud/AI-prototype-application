@@ -2,6 +2,9 @@
  * Step 9b: the free checks after a build, in the build's own copy. No model and no cost.
  *  - secrets: secretlint on every file the build added or changed, and no key files (.env, *.pem).
  *  - audit: the package manager's audit; high or critical problems stop Keep.
+ *  - dependencies: packages the build added to any package.json. They need joshua's OK before
+ *    Keep, so this stops Keep until he approves them (a changed version of a package already there
+ *    doesn't count as new).
  *  - checklist: simple rules for the enterprise checklist areas the project ticked, on the lines
  *    the build added. These are advice: they're reported but don't stop Keep.
  */
@@ -140,8 +143,65 @@ export function checklistCheck(areas: string[], added: AddedLine[]): CheckResult
   };
 }
 
+const DEP_SECTIONS = ['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies'] as const;
+
+/** Every package a package.json lists, once by name: its version range and the section it is in. */
+function listedPackages(text: string | null): Map<string, { range: string; section: string }> {
+  const out = new Map<string, { range: string; section: string }>();
+  if (text === null) return out;
+  let json: Record<string, unknown>;
+  try {
+    json = JSON.parse(text) as Record<string, unknown>;
+  } catch {
+    return out;
+  }
+  for (const section of DEP_SECTIONS) {
+    const list = json?.[section];
+    if (!list || typeof list !== 'object') continue;
+    for (const [name, range] of Object.entries(list as Record<string, unknown>)) {
+      if (!out.has(name)) out.set(name, { range: String(range), section });
+    }
+  }
+  return out;
+}
+
+/** The line that starts each new package in the detail (the approval reads these back). */
+export const NEW_PACKAGE = 'New: ';
+export const NEEDS_OK = 'New packages need your OK before Keep.';
+
+/**
+ * New packages in any package.json of the copy (root and workspace packages), compared with the
+ * same file at `base`. A file that wasn't there at base counts as all new. New packages fail this
+ * check and it isn't advice, so Keep is stopped until joshua approves them.
+ */
+export async function dependenciesCheck(dir: string, base: string, files: string[], exec: Exec = realExec): Promise<CheckResult> {
+  const manifests = files.filter((f) => /(^|\/)package\.json$/.test(f) && !/(^|\/)node_modules\//.test(f));
+  const added: string[] = [];
+  const changed: string[] = [];
+  for (const file of manifests.sort()) {
+    let now: string | null = null;
+    try {
+      now = await readFile(join(dir, file), 'utf8');
+    } catch {
+      continue; // deleted by the build: nothing new
+    }
+    const before = await exec('git', ['show', `${base}:${file}`], dir, FIVE_MINUTES);
+    const was = listedPackages(before.code === 0 ? before.output : null);
+    for (const [name, { range, section }] of listedPackages(now)) {
+      const old = was.get(name);
+      if (!old) added.push(`${NEW_PACKAGE}${name} ${range} (${section} in ${file})`);
+      else if (old.range !== range) changed.push(`Changed: ${name} ${old.range} → ${range} (${file})`);
+    }
+  }
+  const lines = [...added, ...changed];
+  if (added.length === 0) {
+    return { name: 'dependencies', passed: true, free: true, detail: ['No new packages.', ...changed].join('\n') };
+  }
+  return { name: 'dependencies', passed: false, free: true, detail: [...lines, NEEDS_OK].join('\n') };
+}
+
 /** All free checks for one build. */
 export async function runFreeChecks(dir: string, base: string, areas: string[], exec: Exec = realExec): Promise<CheckResult[]> {
   const changed = await changedSince(dir, base, exec);
-  return [await secretScan(dir, changed.files), await auditCheck(dir, exec), checklistCheck(areas, changed.added)];
+  return [await secretScan(dir, changed.files), await auditCheck(dir, exec), await dependenciesCheck(dir, base, changed.files, exec), checklistCheck(areas, changed.added)];
 }
