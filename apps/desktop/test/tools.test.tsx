@@ -77,6 +77,10 @@ const shell = (answer: DataOverview | string, calls: { cmd: string; args?: Recor
         synced: 'Saved 2 files.',
       } as T;
     }
+    if (cmd === 'update_check') return { updates: [], summary: '1 newer version found (1 of the app’s tracked tools), 1 waiting for your OK. Nothing was installed. Cost: £0.00 ($0.00).', synced: '' } as T;
+    if (cmd === 'update_decide') {
+      return { update: {}, summary: `OK noted for ${String(args?.package)} ${String(args?.to)}. To adopt it, run: pnpm --filter @aip/checks update @secretlint/node@13.1.0`, synced: 'Saved 1 file.' } as T;
+    }
     if (cmd === 'experiment_run') {
       return {
         experiments: [{ id: 'x', capability: String(args?.capability), question: 'Q?', verdict: 'Steady: passed in all 3 runs (4/4 cases right each time).', at: '2026-11-12T11:00:00Z', status: 'proposal' }],
@@ -176,6 +180,24 @@ describe('Tools page', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Is it steady? (runs its test 3 times, free)' }));
     expect(await screen.findByText('Steady: passed in all 3 runs (4/4 cases right each time). Nothing was changed: it’s a proposal. Cost: £0.00 ($0.00). Saved 1 file.')).toBeTruthy();
     expect(calls.find((c) => c.cmd === 'experiment_run')?.args).toEqual({ capability: 'secretlint' });
+  });
+
+  it('looks for updates and takes your OK or no; it never installs (CI-6)', async () => {
+    const calls: { cmd: string; args?: Record<string, unknown> }[] = [];
+    const updates = [
+      { package: '@secretlint/node', from: '11.7.1', to: '13.1.0', level: 'major', status: 'found' as const, text: '@secretlint/node 11.7.1 → 13.1.0 (major: may change how it works).', command: '' },
+      { package: 'vite', from: '8.3.7', to: '8.3.8', level: 'patch', status: 'approved' as const, text: 'vite 8.3.7 → 8.3.8 (patch). You said OK.', command: 'pnpm --filter @aip/desktop update vite@8.3.8' },
+      { package: 'old', from: '1.0.0', to: '2.0.0', level: 'major', status: 'declined' as const, text: 'old: you said no.', command: '' },
+    ];
+    render(<Tools invoke={shell({ ...OVERVIEW, updates }, calls)} />);
+    const region = await screen.findByRole('region', { name: 'Updates' });
+    expect(region.textContent).toContain('pnpm --filter @aip/desktop update vite@8.3.8');
+    expect(region.textContent).not.toContain('you said no');
+    fireEvent.click(screen.getByRole('button', { name: 'Look for updates' }));
+    expect(await screen.findByText(/^1 newer version found .* Nothing was installed\./)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'OK @secretlint/node 13.1.0' }));
+    expect(await screen.findByText(/^OK noted for @secretlint\/node 13\.1\.0\. To adopt it, run:/)).toBeTruthy();
+    expect(calls.find((c) => c.cmd === 'update_decide')?.args).toEqual({ package: '@secretlint/node', to: '13.1.0', ok: true });
   });
 
   it('shows tool health under the tool, warning about failures', async () => {

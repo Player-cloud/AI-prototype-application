@@ -405,6 +405,20 @@ async fn experiment_run(capability: String, runs: Option<u32>, app: tauri::AppHa
     engine_call(&state, "experiment_run", params)
 }
 
+/// CI-6: looks for newer versions of the app's own packages (free). Installs nothing.
+#[tauri::command]
+async fn update_check(app: tauri::AppHandle, state: tauri::State<'_, Engine>) -> Result<serde_json::Value, String> {
+    let saved = settings::read(&settings_path(&app)?)?;
+    engine_call(&state, "update_check", serde_json::json!({ "settings": saved }))
+}
+
+/// CI-6: joshua's OK or no on one update. Still installs nothing.
+#[tauri::command]
+async fn update_decide(package: String, to: String, ok: bool, app: tauri::AppHandle, state: tauri::State<'_, Engine>) -> Result<serde_json::Value, String> {
+    let saved = settings::read(&settings_path(&app)?)?;
+    engine_call(&state, "update_decide", serde_json::json!({ "settings": saved, "package": package, "to": to, "ok": ok }))
+}
+
 /// CI-2: checks this computer (free) and saves the result in the data folder, then syncs.
 #[tauri::command]
 async fn environment_check(app: tauri::AppHandle, state: tauri::State<'_, Engine>) -> Result<serde_json::Value, String> {
@@ -483,7 +497,7 @@ pub fn run() {
             });
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![version, engine_status, key_status, key_save, key_remove, test_model, settings_get, settings_save, data_overview, environment_check, eval_run, experiment_run, spend_summary, tool_rate, tool_switch_on, data_sync, gate_rules, history_list, history_undo, project, interview_suggest, interview_review, build_feature, build_stop, run_list, workflow_compare, run_decide, run_rate, github_test, work_list, work_poll, phone_setup])
+        .invoke_handler(tauri::generate_handler![version, engine_status, key_status, key_save, key_remove, test_model, settings_get, settings_save, data_overview, environment_check, eval_run, experiment_run, update_check, update_decide, spend_summary, tool_rate, tool_switch_on, data_sync, gate_rules, history_list, history_undo, project, interview_suggest, interview_review, build_feature, build_stop, run_list, workflow_compare, run_decide, run_rate, github_test, work_list, work_poll, phone_setup])
         .run(tauri::generate_context!())
         .expect("error while running the app");
 }

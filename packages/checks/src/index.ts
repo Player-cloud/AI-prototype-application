@@ -35,3 +35,4 @@ export { LivePreview, watchLive, type LiveOptions, type LiveState } from './live
 export { CHECK_TOOLS, checkToolUses, checkToolVersions, type CheckTool, type ToolUse } from './versions.js';
 export { Blocked, RUBRIC, SUITES, overall, runSuites, type CaseResult, type EvalKind, type EvalResult, type EvalSuite, type Outcome } from './evals.js';
 export { browserPaths, checkEnvironment, compareComputers, computerId, versionIn, type EnvCheck, type EnvOptions, type Environment, type Run } from './environment.js';
+export { findUpdates, levelOf, parseOutdated, type Level, type RunOut, type UpdateFound } from './updates.js';

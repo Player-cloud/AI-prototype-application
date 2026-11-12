@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { Invoke } from '../engine';
-import { STATE_LABEL, checkThisComputer, getDataOverview, runExperiment, runFreeTests, rateTool, savedPercent, switchToolOn, syncData, type DataOverview, type Environment, type ToolRow, type ToolState } from '../data';
+import { STATE_LABEL, checkThisComputer, decideUpdate, getDataOverview, lookForUpdates, runExperiment, runFreeTests, rateTool, savedPercent, switchToolOn, syncData, type DataOverview, type Environment, type ToolRow, type ToolState } from '../data';
 
 const ORDER: ToolState[] = ['on', 'trial', 'untested', 'off', 'unknown'];
 
@@ -169,6 +169,24 @@ export function Tools({ invoke }: { invoke: Invoke | null }) {
     });
   }
 
+  function updates() {
+    if (!invoke) return;
+    void work('Looking for updates (free, installs nothing)…', async () => {
+      const r = await lookForUpdates(invoke);
+      setData(await getDataOverview(invoke));
+      return { summary: [r.summary, r.synced].filter(Boolean).join(' ') };
+    });
+  }
+
+  function decide(pkg: string, to: string, ok: boolean) {
+    if (!invoke) return;
+    void work(ok ? 'Noting your OK…' : 'Noting your no…', async () => {
+      const r = await decideUpdate(invoke, pkg, to, ok);
+      setData(await getDataOverview(invoke));
+      return { summary: [r.summary, r.synced].filter(Boolean).join(' ') };
+    });
+  }
+
   function experiment(t: ToolRow) {
     if (!invoke) return;
     void work(`Running ${t.name}’s test 3 times in a row…`, async () => {
@@ -195,6 +213,9 @@ export function Tools({ invoke }: { invoke: Invoke | null }) {
         </button>
         <button type="button" disabled={busy} onClick={freeTests}>
           Run free tests
+        </button>
+        <button type="button" disabled={busy} onClick={updates}>
+          Look for updates
         </button>
       </div>
       {note && (
@@ -269,6 +290,33 @@ export function Tools({ invoke }: { invoke: Invoke | null }) {
           </li>
         ))}
       </ul>
+      {(data.updates ?? []).some((u) => u.status === 'found' || u.status === 'approved') && (
+        <div className="updates" role="region" aria-label="Updates">
+          <h3>Updates</h3>
+          <p className="muted">Found, not installed. The app never installs an update: after your OK it shows the command to run.</p>
+          <ul>
+            {data.updates!
+              .filter((u) => u.status === 'found' || u.status === 'approved')
+              .map((u) => (
+                <li key={`${u.package}@${u.to}`}>
+                  {u.text}
+                  {u.status === 'found' && (
+                    <>
+                      {' '}
+                      <button type="button" disabled={busy} onClick={() => decide(u.package, u.to, true)} aria-label={`OK ${u.package} ${u.to}`}>
+                        OK
+                      </button>
+                      <button type="button" disabled={busy} onClick={() => decide(u.package, u.to, false)} aria-label={`No to ${u.package} ${u.to}`}>
+                        No
+                      </button>
+                    </>
+                  )}
+                  {u.command && <code className="command">{u.command}</code>}
+                </li>
+              ))}
+          </ul>
+        </div>
+      )}
       {(data.experiments ?? []).length > 0 && (
         <div className="experiments" role="region" aria-label="Experiments">
           <h3>Experiments</h3>
