@@ -15,6 +15,11 @@ import {
   createCodeFolder,
   getProjectTools,
   approveProjectTools,
+  getDecisions,
+  addDecision,
+  addBlocker,
+  closeBlocker,
+  type Decisions,
   type CodeFolderStatus,
   type ProjectTools,
   type SuggestResult,
@@ -221,6 +226,131 @@ function CodeFolder({ invoke, slug }: { invoke: Invoke; slug: string }) {
         </>
       )}
       <NoteLine note={note} />
+    </div>
+  );
+}
+
+/** Decisions joshua made and what is blocking progress. Decisions are never edited or deleted; blockers can be closed. */
+function DecisionsPanel({ invoke, slug, features }: { invoke: Invoke; slug: string; features: { id: string; name: string }[] }) {
+  const [data, setData] = useState<Decisions | null>(null);
+  const [note, setNote] = useState<Note>(null);
+  const [busy, setBusy] = useState(false);
+  const [decision, setDecision] = useState('');
+  const [why, setWhy] = useState('');
+  const [decFeature, setDecFeature] = useState('');
+  const [blocker, setBlocker] = useState('');
+  const [blkFeature, setBlkFeature] = useState('');
+  const [closing, setClosing] = useState<string | null>(null);
+  const [closeNote, setCloseNote] = useState('');
+
+  useEffect(() => {
+    let live = true;
+    getDecisions(invoke, slug).then(
+      (d) => live && setData(d),
+      (err: Error) => live && setNote({ text: err.message, bad: true }),
+    );
+    return () => {
+      live = false;
+    };
+  }, [invoke, slug]);
+
+  async function run(job: () => Promise<Decisions & { summary: string }>, after: () => void) {
+    setBusy(true);
+    setNote(null);
+    try {
+      const r = await job();
+      setData({ version: 1, decisions: r.decisions, blockers: r.blockers });
+      setNote({ text: r.summary, bad: false });
+      after();
+    } catch (err) {
+      setNote({ text: (err as Error).message, bad: true });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const featureSelect = (label: string, value: string, set: (v: string) => void) => (
+    <select aria-label={label} value={value} onChange={(e) => set(e.target.value)}>
+      <option value="">Whole project</option>
+      {features.map((f) => (
+        <option key={f.id} value={f.id}>
+          {f.id} {f.name}
+        </option>
+      ))}
+    </select>
+  );
+
+  const open = data?.blockers.filter((b) => b.open) ?? [];
+  const closed = data?.blockers.filter((b) => !b.open) ?? [];
+  return (
+    <div className="review" role="region" aria-label="Decisions and blockers">
+      <h3>Decisions and blockers</h3>
+      <p className="muted">Decisions you made: builds are told to follow the newest ones. They can’t be edited or deleted; a later decision can say it replaces an earlier one. Plain text only, no keys.</p>
+      <NoteLine note={note} />
+      <h4>Blockers</h4>
+      {data && open.length === 0 && <p className="muted">Nothing is blocking this project.</p>}
+      {open.length > 0 && (
+        <ul className="rule-list" aria-label="Open blockers">
+          {open.map((b) => (
+            <li key={b.id}>
+              <strong>{b.id}</strong> {b.feature ? `(${b.feature}) ` : ''}
+              {b.text} <span className="muted">since {b.date}</span>{' '}
+              {closing === b.id ? (
+                <span className="key-controls">
+                  <input aria-label={`Note for closing ${b.id}`} placeholder="Note (optional)" maxLength={500} value={closeNote} onChange={(e) => setCloseNote(e.target.value)} />
+                  <button type="button" disabled={busy} onClick={() => void run(() => closeBlocker(invoke, slug, b.id, closeNote.trim()), () => { setClosing(null); setCloseNote(''); })}>
+                    Close {b.id}
+                  </button>
+                  <button type="button" disabled={busy} onClick={() => setClosing(null)}>
+                    Cancel
+                  </button>
+                </span>
+              ) : (
+                <button type="button" disabled={busy} onClick={() => { setClosing(b.id); setCloseNote(''); }}>
+                  Close blocker {b.id}
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      <form className="key-controls" aria-label="Add a blocker" onSubmit={(e) => { e.preventDefault(); void run(() => addBlocker(invoke, slug, blocker, blkFeature || undefined), () => setBlocker('')); }}>
+        <input aria-label="Blocker" placeholder="What is blocking progress?" maxLength={500} value={blocker} onChange={(e) => setBlocker(e.target.value)} />
+        {featureSelect('Blocker feature', blkFeature, setBlkFeature)}
+        <button type="submit" disabled={busy || !blocker.trim()}>
+          Add blocker
+        </button>
+      </form>
+      {closed.length > 0 && (
+        <ul className="rule-list muted" aria-label="Closed blockers">
+          {closed.map((b) => (
+            <li key={b.id}>
+              {b.id} closed {b.closedAt}: {b.text}
+              {b.closedNote ? ` (${b.closedNote})` : ''}
+            </li>
+          ))}
+        </ul>
+      )}
+      <h4>Decisions</h4>
+      {data && data.decisions.length === 0 && <p className="muted">No decisions yet.</p>}
+      {data && data.decisions.length > 0 && (
+        <ul className="rule-list" aria-label="Decisions">
+          {[...data.decisions].reverse().map((d) => (
+            <li key={d.id}>
+              <strong>{d.id}</strong> {d.feature ? `(${d.feature}) ` : ''}
+              {d.text} <span className="muted">{d.date}{d.why ? ` · Why: ${d.why}` : ''}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <form className="key-controls" aria-label="Add a decision" onSubmit={(e) => { e.preventDefault(); void run(() => addDecision(invoke, slug, decision, why.trim() || undefined, decFeature || undefined), () => { setDecision(''); setWhy(''); }); }}>
+        <input aria-label="Decision" placeholder="What did you decide?" maxLength={500} value={decision} onChange={(e) => setDecision(e.target.value)} />
+        <input aria-label="Why (optional)" placeholder="Why (optional)" maxLength={500} value={why} onChange={(e) => setWhy(e.target.value)} />
+        {featureSelect('Decision feature', decFeature, setDecFeature)}
+        <button type="submit" disabled={busy || !decision.trim()}>
+          Add decision
+        </button>
+      </form>
     </div>
   );
 }
@@ -492,6 +622,7 @@ function InterviewScreen({ invoke, start, onBack }: { invoke: Invoke; start: Int
       )}
       {view.finished && <CodeFolder invoke={invoke} slug={iv.slug} />}
       {view.finished && <ProjectToolsPanel invoke={invoke} slug={iv.slug} />}
+      <DecisionsPanel invoke={invoke} slug={iv.slug} features={iv.features.map((f) => ({ id: f.id, name: f.name }))} />
       {!stages && !note && <p className="muted">Loading…</p>}
       {stages && (
         <ol className="stage-list" aria-label="Stages">

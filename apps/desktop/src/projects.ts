@@ -124,3 +124,18 @@ export async function approveProjectTools(invoke: Invoke, slug: string, tools: s
 export interface MapFeature { title: string; files: string[]; tests: string[]; lastBuildId: number; lastKeptAt: string; note?: string }
 export interface ProjectMap { version: 1; updatedAt: string | null; features: Record<string, MapFeature> }
 export const projectMap = (invoke: Invoke, project: string) => call<ProjectMap>(invoke, 'project_map', { project });
+
+/** Decisions joshua made and things blocking progress, kept per project (projects/<slug>/decisions.json). */
+export interface Decision { id: string; date: string; text: string; why?: string; feature?: string }
+export interface Blocker { id: string; date: string; text: string; feature?: string; open: boolean; closedAt?: string; closedNote?: string }
+export interface Decisions { version: 1; decisions: Decision[]; blockers: Blocker[] }
+export const getDecisions = (invoke: Invoke, slug: string) => call<Decisions>(invoke, 'decisions_get', { slug });
+export const addDecision = (invoke: Invoke, slug: string, text: string, why?: string, feature?: string) =>
+  call<Decisions & { summary: string }>(invoke, 'decision_add', { slug, text, ...(why ? { why } : {}), ...(feature ? { feature } : {}) });
+export const addBlocker = (invoke: Invoke, slug: string, text: string, feature?: string) =>
+  call<Decisions & { summary: string }>(invoke, 'blocker_add', { slug, text, ...(feature ? { feature } : {}) });
+export const closeBlocker = (invoke: Invoke, slug: string, id: string, note?: string) =>
+  call<Decisions & { summary: string }>(invoke, 'blocker_close', { slug, id, ...(note ? { note } : {}) });
+
+/** Open blockers that stop a feature: its own, and ones that name no feature. */
+export const openBlockersFor = (d: Decisions | null, feature: string): Blocker[] => (d?.blockers ?? []).filter((b) => b.open && (!b.feature || b.feature === feature));
