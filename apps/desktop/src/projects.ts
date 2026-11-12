@@ -97,3 +97,25 @@ export async function reviewPlan(invoke: Invoke, slug: string): Promise<{ view: 
     throw new Error(err instanceof Error ? err.message : String(err));
   }
 }
+
+/** CI-7: one tool the app knows, whether it suggests it for this project and why, and joshua's choice. */
+export interface ProjectToolRow { id: string; name: string; kind: string; suggested: boolean; why: string; approved: boolean }
+export interface ProjectTools { slug: string; approved: string[] | null; rows: ProjectToolRow[]; rules: string[] }
+
+/** CI-7: the project's approved tools, the app's suggestions and its own rules (free). */
+export async function getProjectTools(invoke: Invoke, slug: string): Promise<ProjectTools> {
+  try {
+    return await invoke<ProjectTools>('project_tools', { slug });
+  } catch (err) {
+    throw new Error(err instanceof Error ? err.message : String(err));
+  }
+}
+
+/** CI-7: saves joshua's choice of tools for this project (undo it from History). */
+export async function approveProjectTools(invoke: Invoke, slug: string, tools: string[]): Promise<ProjectTools & { summary: string; synced: string }> {
+  try {
+    return await invoke<ProjectTools & { summary: string; synced: string }>('project_tools_approve', { slug, tools });
+  } catch (err) {
+    throw new Error(err instanceof Error ? err.message : String(err));
+  }
+}

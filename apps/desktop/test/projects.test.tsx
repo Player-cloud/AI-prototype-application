@@ -38,6 +38,7 @@ function fakeShell() {
   });
 
   let settings = { dataFolder: '/data', codeFolders: {} as Record<string, string> };
+  let approved: string[] | null = null;
   const invoke: Invoke = async <T,>(cmd: string, args?: Record<string, unknown>) => {
     if (cmd === 'interview_suggest') {
       calls.push({ method: 'suggest', params: args ?? {} });
@@ -60,6 +61,18 @@ function fakeShell() {
       for (const [k, v] of Object.entries(settings.codeFolders)) if (!v) delete settings.codeFolders[k];
       calls.push({ method: 'settings_save', params: args ?? {} });
       return structuredClone(settings) as T;
+    }
+    if (cmd === 'project_tools' || cmd === 'project_tools_approve') {
+      if (cmd === 'project_tools_approve') {
+        approved = [...(args?.tools as string[])].sort();
+        calls.push({ method: cmd, params: args ?? {} });
+      }
+      const rows = [
+        { id: 'secretlint', name: 'secretlint', kind: 'tool', suggested: true, why: 'On for “secret scan”.', approved: approved?.includes('secretlint') ?? false },
+        { id: 'axe-core', name: 'axe-core', kind: 'tool', suggested: false, why: 'This project doesn’t check Accessibility.', approved: approved?.includes('axe-core') ?? false },
+      ];
+      const r = { slug: args?.slug, approved, rows, rules: ['Use British English'] };
+      return (cmd === 'project_tools' ? r : { ...r, summary: `Approved ${approved!.length} tools for club-hr.`, synced: 'Synced with GitHub.' }) as T;
     }
     if (cmd !== 'project') throw `unexpected ${cmd}`;
     const method = String(args?.method);
@@ -195,6 +208,20 @@ describe('Projects: plan interview', () => {
     expect(within(code).getByText('Ready: on branch main. Builds start from its last commit.')).toBeTruthy();
     const made = shell.calls.filter((c) => c.method === 'settings_save').at(-1)!.params.settings as { codeFolders: Record<string, string> };
     expect(made.codeFolders).toEqual({ 'club-hr': '/code/club-hr-new' });
+
+    // CI-7: the app suggests tools for this project; joshua's choice is what's saved.
+    const ptools = screen.getByRole('region', { name: 'Tools for this project' });
+    expect(await within(ptools).findByText(/Nothing chosen yet/)).toBeTruthy();
+    const secret = within(ptools).getByLabelText('Approve secretlint') as HTMLInputElement;
+    const axe = within(ptools).getByLabelText('Approve axe-core') as HTMLInputElement;
+    expect([secret.checked, axe.checked]).toEqual([true, false]);
+    expect(within(ptools).getByText(/doesn’t check Accessibility/)).toBeTruthy();
+    expect(within(ptools).getByRole('list', { name: 'Project rules' }).textContent).toBe('Use British English');
+    fireEvent.click(axe);
+    fireEvent.click(within(ptools).getByRole('button', { name: 'Approve these tools' }));
+    expect(await within(ptools).findByText('Approved 2 tools for club-hr. Synced with GitHub.')).toBeTruthy();
+    expect(shell.calls.find((c) => c.method === 'project_tools_approve')?.params).toEqual({ slug: 'club-hr', tools: ['secretlint', 'axe-core'] });
+    expect(within(ptools).getByText(/You approved 2\. Builds for this project only use an approved model/)).toBeTruthy();
   });
 
   it('lets you go back to a confirmed stage, saving what you typed first', async () => {

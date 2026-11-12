@@ -200,6 +200,20 @@ describe('Tools page', () => {
     expect(calls.find((c) => c.cmd === 'update_decide')?.args).toEqual({ package: '@secretlint/node', to: '13.1.0', ok: true });
   });
 
+  it('lists instructions that look out of date or clash, changing nothing (CI-7)', async () => {
+    const docIssues = ['tools/secretlint.md: written for version 11.7.1, but 13.1.0 is in use. Check its advice still holds, then update its Version: line.'];
+    render(<Tools invoke={shell({ ...OVERVIEW, docIssues })} />);
+    const region = await screen.findByRole('region', { name: 'Doc check' });
+    expect(region.textContent).toContain('tools/secretlint.md: written for version 11.7.1');
+    expect(region.textContent).toContain('Nothing was changed');
+  });
+
+  it('shows no doc check when the docs are clean', async () => {
+    render(<Tools invoke={shell({ ...OVERVIEW, docIssues: [] })} />);
+    await screen.findAllByRole('listitem');
+    expect(screen.queryByRole('region', { name: 'Doc check' })).toBeNull();
+  });
+
   it('shows tool health under the tool, warning about failures', async () => {
     const tools = [
       row('Only CLI (oc)', 'on', { health: 'Updated to 1.3.0 since it was tested. It gets a quick retest next time it’s used.', stale: true }),

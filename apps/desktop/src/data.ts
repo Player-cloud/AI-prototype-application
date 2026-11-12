@@ -54,6 +54,8 @@ export type DataOverview =
       experiments?: ExperimentRow[];
       /** CI-6: updates found, and your OK or no on each. */
       updates?: UpdateRow[];
+      /** CI-7: written instructions that look out of date or clash, with where they are. */
+      docIssues?: string[];
     };
 
 export interface UpdateRow { package: string; from: string; to: string; level: string; status: 'found' | 'approved' | 'declined' | 'installed'; text: string; command: string }

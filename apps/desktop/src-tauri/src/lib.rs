@@ -419,6 +419,21 @@ async fn update_decide(package: String, to: String, ok: bool, app: tauri::AppHan
     engine_call(&state, "update_decide", serde_json::json!({ "settings": saved, "package": package, "to": to, "ok": ok }))
 }
 
+/// CI-7: a project's approved tools, the app's suggestions and the project's own rules (free).
+#[tauri::command]
+async fn project_tools(slug: String, app: tauri::AppHandle, state: tauri::State<'_, Engine>) -> Result<serde_json::Value, String> {
+    let saved = settings::read(&settings_path(&app)?)?;
+    engine_call(&state, "project_tools", serde_json::json!({ "settings": saved, "slug": slug }))
+}
+
+/// CI-7: saves joshua's choice of tools for a project (undoable from History), then syncs.
+#[tauri::command]
+async fn project_tools_approve(slug: String, tools: Vec<String>, app: tauri::AppHandle, state: tauri::State<'_, Engine>) -> Result<serde_json::Value, String> {
+    let saved = settings::read(&settings_path(&app)?)?;
+    let db = spend_path(&app)?;
+    engine_call(&state, "project_tools_approve", serde_json::json!({ "settings": saved, "slug": slug, "tools": tools, "dbPath": db }))
+}
+
 /// CI-2: checks this computer (free) and saves the result in the data folder, then syncs.
 #[tauri::command]
 async fn environment_check(app: tauri::AppHandle, state: tauri::State<'_, Engine>) -> Result<serde_json::Value, String> {
@@ -497,7 +512,7 @@ pub fn run() {
             });
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![version, engine_status, key_status, key_save, key_remove, test_model, settings_get, settings_save, data_overview, environment_check, eval_run, experiment_run, update_check, update_decide, spend_summary, tool_rate, tool_switch_on, data_sync, gate_rules, history_list, history_undo, project, interview_suggest, interview_review, build_feature, build_stop, run_list, workflow_compare, run_decide, run_rate, github_test, work_list, work_poll, phone_setup])
+        .invoke_handler(tauri::generate_handler![version, engine_status, key_status, key_save, key_remove, test_model, settings_get, settings_save, data_overview, environment_check, eval_run, experiment_run, update_check, update_decide, project_tools, project_tools_approve, spend_summary, tool_rate, tool_switch_on, data_sync, gate_rules, history_list, history_undo, project, interview_suggest, interview_review, build_feature, build_stop, run_list, workflow_compare, run_decide, run_rate, github_test, work_list, work_poll, phone_setup])
         .run(tauri::generate_context!())
         .expect("error while running the app");
 }
