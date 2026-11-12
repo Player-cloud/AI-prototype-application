@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import { App } from '../src/App';
-import { engineLabel, getEngineStatus, type Invoke } from '../src/engine';
+import { engine, engineLabel, getEngineStatus, type Invoke } from '../src/engine';
 
 afterEach(cleanup);
 
@@ -10,6 +10,22 @@ const running: Invoke = async <T,>() => ({ state: 'running', version: '0.0.1' })
 const failing: Invoke = async () => {
   throw new Error('boom');
 };
+
+describe('engine call', () => {
+  it('sends every engine method through the one engine command', async () => {
+    const seen: { cmd: string; args?: Record<string, unknown> }[] = [];
+    const spy: Invoke = async <T,>(cmd: string, args?: Record<string, unknown>) => {
+      seen.push({ cmd, args });
+      return 1 as T;
+    };
+    expect(await engine<number>(spy, 'tool_rate', { tool: 'axe-core', rating: 4 })).toBe(1);
+    await engine(spy, 'data_sync');
+    expect(seen).toEqual([
+      { cmd: 'engine', args: { method: 'tool_rate', params: { tool: 'axe-core', rating: 4 } } },
+      { cmd: 'engine', args: { method: 'data_sync', params: {} } },
+    ]);
+  });
+});
 
 describe('engine status', () => {
   it('says browser preview when there is no window shell', async () => {

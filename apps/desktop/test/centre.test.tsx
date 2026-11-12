@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen, within } from '@testing-library/rea
 import { Centre } from '../src/screens/Centre';
 import type { Centre as CentreData, CentreRow } from '../src/data';
 import type { Invoke } from '../src/engine';
+import { routeEngine } from './shell';
 
 afterEach(cleanup);
 
@@ -38,13 +39,13 @@ const DATA: CentreData = {
 };
 
 const shell = (answer: CentreData | string, calls: { cmd: string; args?: Record<string, unknown> }[] = []) =>
-  (async <T,>(cmd: string, args?: Record<string, unknown>) => {
+  routeEngine((async <T,>(cmd: string, args?: Record<string, unknown>) => {
     calls.push({ cmd, args });
     if (cmd === 'tool_trust') return { trust: args?.trust, sync: '' } as T;
     if (cmd !== 'capability_centre') throw `unexpected ${cmd}`;
     if (typeof answer === 'string') throw answer;
     return answer as T;
-  }) as Invoke;
+  }) as Invoke);
 
 describe('Capability Centre (UI-01)', () => {
   it('shows each capability from real records, with next steps and comparisons', async () => {
@@ -117,10 +118,10 @@ describe('Capability Centre (UI-01)', () => {
     });
 
     it('says plainly when the engine refuses', async () => {
-      const refusing = (async <T,>(cmd: string) => {
+      const refusing = routeEngine((async <T,>(cmd: string) => {
         if (cmd === 'tool_trust') throw 'secretlint hasn’t passed its health check yet.';
         return TRUST as T;
-      }) as Invoke;
+      }) as Invoke);
       render(<Centre invoke={refusing} />);
       await screen.findByRole('list', { name: 'Capabilities' });
       fireEvent.click(within(item('secretlint')).getByRole('button', { name: 'Trust this tool' }));

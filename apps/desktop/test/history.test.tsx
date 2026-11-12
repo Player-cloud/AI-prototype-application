@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { History } from '../src/screens/History';
 import { Settings } from '../src/screens/Settings';
 import type { Invoke } from '../src/engine';
+import { routeEngine } from './shell';
 
 afterEach(cleanup);
 
@@ -14,7 +15,7 @@ function fakeShell(start: Item[], opts: { refuse?: string } = {}) {
   let items = [...start];
   let budget = 30;
   const calls: { cmd: string; args?: Record<string, unknown> }[] = [];
-  const invoke: Invoke = async <T,>(cmd: string, args?: Record<string, unknown>) => {
+  const invoke: Invoke = routeEngine(async <T,>(cmd: string, args?: Record<string, unknown>) => {
     calls.push({ cmd, args });
     if (cmd === 'history_list') return items as T;
     if (cmd === 'history_undo') {
@@ -27,13 +28,13 @@ function fakeShell(start: Item[], opts: { refuse?: string } = {}) {
       if (target.kind === 'settings') budget = 20;
       return { kind: target.kind, summary: `Undone: ${target.label}.` } as T;
     }
-    if (cmd === 'settings_get') {
+    if (cmd === 'settings_check') {
       return { provider: 'claude', monthlyBudgetGbp: budget, gbpPerUsd: 0.79, models: { openai: { strong: 'a', everyday: 'b' }, deepseek: { strong: 'c', everyday: 'd' } }, prices: {}, dataFolder: '', extraRules: [] } as T;
     }
     if (cmd === 'gate_rules') return [] as T;
     if (cmd === 'spend_summary') throw 'no spend yet';
     return { provider: String(args?.provider), saved: false } as T;
-  };
+  });
   return { invoke, calls };
 }
 

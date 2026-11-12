@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { BudgetModels } from '../src/screens/BudgetModels';
 import { dollarsFor, spendLine, toNumber, type AppSettings } from '../src/settings';
 import type { Invoke } from '../src/engine';
+import { routeEngine } from './shell';
 
 afterEach(cleanup);
 
@@ -23,8 +24,8 @@ const DEFAULTS: AppSettings = {
 function fakeShell(start: AppSettings = DEFAULTS) {
   let stored = start;
   const saves: AppSettings[] = [];
-  const invoke: Invoke = async <T,>(cmd: string, args?: Record<string, unknown>) => {
-    if (cmd === 'settings_get') return stored as T;
+  const invoke: Invoke = routeEngine(async <T,>(cmd: string, args?: Record<string, unknown>) => {
+    if (cmd === 'settings_check') return stored as T;
     if (cmd === 'spend_summary') return spend(stored) as T;
     if (cmd === 'settings_save') {
       const s = args?.settings as AppSettings;
@@ -34,7 +35,7 @@ function fakeShell(start: AppSettings = DEFAULTS) {
       return s as T;
     }
     throw `unexpected ${cmd}`;
-  };
+  });
   return { invoke, saves };
 }
 

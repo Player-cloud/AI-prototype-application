@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { SafetyRules } from '../src/screens/SafetyRules';
 import type { Invoke } from '../src/engine';
+import { routeEngine } from './shell';
 
 afterEach(cleanup);
 
@@ -10,9 +11,9 @@ afterEach(cleanup);
 function fakeShell(opts: { failSave?: boolean } = {}) {
   let settings = { provider: 'claude', extraRules: [] as { match: string; reason: string }[] };
   const calls: string[] = [];
-  const invoke: Invoke = async <T,>(cmd: string, args?: Record<string, unknown>) => {
+  const invoke: Invoke = routeEngine(async <T,>(cmd: string, args?: Record<string, unknown>) => {
     calls.push(cmd);
-    if (cmd === 'settings_get') return settings as T;
+    if (cmd === 'settings_check') return settings as T;
     if (cmd === 'settings_save') {
       if (opts.failSave) throw 'reason must be at least 3 characters';
       settings = args?.settings as typeof settings;
@@ -26,7 +27,7 @@ function fakeShell(opts: { failSave?: boolean } = {}) {
       ] as T;
     }
     throw `unexpected ${cmd}`;
-  };
+  });
   return { invoke, calls };
 }
 
