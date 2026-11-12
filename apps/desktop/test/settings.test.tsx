@@ -24,6 +24,7 @@ function fakeShell(initial: string[] = []) {
     if (cmd === 'settings_get') return SETTINGS as T;
     if (cmd === 'gate_rules') return [] as T;
     if (cmd === 'history_list') return [] as T;
+    if (cmd === 'phone_setup') return { issue: 5, url: 'https://github.com/o/r/issues/5', summary: 'Set up: issue #5 on o/r. Reply there from your phone with “projects” or “build <project> <feature>”.' } as T;
     if (cmd === 'github_test') return { ok: true, summary: 'Connected. The app can read issues on joshua/ai-prototype-data (private).' } as T;
     if (cmd === 'test_model') {
       if (!saved.has(provider)) throw 'No anthropic key saved. Add it in Settings.';
@@ -70,6 +71,17 @@ describe('Settings: API keys', () => {
     expect(shell.calls).toContainEqual({ cmd: 'github_test', args: undefined });
   });
 
+  it('sets up starting builds from the phone, only on the GitHub row (D)', async () => {
+    const shell = fakeShell(['github', 'anthropic']);
+    render(<Settings invoke={shell.invoke} />);
+    const r = row('GitHub (phone messages)');
+    fireEvent.click(await within(r).findByRole('button', { name: 'Start builds from my phone' }));
+    expect(await within(r).findByText(/^Set up: issue #5 on o\/r\./)).toBeTruthy();
+    expect(shell.calls).toContainEqual({ cmd: 'phone_setup', args: undefined });
+    await within(row('Claude (Anthropic)')).findByText('Key saved');
+    expect(within(row('Claude (Anthropic)')).queryByRole('button', { name: 'Start builds from my phone' })).toBeNull();
+  });
+
   it('uses a hidden input and clears it after saving', async () => {
     const shell = fakeShell();
     render(<Settings invoke={shell.invoke} />);
@@ -112,7 +124,7 @@ describe('Settings: API keys', () => {
     const shell = fakeShell(['anthropic']);
     render(<Settings invoke={shell.invoke} />);
     await within(row('Claude (Anthropic)')).findByText('Key saved');
-    expect(shell.calls.every((c) => ['key_status', 'key_save', 'key_remove', 'test_model', 'github_test', 'settings_get', 'spend_summary', 'gate_rules', 'history_list'].includes(c.cmd))).toBe(true);
+    expect(shell.calls.every((c) => ['key_status', 'key_save', 'key_remove', 'test_model', 'github_test', 'phone_setup', 'settings_get', 'spend_summary', 'gate_rules', 'history_list'].includes(c.cmd))).toBe(true);
   });
 
   it('tests the Claude connection and shows the reply and cost', async () => {

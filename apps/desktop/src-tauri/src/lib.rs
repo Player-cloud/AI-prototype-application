@@ -217,16 +217,29 @@ async fn build_feature(
     feature: String,
     on_step: tauri::ipc::Channel<serde_json::Value>,
     app: tauri::AppHandle,
-    build: tauri::State<'_, Build>,
 ) -> Result<serde_json::Value, String> {
-    let saved = settings::read(&settings_path(&app)?)?;
+    let handle = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        run_build(&handle, slug, feature, |event| {
+            let _ = on_step.send(event);
+        })
+    })
+    .await
+    .map_err(|e| format!("the build stopped unexpectedly: {e}"))?
+}
+
+/// One build, start to finish, in its own helper (blocking). Only one runs at a time; Stop works
+/// for builds started on the PC or from the phone.
+fn run_build(app: &tauri::AppHandle, slug: String, feature: String, on_event: impl FnMut(serde_json::Value)) -> Result<serde_json::Value, String> {
+    let saved = settings::read(&settings_path(app)?)?;
     let provider = saved.get("provider").and_then(|p| p.as_str()).unwrap_or("claude").to_string();
     let key = keys::load(&OsKeyring, key_name(&provider)?)?;
     let params = serde_json::json!({
-        "slug": slug, "feature": feature, "settings": saved, "provider": provider, "apiKey": key, "dbPath": spend_path(&app)?,
+        "slug": slug, "feature": feature, "settings": saved, "provider": provider, "apiKey": key, "dbPath": spend_path(app)?,
         "githubToken": github_token(),
     });
     let mut helper = EngineHelper::start(&helper_command(std::env::var("AIP_ENGINE").ok()))?;
+    let build = app.state::<Build>();
     {
         let mut running = build.0.lock().unwrap_or_else(|p| p.into_inner());
         if running.is_some() {
@@ -234,15 +247,26 @@ async fn build_feature(
         }
         *running = Some((helper.canceller(), helper.next_id()));
     }
-    let result = tauri::async_runtime::spawn_blocking(move || {
-        helper.request_live("build_feature", params, |event| {
-            let _ = on_step.send(event);
-        })
-    })
-    .await
-    .map_err(|e| format!("the build stopped unexpectedly: {e}"));
+    let result = helper.request_live("build_feature", params, on_event);
     *build.0.lock().unwrap_or_else(|p| p.into_inner()) = None;
-    result?
+    result
+}
+
+fn build_running(app: &tauri::AppHandle) -> bool {
+    app.state::<Build>().0.lock().unwrap_or_else(|p| p.into_inner()).is_some()
+}
+
+/// The builds a phone poll asked for (already checked by the engine), as (project, feature).
+fn phone_builds(poll: &serde_json::Value) -> Vec<(String, String)> {
+    poll.get("builds")
+        .and_then(|b| b.as_array())
+        .map(|list| {
+            list.iter()
+                .filter_map(|b| Some((b.get("slug")?.as_str()?.to_string(), b.get("feature")?.as_str()?.to_string())))
+                .take(1)
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// Stops the running build, if there is one.
@@ -289,7 +313,24 @@ fn poll_phone(app: &tauri::AppHandle) -> Result<serde_json::Value, String> {
     let Some(token) = github_token() else { return Ok(serde_json::json!({ "done": [], "changed": false })) };
     let saved = settings::read(&settings_path(app)?)?;
     let state = app.state::<Engine>();
-    engine_call(&state, "work_poll", serde_json::json!({ "settings": saved, "dbPath": spend_path(app)?, "githubToken": token }))
+    let poll = engine_call(&state, "work_poll", serde_json::json!({ "settings": saved, "dbPath": spend_path(app)?, "githubToken": token, "busy": build_running(app) }))?;
+    // D: a build asked for from the phone starts here, in the background. Its result is posted as
+    // the usual build issue, and shows on the Build screen when it next refreshes.
+    for (slug, feature) in phone_builds(&poll) {
+        let handle = app.clone();
+        std::thread::spawn(move || {
+            let _ = run_build(&handle, slug, feature, |_| {});
+        });
+    }
+    Ok(poll)
+}
+
+/// D: posts the "start builds from here" issue on the data repo (once).
+#[tauri::command]
+async fn phone_setup(app: tauri::AppHandle, state: tauri::State<'_, Engine>) -> Result<serde_json::Value, String> {
+    let token = keys::load(&OsKeyring, "github")?;
+    let saved = settings::read(&settings_path(&app)?)?;
+    engine_call(&state, "phone_setup", serde_json::json!({ "settings": saved, "dbPath": spend_path(&app)?, "githubToken": token }))
 }
 
 /// Checks phone replies now (the Build screen also asks about once a minute while it's shown).
@@ -442,7 +483,7 @@ pub fn run() {
             });
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![version, engine_status, key_status, key_save, key_remove, test_model, settings_get, settings_save, data_overview, environment_check, eval_run, experiment_run, spend_summary, tool_rate, tool_switch_on, data_sync, gate_rules, history_list, history_undo, project, interview_suggest, interview_review, build_feature, build_stop, run_list, workflow_compare, run_decide, run_rate, github_test, work_list, work_poll])
+        .invoke_handler(tauri::generate_handler![version, engine_status, key_status, key_save, key_remove, test_model, settings_get, settings_save, data_overview, environment_check, eval_run, experiment_run, spend_summary, tool_rate, tool_switch_on, data_sync, gate_rules, history_list, history_undo, project, interview_suggest, interview_review, build_feature, build_stop, run_list, workflow_compare, run_decide, run_rate, github_test, work_list, work_poll, phone_setup])
         .run(tauri::generate_context!())
         .expect("error while running the app");
 }
@@ -450,6 +491,14 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn phone_builds_takes_one_checked_build_and_ignores_junk() {
+        let poll = serde_json::json!({ "builds": [{ "slug": "club-hr", "feature": "F-02", "issue": 3 }, { "slug": "x", "feature": "F-01" }] });
+        assert_eq!(phone_builds(&poll), vec![("club-hr".to_string(), "F-02".to_string())]);
+        assert!(phone_builds(&serde_json::json!({ "done": [] })).is_empty());
+        assert!(phone_builds(&serde_json::json!({ "builds": [{ "slug": 1 }] })).is_empty());
+    }
 
     #[test]
     fn maps_settings_providers_to_engine_names() {

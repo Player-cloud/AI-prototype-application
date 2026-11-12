@@ -91,13 +91,13 @@ describe('replies from the phone', () => {
     const id = await waiting();
     reply(1, '4', '2026-11-11T20:01:00Z');
     let r = (await poll()).result;
-    expect(r).toEqual({ done: ['From your phone (issue #12): Rated F-01 4/5.'], changed: true });
+    expect(r).toEqual({ done: ['From your phone (issue #12): Rated F-01 4/5.'], changed: true, builds: [] });
     expect(posted[0]).toMatchObject({ method: 'POST', url: 'https://api.github.com/repos/o/r/issues/12/comments' });
     expect(posted[0]!.body!.body).toContain('Rated F-01 4/5.');
 
     // The same reply isn't acted on twice, and the app's own answer is ignored.
     reply(99, 'Rated F-01 4/5.\n\n_Posted by AI Prototype._', '2026-11-11T20:01:30Z');
-    expect((await poll()).result).toEqual({ done: [], changed: false });
+    expect((await poll()).result).toEqual({ done: [], changed: false, builds: [] });
 
     reply(2, 'keep', '2026-11-11T20:02:00Z');
     r = (await poll()).result;
@@ -127,14 +127,14 @@ describe('replies from the phone', () => {
     reply(1, 'undo', '2026-11-11T20:01:00Z', 'NONE');
     reply(2, 'what is this?', '2026-11-11T20:02:00Z');
     const r = (await poll()).result;
-    expect(r).toEqual({ done: ['From your phone (issue #12): Sorry, I didn’t understand that. Reply **keep**, **undo**, or a rating from **1** to **5**.'], changed: false });
+    expect(r).toEqual({ done: ['From your phone (issue #12): Sorry, I didn’t understand that. Reply **keep**, **undo**, or a rating from **1** to **5**.'], changed: false, builds: [] });
   });
 
   it('does nothing without a token', async () => {
     await waiting();
     reply(1, 'undo', '2026-11-11T20:01:00Z');
     const r = JSON.parse(await handleLine(JSON.stringify({ id: 1, method: 'work_poll', params: { settings: {}, dbPath: db } }), { fetch: fakeFetch } as never)).result;
-    expect(r).toEqual({ done: [], changed: false });
+    expect(r).toEqual({ done: [], changed: false, builds: [] });
     expect(posted).toEqual([]);
   });
 });

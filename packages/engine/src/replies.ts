@@ -8,6 +8,7 @@ import type { WorkItem } from '@aip/memory';
 import { GitHub, messagesRepo, type Comment, type Fetch } from './github.ts';
 import { keepRun, rateRun, undoRun } from './keep.ts';
 import { SIGNATURE } from './notify.ts';
+import { answerControl, type BuildRequest } from './phone.ts';
 import type { AppSettings } from './settings.ts';
 
 export type Reply = { kind: 'keep' } | { kind: 'undo' } | { kind: 'rate'; rating: number } | { kind: 'unknown' };
@@ -31,6 +32,8 @@ export interface PollResult {
   done: string[];
   /** True when something changed (a build kept, undone or rated). */
   changed: boolean;
+  /** D: builds the phone asked for, already checked. The desktop starts them (at most one). */
+  builds: BuildRequest[];
 }
 
 type Learn = () => Promise<string[]>;
@@ -43,6 +46,8 @@ export async function pollReplies(
   now: () => Date,
   learn: Learn,
   fetchImpl?: Fetch,
+  /** A build is running now, so the phone can't start another. */
+  busy = false,
 ): Promise<PollResult> {
   const m = await import('@aip/memory');
   const items = (() => {
@@ -53,7 +58,7 @@ export async function pollReplies(
       w.close();
     }
   })();
-  const out: PollResult = { done: [], changed: false };
+  const out: PollResult = { done: [], changed: false, builds: [] };
   if (!items.length) return out;
   let gh: GitHub;
   try {
@@ -63,6 +68,12 @@ export async function pollReplies(
   }
   for (const item of items) {
     try {
+      if (item.kind === 'control') {
+        const r = await answerControl(item, gh, settings, dbPath, now, busy || out.builds.length > 0, fromJoshua);
+        out.done.push(...r.done);
+        out.builds.push(...r.builds);
+        continue;
+      }
       await answer(item, gh, settings, dbPath, now, learn, out);
     } catch (err) {
       out.done.push(`Couldn’t read replies on issue #${item.issue}: ${(err as Error).message}`);

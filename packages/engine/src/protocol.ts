@@ -63,7 +63,12 @@
  *  - work_list: {dbPath} -> open work items for the "Needs you" panel, oldest first.
  *  - work_poll: {settings, dbPath, githubToken} -> reads new replies from joshua's phone on open
  *    items' issues and acts on keep, undo or a 1–5 rating, answering on the issue (step 10c).
- *    Returns {done: plain notes, changed}. Nothing happens without a token.
+ *    Returns {done: plain notes, changed, builds}. Nothing happens without a token.
+ *    D: also reads the "start builds from here" issue: "projects", "help", or "build <project> <F-xx>".
+ *    A build is checked like the Build button (finished plan, code folder, budget, not `busy`) and
+ *    returned in `builds` for the desktop to start; the reply on the issue says the most it can cost.
+ *  - phone_setup: {settings, dbPath, githubToken} -> posts the "start builds from here" issue once
+ *    (later calls give back the same one).
  *  - github_check: {token, settings} -> {ok, summary}. Free: reads the data repo's issues with the
  *    GitHub token from the password store (step 10a). The token is never put in a reply.
  *  - tool_switch_on: {settings, tool} -> switches a switched-off tool back on (retested on next use)
@@ -81,6 +86,7 @@
  */
 import { compareWorkflows } from './workflows.ts';
 import { runRepeatExperiment } from './experiments.ts';
+import { setupPhone } from './phone.ts';
 import type { CheckResult } from '@aip/checks';
 import type { Job, ModelAdapter, Provider } from '@aip/models';
 import { formatCost } from './money.ts';
@@ -463,9 +469,15 @@ const HANDLERS: Record<string, Handler> = {
     const settings = checkSettings(p.settings);
     const dbPath = str(p, 'dbPath');
     const t = token(p);
-    if (!t) return { done: [], changed: false };
+    if (!t) return { done: [], changed: false, builds: [] };
     const now = () => deps.now?.() ?? new Date();
-    return pollReplies(settings, dbPath, t, now, () => learnNow(settings, dbPath, (id) => deps.modelName(id), now()), deps.fetch);
+    return pollReplies(settings, dbPath, t, now, () => learnNow(settings, dbPath, (id) => deps.modelName(id), now()), deps.fetch, p.busy === true);
+  },
+  phone_setup: (params, deps) => {
+    const p = obj(params);
+    const t = token(p);
+    if (!t) throw new Error('Add a GitHub token in Settings first: the phone talks to the app through issues on your data repo.');
+    return setupPhone(checkSettings(p.settings), str(p, 'dbPath'), t, deps.now?.() ?? new Date(), deps.fetch);
   },
   github_check: (params, deps) => {
     const p = obj(params);

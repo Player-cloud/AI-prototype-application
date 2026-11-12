@@ -57,3 +57,12 @@ export async function testModel(invoke: Invoke, provider: Provider): Promise<Tes
     throw new Error(message(err));
   }
 }
+
+/** D: posts the "start builds from here" issue on the data repo, once. Free. */
+export async function setupPhone(invoke: Invoke): Promise<{ issue: number; url: string; summary: string }> {
+  try {
+    return await invoke<{ issue: number; url: string; summary: string }>('phone_setup');
+  } catch (err) {
+    throw new Error(message(err));
+  }
+}
