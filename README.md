@@ -73,6 +73,12 @@ After each Keep, Undo or rating, the app looks at its build history and keeps it
 
 A habit is updated when the numbers change, and dropped when it stops being true. Each change is shown on the Build screen, kept in **History** (one-click undo) and synced to the data repo. Every build is given your rules and habits; your rules win while more than 30% of the month's budget is left, and below that a cheaper habit wins where the two clash.
 
+## Phone messages (step 10)
+
+The app messages your phone through GitHub Issues on your private data repo (the one your data folder is cloned from). The GitHub app on your phone shows them as notifications.
+
+To set it up, make a **fine-grained** token on GitHub (Settings → Developer settings → Fine-grained tokens). Give it access to the data repo only, with **Issues: Read and write** and nothing else. Paste it into Settings → API keys → GitHub, then press **Test connection** (free: it only reads issues). The token is kept in the computer's password store like the model keys, and only ever sent to GitHub.
+
 ## Tool health
 
 Each tool has a small health record in the data repo, `tool-health/<tool>.json`: the version in use, the version its test evidence is for, and its recent failures. When a tool updates, its old evidence is marked stale and it gets a quick retest the next time it's used. A good run clears the mark. The Tools page shows this under each tool, for example "2 failures in a row." Each build model run counts as a use of that model (for example "Sonnet 5.5"); a Stop doesn't count. After 3 failures in a row the model is switched off, you're told, and builds refuse it until you press **Switch … back on** on the Tools page (it's then retested on its next use). Switching a tool off never uninstalls it.

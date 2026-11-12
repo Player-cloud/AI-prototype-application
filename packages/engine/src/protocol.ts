@@ -40,6 +40,8 @@
  *  - run_rate: {dbPath, id, rating, settings?} -> joshua's 1–5 rating for a build.
  *    run_keep, run_undo and run_rate also return `learned`: plain notes when the app added, updated
  *    or dropped a habit in habits.md from the evidence (step 9d). Undoable from History.
+ *  - github_check: {token, settings} -> {ok, summary}. Free: reads the data repo's issues with the
+ *    GitHub token from the password store (step 10a). The token is never put in a reply.
  *  - tool_switch_on: {settings, tool} -> switches a switched-off tool back on (retested on next use)
  *    and syncs the data repo.
  *  - cancel: {id} -> stops that running request (answered at once, not queued).
@@ -59,6 +61,7 @@ import { formatCost } from './money.ts';
 import { DEFAULT_SETTINGS, checkSettings, type AppSettings } from './settings.ts';
 import { keepRun, listRuns, rateRun, undoRun } from './keep.ts';
 import { learnNow } from './learn.ts';
+import { githubCheck } from './github.ts';
 import { dataOverview, rateAndSync, switchToolOn, syncAfterUndo, syncNow } from './data.ts';
 import { historyList, settingsSaved, undoStart } from './history.ts';
 import { parseSuggestions, suggestPrompt } from './suggest.ts';
@@ -95,6 +98,8 @@ export interface Deps {
   now?(): Date;
   /** Runs a project's tests after a build (8d); the real one is @aip/checks. Swapped in tests. */
   runTests?(dir: string): Promise<CheckResult>;
+  /** Calls to GitHub (step 10); swapped in tests. */
+  fetch?: typeof fetch;
 }
 
 
@@ -365,6 +370,10 @@ const HANDLERS: Record<string, Handler> = {
     const run = await rateRun(str(p, 'dbPath'), runId(p), p.rating);
     const settings = checkSettings(p.settings ?? {});
     return { run, learned: await learnNow(settings, str(p, 'dbPath'), (id) => deps.modelName(id), deps.now?.() ?? new Date()) };
+  },
+  github_check: (params, deps) => {
+    const p = obj(params);
+    return githubCheck(str(p, 'token'), checkSettings(p.settings), deps.fetch);
   },
   tool_switch_on: (params) => {
     const p = obj(params);
