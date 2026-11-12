@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Invoke } from '../engine';
 import { listProjects, openProject, type Feature, type ProjectRow } from '../projects';
 import { getSettings } from '../settings';
-import { CHECK_NAME, compareWorkflows, decideRun, keepable, listRuns, listWork, pollPhone, rateRun, startBuild, stopBuild, type BuildResult, type BuildRun, type BuildStep, type LiveView, type MakeChannel, type WorkItem, type WorkflowRow } from '../build';
+import { CHECK_NAME, approvePackages, compareWorkflows, decideRun, keepable, listRuns, listWork, needsPackageOk, pollPhone, rateRun, startBuild, stopBuild, type BuildResult, type BuildRun, type BuildStep, type LiveView, type MakeChannel, type WorkItem, type WorkflowRow } from '../build';
 
 type Note = { text: string; bad: boolean } | null;
 
@@ -180,7 +180,9 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
       setAdvice(r.advice ?? []);
       setSteps(r.steps);
       setNote(
-        r.tests.passed && !r.keep.keep
+        r.tests.passed && r.keep.blocking.length === 1 && r.keep.blocking[0] === 'dependencies'
+          ? { text: `Built and the tests pass, but it added new packages that need your OK. Cost: ${r.costText}. Press Approve new packages below, then Keep, or Undo it.`, bad: true }
+          : r.tests.passed && !r.keep.keep
           ? { text: `Built and the tests pass, but ${r.keep.blocking.map((b) => CHECK_NAME[b] ?? b).join(', ')} failed. Cost: ${r.costText}. It can’t be kept, so Undo it below.`, bad: true }
           : r.tests.passed
           ? { text: `Done and the tests pass. Cost: ${r.costText}. Check it, then press Keep or Undo below.`, bad: false }
@@ -222,6 +224,8 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
       const d = await decideRun(invoke!, r.id, keep);
       return { text: d.phone ? `${d.note} ${d.phone}` : d.note, learned: d.learned };
     });
+  const approve = (r: BuildRun) =>
+    act(`Approving the new packages for ${r.feature}…`, async () => ({ text: (await approvePackages(invoke!, r.id)).note, learned: [] }));
   const rate = (r: BuildRun, n: number) =>
     act(`Saving ${n}/5…`, async () => ({ text: `Rated ${r.feature} ${n}/5.`, learned: (await rateRun(invoke!, r.id, n)).learned }));
 
@@ -393,6 +397,11 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
                 </span>
                 {r.status === 'built' && (
                   <span className="run-actions">
+                    {needsPackageOk(r) && (
+                      <button type="button" disabled={busy || running} onClick={() => void approve(r)} aria-label={`Approve new packages for ${r.feature}`}>
+                        Approve new packages
+                      </button>
+                    )}
                     <button type="button" disabled={busy || running || !keepable(r)} onClick={() => void decide(r, true)} aria-label={`Keep ${r.feature}`}>
                       Keep
                     </button>

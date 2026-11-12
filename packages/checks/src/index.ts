@@ -29,7 +29,7 @@ export function isBigBuild(features: number, touches: { logins?: boolean; paymen
 
 export { INSTALL_ARGS, KEEP_OUTPUT, packageManager, projectEnv, realExec, runTests, type Exec, type ExecResult } from './tests.js';
 
-export { CHECKLIST_RULES, MAX_FINDINGS, auditCheck, changedSince, checklistCheck, runFreeChecks, secretScan, type AddedLine, type ChangedFiles } from './free.js';
+export { CHECKLIST_RULES, MAX_FINDINGS, NEEDS_OK, NEW_PACKAGE, auditCheck, changedSince, checklistCheck, dependenciesCheck, runFreeChecks, secretScan, type AddedLine, type ChangedFiles } from './free.js';
 export { SIZES, browserChoice, freePort, serveCommand, takePictures, type Picture, type PicturesResult, type Serve } from './pictures.js';
 export { LivePreview, watchLive, type LiveOptions, type LiveState } from './live.js';
 export { CHECK_TOOLS, checkToolUses, checkToolVersions, type CheckTool, type ToolUse } from './versions.js';

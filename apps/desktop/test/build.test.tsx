@@ -56,6 +56,10 @@ function fakeShell(opts: { fail?: string; runs?: (typeof WAITING)[] } = {}) {
       runs = runs.map((r) => (r.id === args?.id ? { ...r, status: keep ? 'kept' : 'undone', keptInto: keep ? 'main' : '' } : r));
       return { run: runs[0], note: keep ? 'Kept F-02 in your copy on main. Nothing was pushed.' : 'Undone: F-02’s build was removed. Your copy wasn’t touched.', learned: [], phone: 'Closed issue #12 on your phone.' } as T;
     }
+    if (cmd === 'deps_approve') {
+      runs = runs.map((r) => (r.id === args?.id ? { ...r, checks: r.checks.map((c) => (c.name === 'dependencies' ? { name: 'dependencies', passed: true, detail: 'Approved by joshua on 2026-11-12: left-pad ^1.3.0' } : c)) } : r));
+      return { run: runs[0], note: 'Approved the new packages for F-02: left-pad ^1.3.0.', keep: { keep: true, blocking: [] } } as T;
+    }
     if (cmd === 'run_rate') {
       runs = runs.map((r) => (r.id === args?.id ? { ...r, rating: args?.rating as null } : r));
       return { run: runs[0], learned: ['New habit: Sonnet builds are usually kept (kept 5 of 5): keep using it for builds.'] } as T;
@@ -274,6 +278,31 @@ describe('Build screen', () => {
     const keep = (await screen.findByRole('button', { name: 'Keep F-02' })) as HTMLButtonElement;
     expect(keep.disabled).toBe(true);
     expect(screen.getByText(/a check failed · waiting for Keep or Undo/)).toBeTruthy();
+  });
+
+  it('shows Approve new packages only while new packages block Keep, and Keep works after it', async () => {
+    const waiting = { ...WAITING, checks: [{ name: 'dependencies', passed: false, detail: 'New: left-pad ^1.3.0 (dependencies in package.json)\nNew packages need your OK before Keep.' }] };
+    const shell = fakeShell({ runs: [waiting] });
+    render(<Build invoke={shell.invoke} makeChannel={shell.makeChannel} />);
+    const keep = (await screen.findByRole('button', { name: 'Keep F-02' })) as HTMLButtonElement;
+    expect(keep.disabled).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Approve new packages for F-02' }));
+    expect((await screen.findByRole('status')).textContent).toBe('Approved the new packages for F-02: left-pad ^1.3.0.');
+    expect(shell.calls).toContainEqual({ cmd: 'deps_approve', args: { id: 7 } });
+    expect(screen.queryByRole('button', { name: 'Approve new packages for F-02' })).toBeNull();
+    expect(((await screen.findByRole('button', { name: 'Keep F-02' })) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('shows no approve button when nothing needs approving, or when something else blocks too', async () => {
+    const none = fakeShell({ runs: [WAITING] });
+    const a = render(<Build invoke={none.invoke} makeChannel={none.makeChannel} />);
+    await screen.findByRole('button', { name: 'Keep F-02' });
+    expect(screen.queryByRole('button', { name: /Approve new packages/ })).toBeNull();
+    a.unmount();
+    const failing = fakeShell({ runs: [{ ...WAITING, testsPassed: false, checks: [{ name: 'dependencies', passed: false, detail: 'New: a 1' }] }] });
+    render(<Build invoke={failing.invoke} makeChannel={failing.makeChannel} />);
+    await screen.findByRole('button', { name: 'Keep F-02' });
+    expect(screen.queryByRole('button', { name: /Approve new packages/ })).toBeNull();
   });
 
   it('can’t keep a build whose tests fail, only undo it', async () => {

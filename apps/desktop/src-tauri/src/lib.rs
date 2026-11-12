@@ -300,6 +300,12 @@ async fn run_decide(id: i64, keep: bool, app: tauri::AppHandle, state: tauri::St
     engine_call(&state, method, serde_json::json!({ "settings": saved, "dbPath": spend_path(&app)?, "id": id, "githubToken": github_token() }))
 }
 
+/// joshua's OK for the new packages a build added; Keep is refused until then.
+#[tauri::command]
+async fn deps_approve(id: i64, app: tauri::AppHandle, state: tauri::State<'_, Engine>) -> Result<serde_json::Value, String> {
+    engine_call(&state, "deps_approve", serde_json::json!({ "dbPath": spend_path(&app)?, "id": id }))
+}
+
 /// The GitHub token for phone messages, when one is saved (step 10). Without one, nothing is posted.
 fn github_token() -> Option<String> {
     keys::load(&OsKeyring, "github").ok()
@@ -525,7 +531,7 @@ pub fn run() {
             });
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![version, engine_status, key_status, key_save, key_remove, test_model, settings_get, settings_save, data_overview, environment_check, eval_run, experiment_run, update_check, update_decide, project_tools, project_tools_approve, capability_centre, spend_summary, tool_rate, tool_switch_on, data_sync, gate_rules, history_list, history_undo, project, interview_suggest, interview_review, build_feature, build_stop, run_list, workflow_compare, run_decide, run_rate, github_test, work_list, work_poll, phone_setup])
+        .invoke_handler(tauri::generate_handler![version, engine_status, key_status, key_save, key_remove, test_model, settings_get, settings_save, data_overview, environment_check, eval_run, experiment_run, update_check, update_decide, project_tools, project_tools_approve, capability_centre, spend_summary, tool_rate, tool_switch_on, data_sync, gate_rules, history_list, history_undo, project, interview_suggest, interview_review, build_feature, build_stop, run_list, workflow_compare, run_decide, deps_approve, run_rate, github_test, work_list, work_poll, phone_setup])
         .run(tauri::generate_context!())
         .expect("error while running the app");
 }

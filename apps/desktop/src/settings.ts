@@ -117,7 +117,7 @@ export interface HistoryItem {
   id: number;
   at: string;
   label: string;
-  kind: 'settings' | 'file';
+  kind: 'settings' | 'file' | 'approval';
   undoneAt: string | null;
   isUndo: boolean;
 }

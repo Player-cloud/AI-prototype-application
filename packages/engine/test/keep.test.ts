@@ -35,7 +35,7 @@ describe('Keep or Undo a build', () => {
   });
 
   /** A finished build: its own copy with the model's (uncommitted) work, saved in the history file. */
-  async function built(feature = 'F-01', testsPassed = true, checks: { name: string; passed: boolean; advisory?: boolean }[] = []) {
+  async function built(feature = 'F-01', testsPassed = true, checks: { name: string; passed: boolean; advisory?: boolean; detail?: string }[] = []) {
     const branch = `aip/${feature.toLowerCase()}-20261111-193000`;
     const path = join(root, 'club-hr-runs', `${feature}-20261111-193000`);
     git(code, 'worktree', 'add', '-q', '-b', branch, path, 'HEAD');
@@ -83,6 +83,42 @@ describe('Keep or Undo a build', () => {
     expect((await call('run_keep', { settings, dbPath: db, id: b.id })).error).toBe('These checks must pass before it can be kept: secrets. Undo it, or build the feature again.');
     const ok = await built('F-02', true, [{ name: 'checklist', passed: false, advisory: true }]);
     expect((await call('run_keep', { settings, dbPath: db, id: ok.id })).result.run.status).toBe('kept');
+  });
+
+  it('refuses to keep new packages until joshua approves them, then keeps', async () => {
+    const detail = 'New: left-pad ^1.3.0 (dependencies in package.json)\nNew: zod ~3.0.0 (devDependencies in package.json)\nNew packages need your OK before Keep.';
+    const b = await built('F-01', true, [{ name: 'secrets', passed: true }, { name: 'dependencies', passed: false, detail }]);
+    const refused = 'This build added new packages, and they need your OK first. Open the app on your PC, press “Approve new packages” on the build, then keep it.';
+    expect((await call('run_keep', { settings, dbPath: db, id: b.id })).error).toBe(refused);
+    expect(await exists(join(code, 'F-01.md'))).toBe(false);
+
+    const ok = await call('deps_approve', { dbPath: db, id: b.id });
+    expect(ok.error).toBeUndefined();
+    expect(ok.result.keep).toEqual({ keep: true, blocking: [] });
+    expect(ok.result.note).toBe('Approved the new packages for F-01: left-pad ^1.3.0 (dependencies in package.json), zod ~3.0.0 (devDependencies in package.json).');
+    const stored = ok.result.run.checks.find((c: { name: string }) => c.name === 'dependencies');
+    expect(stored).toEqual({
+      name: 'dependencies',
+      passed: true,
+      detail: 'Approved by joshua on 2026-11-11: left-pad ^1.3.0 (dependencies in package.json); zod ~3.0.0 (devDependencies in package.json)',
+    });
+    // It is in the change history, and can't be "undone" there.
+    const hist = (await call('history_list', { dbPath: db })).result;
+    expect(hist[0]).toMatchObject({ kind: 'approval', label: 'Approved new packages for F-01: left-pad ^1.3.0 (dependencies in package.json), zod ~3.0.0 (devDependencies in package.json)' });
+    expect((await call('undo', { dbPath: db, id: hist[0].id, settings })).error).toBe('An approval can’t be undone here. Undo the build instead.');
+
+    expect((await call('run_keep', { settings, dbPath: db, id: b.id })).result.run.status).toBe('kept');
+    // Nothing left to approve.
+    expect((await call('deps_approve', { dbPath: db, id: b.id })).error).toBe('That build was already kept.');
+  });
+
+  it('only approves a build that has new packages waiting, and other failed checks still block', async () => {
+    const clean = await built('F-01');
+    expect((await call('deps_approve', { dbPath: db, id: clean.id })).error).toBe('This build has no new packages waiting for your OK.');
+    const both = await built('F-02', true, [{ name: 'secrets', passed: false }, { name: 'dependencies', passed: false, detail: 'New: a 1.0.0 (dependencies in package.json)' }]);
+    expect((await call('run_keep', { settings, dbPath: db, id: both.id })).error).toBe('These checks must pass before it can be kept: secrets. Undo it, or build the feature again.');
+    const r = await call('deps_approve', { dbPath: db, id: both.id });
+    expect(r.result.keep).toEqual({ keep: false, blocking: ['secrets'] });
   });
 
   it('refuses while joshua’s copy has uncommitted changes', async () => {

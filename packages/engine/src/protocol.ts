@@ -64,6 +64,9 @@
  *    on this computer (kept, defects, cost in £ and $, time, Undo; joshua's rating kept apart).
  *  - run_keep: {settings, dbPath, id} -> merges a build whose tests pass into joshua's own copy (never
  *    pushes), then removes the build's copy. Refused when his copy has uncommitted changes.
+ *  - deps_approve: {dbPath, id} -> joshua's OK for the new packages a waiting build added. Keep is
+ *    refused until then. Marks the build's "New packages" check passed, notes it in the history,
+ *    and returns {run, note, keep: {keep, blocking}}.
  *  - run_undo: {settings, dbPath, id} -> removes a waiting build's copy and branch.
  *  - run_rate: {dbPath, id, rating, settings?} -> joshua's 1–5 rating for a build.
  *    run_keep, run_undo and run_rate also return `learned`: plain notes when the app added, updated
@@ -108,7 +111,7 @@ import type { CheckResult } from '@aip/checks';
 import type { Job, ModelAdapter, Provider } from '@aip/models';
 import { formatCost } from './money.ts';
 import { DEFAULT_SETTINGS, checkSettings, type AppSettings } from './settings.ts';
-import { keepRun, listRuns, rateRun, undoRun } from './keep.ts';
+import { approveDeps, keepRun, listRuns, rateRun, undoRun } from './keep.ts';
 import { learnNow } from './learn.ts';
 import { githubCheck } from './github.ts';
 import { closeBuild, listWork, postBuild, publishPictures } from './notify.ts';
@@ -509,6 +512,10 @@ const HANDLERS: Record<string, Handler> = {
     const r = await keepRun(settings, str(p, 'dbPath'), runId(p), now);
     const phone = await closeBuild(settings, str(p, 'dbPath'), r.run.id, r.note, token(p), now, deps.fetch);
     return { ...r, phone, learned: await learnNow(settings, str(p, 'dbPath'), (id) => deps.modelName(id), now) };
+  },
+  deps_approve: (params, deps) => {
+    const p = obj(params);
+    return approveDeps(str(p, 'dbPath'), runId(p), deps.now?.() ?? new Date());
   },
   run_undo: async (params, deps) => {
     const p = obj(params);

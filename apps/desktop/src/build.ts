@@ -68,7 +68,7 @@ export function keepable(r: BuildRun): boolean {
   return r.testsPassed && !r.checks.some((c) => !c.passed && !c.advisory);
 }
 
-export const CHECK_NAME: Record<string, string> = { secrets: 'Secret scan', audit: 'Package audit', checklist: 'Checklist rules', axe: 'Accessibility', 'phone-overflow': 'Phone width', pictures: 'Pictures' };
+export const CHECK_NAME: Record<string, string> = { secrets: 'Secret scan', audit: 'Package audit', dependencies: 'New packages', checklist: 'Checklist rules', axe: 'Accessibility', 'phone-overflow': 'Phone width', pictures: 'Pictures' };
 
 /** After Keep, Undo or a rating: what happened, and any habit the app learned (step 9d). */
 export interface Decided { run: BuildRun; note: string; learned: string[]; phone: string }
@@ -125,6 +125,20 @@ export async function listRuns(invoke: Invoke, slug: string): Promise<BuildRun[]
 export async function decideRun(invoke: Invoke, id: number, keep: boolean): Promise<Decided> {
   try {
     return await invoke<Decided>('run_decide', { id, keep });
+  } catch (err) {
+    throw plain(err);
+  }
+}
+
+/** True when the only thing stopping Keep is new packages waiting for joshua's OK. */
+export function needsPackageOk(r: BuildRun): boolean {
+  return r.status === 'built' && r.testsPassed && r.checks.some((c) => c.name === 'dependencies' && !c.passed && !c.advisory);
+}
+
+/** joshua's OK for the new packages a build added. After this, Keep is allowed (if nothing else blocks). */
+export async function approvePackages(invoke: Invoke, id: number): Promise<{ run: BuildRun; note: string; keep: { keep: boolean; blocking: string[] } }> {
+  try {
+    return await invoke('deps_approve', { id });
   } catch (err) {
     throw plain(err);
   }

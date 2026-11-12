@@ -188,6 +188,12 @@ export class RunLog {
     if (Number(res.changes) !== 1) throw new Error('That build was already kept or undone.');
   }
 
+  /** Replaces a waiting run's saved checks (joshua approved new packages). Only a run still waiting. */
+  setChecks(id: number, checks: RunCheck[]): void {
+    const res = this.db.prepare("UPDATE runs SET checks = ? WHERE id = ? AND status = 'built'").run(JSON.stringify(checks), id);
+    if (Number(res.changes) !== 1) throw new Error('That build was already kept or undone.');
+  }
+
   /** joshua's 1–5 rating; can be changed. */
   rate(id: number, rating: number): void {
     if (!Number.isInteger(rating) || rating < 1 || rating > 5) throw new Error('Rating must be a whole number from 1 to 5');

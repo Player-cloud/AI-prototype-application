@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { auditCheck, canKeep, changedSince, checklistCheck, runFreeChecks, secretScan, type Exec } from '../src/index.ts';
+import { auditCheck, canKeep, changedSince, checklistCheck, dependenciesCheck, runFreeChecks, secretScan, type Exec } from '../src/index.ts';
 
 const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: 'pipe' });
 /** A token-shaped fake made at run time, so this file itself has nothing key-shaped in it. */
@@ -83,7 +83,7 @@ describe('free checks', () => {
     expect(checklistCheck(['Security'], [{ file: 'a.ts', line: 1, text: 'const ok = 1;' }]).detail).toBe('Checked 1 area: nothing found.');
   });
 
-  it('runs all three, and only blocking failures stop Keep', async () => {
+  it('runs all of them, and only blocking failures stop Keep', async () => {
     await writeFile(join(dir, 'page.tsx'), '<img src="a.png">\n');
     const results = await runFreeChecks(dir, base, ['Accessibility'], async (cmd, args, cwd) =>
       cmd === 'git' ? { code: 0, output: execFileSync('git', args, { cwd, encoding: 'utf8' }) } : { code: 0, output: 'ok' },
@@ -91,9 +91,52 @@ describe('free checks', () => {
     expect(results.map((r) => [r.name, r.passed])).toEqual([
       ['secrets', true],
       ['audit', true],
+      ['dependencies', true],
       ['checklist', false],
     ]);
     expect(canKeep([{ name: 'tests', passed: true, free: true }, ...results])).toEqual({ keep: true, blocking: [] });
     expect(canKeep([{ name: 'tests', passed: true, free: true }, { name: 'secrets', passed: false, free: true }])).toEqual({ keep: false, blocking: ['secrets'] });
+  });
+
+  describe('new packages', () => {
+    const pkg = (deps: Record<string, string>, dev: Record<string, string> = {}) => JSON.stringify({ name: 'app', dependencies: deps, devDependencies: dev }, null, 2);
+    const check = async () => dependenciesCheck(dir, base, (await changedSince(dir, base)).files);
+    beforeEach(async () => {
+      await writeFile(join(dir, 'package.json'), pkg({ react: '^19.0.0' }, { vitest: '^4.0.0' }));
+      git(dir, 'add', '.');
+      git(dir, 'commit', '-q', '-m', 'with packages');
+      base = git(dir, 'rev-parse', 'HEAD').trim();
+    });
+
+    it('passes when nothing changed', async () => {
+      expect(await check()).toEqual({ name: 'dependencies', passed: true, free: true, detail: 'No new packages.' });
+    });
+
+    it('fails and lists a new package with its version, and it is not advice', async () => {
+      await writeFile(join(dir, 'package.json'), pkg({ react: '^19.0.0', 'left-pad': '^1.3.0' }, { vitest: '^4.0.0', zod: '~3.0.0' }));
+      const r = await check();
+      expect(r.passed).toBe(false);
+      expect(r.advisory).toBeUndefined();
+      expect(r.detail).toBe(['New: left-pad ^1.3.0 (dependencies in package.json)', 'New: zod ~3.0.0 (devDependencies in package.json)', 'New packages need your OK before Keep.'].join('\n'));
+      expect(canKeep([{ name: 'tests', passed: true, free: true }, r]).blocking).toEqual(['dependencies']);
+    });
+
+    it('counts a package.json that is new in a workspace package as all new, and skips node_modules', async () => {
+      await mkdir(join(dir, 'packages', 'ui'), { recursive: true });
+      await writeFile(join(dir, 'packages', 'ui', 'package.json'), pkg({ clsx: '^2.0.0' }));
+      await mkdir(join(dir, 'node_modules', 'x'), { recursive: true });
+      await writeFile(join(dir, 'node_modules', 'x', 'package.json'), pkg({ sneaky: '1.0.0' }));
+      const r = await dependenciesCheck(dir, base, ['packages/ui/package.json', 'node_modules/x/package.json']);
+      expect(r.passed).toBe(false);
+      expect(r.detail).toContain('New: clsx ^2.0.0 (dependencies in packages/ui/package.json)');
+      expect(r.detail).not.toContain('sneaky');
+    });
+
+    it('does not count a changed version, or a package moved between sections, as new', async () => {
+      await writeFile(join(dir, 'package.json'), pkg({ react: '^19.1.0', vitest: '^4.0.0' }));
+      const r = await check();
+      expect(r.passed).toBe(true);
+      expect(r.detail).toBe('No new packages.\nChanged: react ^19.0.0 → ^19.1.0 (package.json)');
+    });
   });
 });

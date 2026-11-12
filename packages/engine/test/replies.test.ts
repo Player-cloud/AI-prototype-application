@@ -63,13 +63,13 @@ describe('replies from the phone', () => {
   });
 
   /** A finished build, waiting, posted as issue #12. */
-  async function waiting() {
+  async function waiting(checks: { name: string; passed: boolean; detail?: string }[] = []) {
     const branch = 'aip/f-01-20261111-193000';
     const path = join(root, 'club-hr-runs', 'F-01-20261111-193000');
     git(code, 'worktree', 'add', '-q', '-b', branch, path, 'HEAD');
     await writeFile(join(path, 'F-01.md'), 'F-01 page\n');
     const log = RunLog.open(db);
-    const id = log.add({ at: NOW, slug: 'club-hr', feature: 'F-01', path, branch, base: git(code, 'rev-parse', 'HEAD').trim(), model: 'claude-sonnet-5-5', costUsd: 0.42, testsPassed: true, fixAttempts: 0, summary: 'Added it.' });
+    const id = log.add({ at: NOW, slug: 'club-hr', feature: 'F-01', path, branch, base: git(code, 'rev-parse', 'HEAD').trim(), model: 'claude-sonnet-5-5', costUsd: 0.42, testsPassed: true, fixAttempts: 0, summary: 'Added it.', checks });
     log.close();
     const w = WorkItems.open(db);
     w.posted(w.add(NOW, 'build', id, 'club-hr F-01: built, waiting for Keep or Undo'), 12, 'https://github.com/o/r/issues/12', NOW);
@@ -120,6 +120,21 @@ describe('replies from the phone', () => {
     const w = WorkItems.open(db);
     expect(w.listOpen()).toHaveLength(1);
     w.close();
+  });
+
+  it('refuses a phone Keep while new packages are unapproved, and says to approve them on the PC', async () => {
+    const id = await waiting([{ name: 'dependencies', passed: false, detail: 'New: left-pad ^1.3.0 (dependencies in package.json)' }]);
+    reply(1, 'keep', '2026-11-11T20:01:00Z');
+    const r = (await poll()).result;
+    expect(r.done).toEqual(['From your phone (issue #12): This build added new packages, and they need your OK first. Open the app on your PC, press “Approve new packages” on the build, then keep it.']);
+    expect(posted.map((p) => p.method)).toEqual(['POST']);
+    const log = RunLog.open(db);
+    expect(log.get(id)!.status).toBe('built');
+    log.close();
+    // After the OK on the PC, the same phone reply works.
+    await handleLine(JSON.stringify({ id: 1, method: 'deps_approve', params: { dbPath: db, id } }), { now: () => NOW } as never);
+    reply(2, 'keep', '2026-11-11T20:02:00Z');
+    expect((await poll()).result.done[0]).toContain('Kept F-01');
   });
 
   it('ignores people without access, and asks again when it doesn’t understand', async () => {
