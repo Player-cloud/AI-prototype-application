@@ -201,7 +201,7 @@ These were the audit's first fixes, all merged on 12 Nov.
 | Update watching | **Verified** | CI-6 look-up; joshua installs by hand | **checks** finds, **memory** stores |
 | Undo and recovery | **Implemented** | `ChangeLog`, worktrees, CI-8 checks | **memory** + **engine** |
 | Project context, specs | **Verified** (F-01) | `projects/<slug>/` | **memory** stores, **engine** uses |
-| Run records | **Partial** | `runs` table: one row per *finished* build. Failed builds aren't saved; no build ID shared by the steps | **memory** |
+| Run records | **Implemented** (#57) | `runs` row made at build start (its id is the build ID, also on spend rows); ends as built, failed (with cause), stopped or interrupted | **memory** |
 
 ### 5.1 Overlaps and conflicts found
 
@@ -226,7 +226,7 @@ No duplicate engine, database, test runner or approval authority was found. `his
 - **D-4. Decided (11 Nov):** docs PRs are separate from code PRs.
 - **Q-2. Approved (12 Nov):** shell rules in the gatekeeper (enforced ask rules; allow-list in log-only mode until joshua flips it). Done in #54.
 - **Q-3. Approved (12 Nov):** only the model's own failures count towards the 3-failure switch-off. Done in #56.
-- **Q-4. Approved (12 Nov).** The wording of this decision is not in the code or git log, so it is not restated here. It needs to be copied in from the plan.
+- **Q-4. Approved (12 Nov).** A build that adds a new package can't be kept until joshua approves the new packages ("Approve new packages" in Build). Changed versions of existing packages don't block Keep. Built in #53.
 - **Q-5. Approved (12 Nov), for later (Phase 3):** narrow self-maintenance. Nothing is built.
 
 ## 7. Next

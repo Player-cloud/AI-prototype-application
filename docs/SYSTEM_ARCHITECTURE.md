@@ -151,7 +151,7 @@ projects/<name>/ spec.md, done/, review.md, answers.md, tools, rules.md
 | --- | --- | --- |
 | `spend` | **Verified** | every model call: time, provider, model, job, tokens, $ cost |
 | `changes` | **Implemented** | every settings or data-file change with exact before/after, for undo (keeps 200) |
-| `runs` | **Partial** | one row per **finished** feature build: model, cost, tests, fix attempts, checks, pictures, Keep/Undo, rating. Failed builds aren't saved, and there is no build ID shared by every step. |
+| `runs` | **Implemented** | one row per feature build, made at the start (its id is the build ID, shared with spend rows): model, cost, tests, fix attempts, checks, pictures, Keep/Undo, rating; status running → built / failed (cause, error) / stopped / interrupted (#57). |
 | `work_items` | **Implemented** | things that need joshua, with their GitHub issue |
 | `asks`, `ask_approvals` | **Implemented** | ask-first requests and single-use "Allow once" approvals (24 hours) |
 

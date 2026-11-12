@@ -180,7 +180,7 @@ Capability Intelligence = the app's evidence about what it can use (models, tool
 
 #### CAP-V1-04 Link use to outcome
 - MUST · Owner: memory (record) + engine (writes it) · Depends: V1-09 · V1 · **Partial**
-- Each run's model, tools, tokens, cost, test result, Keep/Undo and rating are linked. The `runs` table in `history.sqlite` holds one row per *finished* build. Failed builds aren't saved and there is no build ID yet (Phase 1, run records).
+- Each run's model, tools, tokens, cost, test result, Keep/Undo and rating are linked. The `runs` table in `history.sqlite` gets a row at the start of every build; its id is the build ID, also stored on spend rows. Failed builds are saved with a cause, the error and cost so far; stopped and interrupted builds are saved too (#57).
 - Done when: the app can say which model and tools a run used and how it went; test results and joshua's rating are stored separately.
 
 #### CAP-V1-05 Stale evidence and 3-failures rule
@@ -273,7 +273,7 @@ Status now: SUP-A **Partial** (environment check **Verified** on one computer; d
 | --- | --- | --- | --- |
 | NFR-01 | Works on Windows and Linux; CI on both; platform differences (paths, shells, keyring) handled explicitly. **Partial:** CI is written for both but not running (billing); Windows is untested for the sandbox environment and for links and junctions | MUST | V1 |
 | NFR-02 | Token-light: summaries first, tools loaded only when picked, no idle agents | MUST | V1 |
-| NFR-03 | Failures reported honestly; retries limited (2 fix attempts); work isolated per worktree. **Verified** for one build; failed builds aren't saved as records yet (Phase 1) | MUST | V1 |
+| NFR-03 | Failures reported honestly; retries limited (2 fix attempts); work isolated per worktree. **Verified** for one build; failed builds are saved with their cause (#57, **Implemented**) | MUST | V1 |
 | NFR-04 | Enough records to explain choices, costs, failures and changes, without keys or unneeded private code | MUST | V1 |
 | NFR-05 | Small packages with one job each; swappable adapters; no parallel stores | MUST | V1 |
 | NFR-06 | Status words are exact: passed, failed, skipped, blocked, not run, stale, unknown | MUST | V1 |
@@ -308,7 +308,7 @@ Status now: SUP-A **Partial** (environment check **Verified** on one computer; d
 
 | ID | Requirement | Priority | Release |
 | --- | --- | --- | --- |
-| EVD-01 | Every evidence record names its source (trial file, run, evaluation), date and, where known, version | MUST | V1 for trials and runs (**Implemented**; failed builds are **Missing**, Phase 1) |
+| EVD-01 | Every evidence record names its source (trial file, run, evaluation), date and, where known, version | MUST | V1 for trials and runs (**Implemented**; failed builds **Implemented** in #57) |
 | EVD-02 | joshua's rating is stored apart from measured results | MUST | V1 (**Implemented**) |
 | EVD-03 | Settings and data-file changes keep exact before/after (built: `changes` table). Every app edit to `habits.md` is recorded there, can be undone, and joshua is told (D-3 Option A). The app doesn't write `rules.md` yet; when it does, the same applies | MUST | V1 (**Implemented**) |
 | EVD-04 | Only non-secret Markdown syncs to `ai-prototype-data` | MUST | V1 |
@@ -350,7 +350,7 @@ All: Owner desktop (shows), engine/memory (data) · Depends: CAP-01..06 · Done 
 - **D-4 (11 Nov):** docs PRs are separate from code PRs.
 - **Q-2 (12 Nov):** shell rules in the gatekeeper; the allow-list is log-only until joshua flips it. Done in #54.
 - **Q-3 (12 Nov):** only the model's own failures count towards the 3-failure switch-off. Done in #56.
-- **Q-4 (12 Nov):** approved. Its wording isn't in the code or git log, so it is not restated here; copy it in from the plan.
+- **Q-4 (12 Nov):** approved. New packages need joshua's OK before Keep; changed versions don't block. Built in #53.
 - **Q-5 (12 Nov):** narrow self-maintenance. Approved for later (Phase 3). Nothing is built.
 
 **Next (the roadmap's Phase 1):**
