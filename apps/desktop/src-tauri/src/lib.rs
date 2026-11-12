@@ -306,6 +306,18 @@ async fn deps_approve(id: i64, app: tauri::AppHandle, state: tauri::State<'_, En
     engine_call(&state, "deps_approve", serde_json::json!({ "dbPath": spend_path(&app)?, "id": id }))
 }
 
+/// Ask-first requests from builds that wait for joshua (the "Needs you" panel).
+#[tauri::command]
+async fn ask_list(app: tauri::AppHandle, state: tauri::State<'_, Engine>) -> Result<serde_json::Value, String> {
+    engine_call(&state, "ask_list", serde_json::json!({ "dbPath": spend_path(&app)? }))
+}
+
+/// joshua's answer to a request: Allow once (one time, 24 hours) or No.
+#[tauri::command]
+async fn ask_decide(id: i64, allow: bool, app: tauri::AppHandle, state: tauri::State<'_, Engine>) -> Result<serde_json::Value, String> {
+    engine_call(&state, "ask_decide", serde_json::json!({ "dbPath": spend_path(&app)?, "id": id, "allow": allow }))
+}
+
 /// The GitHub token for phone messages, when one is saved (step 10). Without one, nothing is posted.
 fn github_token() -> Option<String> {
     keys::load(&OsKeyring, "github").ok()
@@ -531,7 +543,7 @@ pub fn run() {
             });
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![version, engine_status, key_status, key_save, key_remove, test_model, settings_get, settings_save, data_overview, environment_check, eval_run, experiment_run, update_check, update_decide, project_tools, project_tools_approve, capability_centre, spend_summary, tool_rate, tool_switch_on, data_sync, gate_rules, history_list, history_undo, project, interview_suggest, interview_review, build_feature, build_stop, run_list, workflow_compare, run_decide, deps_approve, run_rate, github_test, work_list, work_poll, phone_setup])
+        .invoke_handler(tauri::generate_handler![version, engine_status, key_status, key_save, key_remove, test_model, settings_get, settings_save, data_overview, environment_check, eval_run, experiment_run, update_check, update_decide, project_tools, project_tools_approve, capability_centre, spend_summary, tool_rate, tool_switch_on, data_sync, gate_rules, history_list, history_undo, project, interview_suggest, interview_review, build_feature, build_stop, run_list, workflow_compare, run_decide, deps_approve, ask_list, ask_decide, run_rate, github_test, work_list, work_poll, phone_setup])
         .run(tauri::generate_context!())
         .expect("error while running the app");
 }

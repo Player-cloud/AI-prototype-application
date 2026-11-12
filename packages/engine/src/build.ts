@@ -212,12 +212,42 @@ export async function staysInsideReal(runPath: string, input: Record<string, unk
   return true;
 }
 
-/** The check before every tool call: inside the copy (words, then real places), then the gatekeeper. */
-export async function checkStep(settings: AppSettings, runPath: string, tool: string, input: Record<string, unknown>): Promise<ToolDecision> {
+/** Where a build's asks are kept, so an ask-first refusal can become a request in Needs you. */
+export interface AskStore {
+  slug: string;
+  feature: string;
+  /** The build's run branch. */
+  branch: string;
+  dbPath: string;
+  now?: Date;
+  /** Called when an "Allow once" was used up. */
+  onAllowed?: () => void;
+}
+
+/**
+ * The check before every tool call: inside the copy (words, then real places), then the gatekeeper.
+ * An ask-first answer is refused and becomes a request in Needs you, unless joshua already said
+ * "Allow once" for that exact thing in this project (that is used up here). Never-rules, the
+ * guard on the rules and the own-copy checks are decided before and can't be overridden.
+ */
+export async function checkStep(settings: AppSettings, runPath: string, tool: string, input: Record<string, unknown>, asks?: AskStore): Promise<ToolDecision> {
   if (!staysInside(runPath, input) || !(await staysInsideReal(runPath, input))) return { allow: false, reason: 'Only files in this feature’s own copy can be used.' };
   const d = gate(tool, input, settings);
   if (d.allow) return d;
-  return { allow: false, reason: d.askJoshua ? `${d.reason}. Not done; joshua will be asked later.` : d.reason };
+  if (d.askJoshua !== true) return { allow: false, reason: d.reason };
+  if (!asks) return { allow: false, reason: `${d.reason}. Not done.` };
+  try {
+    const { recordAsk, useApproval } = await import('./asks.ts');
+    if (await useApproval(asks, tool, input)) {
+      asks.onAllowed?.();
+      return { allow: true };
+    }
+    await recordAsk(asks, tool, input, d.reason);
+  } catch {
+    // A problem with the history file never stops a build; the step is just refused.
+    return { allow: false, reason: `${d.reason}. Not done.` };
+  }
+  return { allow: false, reason: `${d.reason}. Not done. It's in Needs you for your OK.` };
 }
 
 /** Plain names for the step list. */
@@ -327,7 +357,7 @@ export async function buildFeature(
         sandbox,
         onStep: (text) => add({ text }),
         async checkTool(name, input) {
-          const d = await checkStep(settings, run.path, name, input);
+          const d = await checkStep(settings, run.path, name, input, p.dbPath ? { slug: p.slug, feature: p.feature, branch: run.branch, dbPath: p.dbPath, onAllowed: () => add({ text: `Allowed once by joshua: ${name}` }) } : undefined);
           if (!d.allow) add({ text: `Refused: ${name}`, refused: d.reason });
           // The shell allow-list is on trial: allowed, but joshua can see what enforcing it would change.
           else if (d.note) add({ text: `Would ask joshua under the new shell list: ${d.note}` });

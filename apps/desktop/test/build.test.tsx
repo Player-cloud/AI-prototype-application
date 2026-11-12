@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from 'vitest';
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { Build, limitText } from '../src/screens/Build';
 import type { BuildEvent, MakeChannel } from '../src/build';
 import type { Invoke } from '../src/engine';
@@ -28,8 +28,9 @@ const WAITING = {
   checks: [] as { name: string; passed: boolean; advisory?: boolean; detail?: string }[],
 };
 
-function fakeShell(opts: { fail?: string; runs?: (typeof WAITING)[] } = {}) {
+function fakeShell(opts: { fail?: string; runs?: (typeof WAITING)[]; asks?: { id: number; at: string; slug: string; feature: string; branch: string; tool: string; input: string; reason: string }[] } = {}) {
   let runs = [...(opts.runs ?? [])];
+  let asks = [...(opts.asks ?? [])];
   const calls: { cmd: string; args?: Record<string, unknown> }[] = [];
   let send: ((e: BuildEvent) => void) | null = null;
   let finish: ((v: unknown) => void) | null = null;
@@ -59,6 +60,12 @@ function fakeShell(opts: { fail?: string; runs?: (typeof WAITING)[] } = {}) {
     if (cmd === 'deps_approve') {
       runs = runs.map((r) => (r.id === args?.id ? { ...r, checks: r.checks.map((c) => (c.name === 'dependencies' ? { name: 'dependencies', passed: true, detail: 'Approved by joshua on 2026-11-12: left-pad ^1.3.0' } : c)) } : r));
       return { run: runs[0], note: 'Approved the new packages for F-02: left-pad ^1.3.0.', keep: { keep: true, blocking: [] } } as T;
+    }
+    if (cmd === 'ask_list') return asks as T;
+    if (cmd === 'ask_decide') {
+      const a = asks.find((x) => x.id === args?.id)!;
+      asks = asks.filter((x) => x.id !== args?.id);
+      return { note: args?.allow ? `Allowed once: ${a.input}.` : `Said No to: ${a.input}.` } as T;
     }
     if (cmd === 'run_rate') {
       runs = runs.map((r) => (r.id === args?.id ? { ...r, rating: args?.rating as null } : r));
@@ -270,6 +277,23 @@ describe('Build screen', () => {
     // The app says what it learned from the rating.
     const learned = screen.getByRole('region', { name: 'What the app learned' });
     expect(within(learned).getByText('New habit: Sonnet builds are usually kept (kept 5 of 5): keep using it for builds.')).toBeTruthy();
+  });
+
+  it('shows a command a rule asked about in Needs you, with Allow once and No', async () => {
+    const ask = (id: number, input: string) => ({ id, at: '', slug: 'club-hr', feature: 'F-01', branch: 'aip/f-01', tool: 'Bash', input, reason: "Gatekeeper (push): pushing code needs joshua's OK" });
+    const shell = fakeShell({ asks: [ask(3, 'git push origin main'), ask(4, 'docker compose up')] });
+    render(<Build invoke={shell.invoke} makeChannel={shell.makeChannel} />);
+    const needs = await screen.findByRole('region', { name: 'Needs you' });
+    expect(within(needs).getByRole('heading').textContent).toBe('Needs you (2)');
+    expect(within(needs).getByText('git push origin main')).toBeTruthy();
+    expect(needs.textContent).toContain("pushing code needs joshua's OK");
+    fireEvent.click(within(needs).getByRole('button', { name: 'Allow once: git push origin main' }));
+    expect((await screen.findByRole('status')).textContent).toBe('Allowed once: git push origin main.');
+    expect(shell.calls).toContainEqual({ cmd: 'ask_decide', args: { id: 3, allow: true } });
+    await waitFor(() => expect(within(screen.getByRole('region', { name: 'Needs you' })).queryByText('git push origin main')).toBeNull());
+    fireEvent.click(within(screen.getByRole('region', { name: 'Needs you' })).getByRole('button', { name: 'No: docker compose up' }));
+    await waitFor(() => expect(screen.queryByRole('region', { name: 'Needs you' })).toBeNull());
+    expect(shell.calls).toContainEqual({ cmd: 'ask_decide', args: { id: 4, allow: false } });
   });
 
   it('can’t keep a build whose secret scan failed', async () => {

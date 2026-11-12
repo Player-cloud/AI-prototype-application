@@ -180,3 +180,34 @@ export async function pollPhone(invoke: Invoke): Promise<{ done: string[]; chang
     throw plain(err);
   }
 }
+
+/** A command a build wanted to run that a rule says to ask joshua about first. */
+export interface AskRequest {
+  id: number;
+  at: string;
+  slug: string;
+  feature: string;
+  branch: string;
+  tool: string;
+  /** The exact command or file path. */
+  input: string;
+  reason: string;
+}
+
+/** The ask-first requests waiting in the "Needs you" panel, oldest first. */
+export async function listAsks(invoke: Invoke): Promise<AskRequest[]> {
+  try {
+    return await invoke<AskRequest[]>('ask_list');
+  } catch (err) {
+    throw plain(err);
+  }
+}
+
+/** Allow once lets that exact thing through one time (for 24 hours); No closes the request. */
+export async function decideAsk(invoke: Invoke, id: number, allow: boolean): Promise<{ note: string }> {
+  try {
+    return await invoke<{ note: string }>('ask_decide', { id, allow });
+  } catch (err) {
+    throw plain(err);
+  }
+}

@@ -39,11 +39,76 @@ describe('build run rules', () => {
     expect(await checkStep(s, run, 'Edit', { file_path: '/elsewhere/a.ts' })).toEqual({ allow: false, reason: 'Only files in this feature’s own copy can be used.' });
     expect(await checkStep(s, run, 'Bash', { command: 'git push origin main' })).toEqual({
       allow: false,
-      reason: 'Gatekeeper (push): pushing code needs joshua\'s OK. Not done; joshua will be asked later.',
+      reason: 'Gatekeeper (push): pushing code needs joshua\'s OK. Not done.',
     });
     expect(await checkStep(s, run, 'Read', { file_path: join(run, '.env') })).toEqual({ allow: false, reason: 'Gatekeeper (key-files): reading or writing key files is never allowed' });
     expect(await checkStep(s, run, 'Bash', { command: 'pnpm test' })).toEqual({ allow: true });
     expect(await checkStep(s, run, 'Bash', { command: 'docker ps' })).toEqual({ allow: true, note: "docker isn't on the list of known build commands; it needs joshua's OK" });
+  });
+});
+
+describe('ask rules and stored approvals', () => {
+  let dir = '';
+  let db = '';
+  let run = '';
+  beforeEach(async () => {
+    dir = await realpath(await mkdtemp(join(tmpdir(), 'aip-ask-')));
+    db = join(dir, 'history.sqlite');
+    run = join(dir, 'run');
+    await mkdir(run);
+  });
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+  const store = (branch = 'aip/f-01-a', slug = 'club-hr') => ({ slug, feature: 'F-01', branch, dbPath: db, now: NOW });
+  const approve = async (slug: string, tool: string, input: string) => {
+    const m = await import('@aip/memory');
+    const a = m.Asks.open(db);
+    const { id } = a.add(NOW, { slug, feature: 'F-01', branch: 'b', tool, input, reason: 'r' });
+    a.decide(id, true, NOW);
+    a.close();
+  };
+  const s = checkSettings({});
+  const ASK = { command: 'git push origin main' };
+
+  it('refuses an ask and records it once; Allow once then lets exactly one through', async () => {
+    const d = await checkStep(s, run, 'Bash', ASK, store());
+    expect(d).toEqual({ allow: false, reason: "Gatekeeper (push): pushing code needs joshua's OK. Not done. It's in Needs you for your OK." });
+    await checkStep(s, run, 'Bash', ASK, store('aip/f-01-b'));
+    const m = await import('@aip/memory');
+    const a = m.Asks.open(db);
+    expect(a.listOpen()).toHaveLength(1);
+    a.close();
+    await approve('club-hr', 'Bash', ASK.command);
+    expect(await checkStep(s, run, 'Bash', ASK, store('aip/f-02'))).toEqual({ allow: true });
+    expect((await checkStep(s, run, 'Bash', ASK, store('aip/f-02'))).allow).toBe(false);
+  });
+
+  it('an approval for another project or an expired one does nothing', async () => {
+    await approve('other', 'Bash', ASK.command);
+    expect((await checkStep(s, run, 'Bash', ASK, store())).allow).toBe(false);
+    await approve('club-hr', 'Bash', ASK.command);
+    const later = { ...store(), now: new Date(NOW.getTime() + 25 * 3_600_000) };
+    expect((await checkStep(s, run, 'Bash', ASK, later)).allow).toBe(false);
+  });
+
+  it('never overrides a never-rule, the protect-rules guard, or the own-copy check', async () => {
+    const key = { file_path: join(run, '.env') };
+    const guard = { file_path: join(run, 'packages', 'gatekeeper', 'src', 'index.ts'), content: 'x' };
+    const outside = { file_path: '/elsewhere/a.ts' };
+    await approve('club-hr', 'Read', key.file_path);
+    await approve('club-hr', 'Write', guard.file_path);
+    await approve('club-hr', 'Edit', outside.file_path);
+    const keyD = await checkStep(s, run, 'Read', key, store());
+    expect(keyD).toEqual({ allow: false, reason: 'Gatekeeper (key-files): reading or writing key files is never allowed' });
+    expect((await checkStep(s, run, 'Write', guard, store())).allow).toBe(false);
+    expect(await checkStep(s, run, 'Edit', outside, store())).toEqual({ allow: false, reason: 'Only files in this feature’s own copy can be used.' });
+    // None of them made a request, and none of the approvals was used up.
+    const m = await import('@aip/memory');
+    const a = m.Asks.open(db);
+    expect(a.listOpen()).toEqual([]);
+    expect(a.consume('club-hr', 'Read', key.file_path, NOW, 'b')).toBe(true);
+    a.close();
   });
 });
 
@@ -109,7 +174,7 @@ describe('build_feature', () => {
   /** A fake agent: tries a write in its copy, a push and a write outside, then reports. */
   type Seen = { task?: BuildTask; maxUsd?: number; answers: unknown[]; prompts?: string[]; caps?: number[]; previous?: unknown[]; watched?: string[]; liveStops?: number; homes?: string[]; removed?: string[] };
   /** opts.tests: what each test run gives (passes when it runs out); opts.fail: the model errors. */
-  function deps(seen: Seen, withBuild = true, opts: { tests?: boolean[]; fail?: string; noted?: string; checks?: { name: string; passed: boolean; free: boolean; detail?: string; advisory?: boolean }[] } = {}): Deps {
+  function deps(seen: Seen, withBuild = true, opts: { tests?: boolean[]; fail?: string; noted?: string; tries?: [string, Record<string, unknown>][]; at?: Date; checks?: { name: string; passed: boolean; free: boolean; detail?: string; advisory?: boolean }[] } = {}): Deps {
     const results = [...(opts.tests ?? [])];
     const adapter: ModelAdapter = {
       provider: 'claude',
@@ -129,6 +194,7 @@ describe('build_feature', () => {
                 ['Bash', { command: 'git push origin main' }],
                 ['Write', { file_path: join(code, 'hack.md'), content: 'x' }],
               ];
+              if (opts.tries) tries.splice(0, tries.length, ...opts.tries);
               if (opts.noted) tries.push(['Bash', { command: opts.noted }]);
               for (const [tool, input] of tries) {
                 task.onStep?.(`${tool} ${String(input.file_path ?? input.command)}`);
@@ -153,7 +219,7 @@ describe('build_feature', () => {
       async modelName() {
         return 'Sonnet 5.5';
       },
-      now: () => NOW,
+      now: () => opts.at ?? NOW,
       // The build agent's throwaway home: recorded, not made, and its removal is recorded too.
       async sandboxHome(branch: string) {
         const home = join(root, 'sandbox-home', branch.replace(/[^A-Za-z0-9._-]+/g, '-'));
@@ -311,6 +377,40 @@ describe('build_feature', () => {
       detail: 'login.md:1 (Security): Use https:// links.',
     });
     expect((await call('run_list', { dbPath, slug: 'club-hr' })).result[0].pictures).toEqual([{ name: 'desktop', path: out.pictures[0].path, hash: 'h1' }]);
+  });
+
+  it('an asked command waits in Needs you; Allow once lets it through one time in the next build, then it asks again', async () => {
+    const settings = { dataFolder: data, codeFolders: { 'club-hr': code } };
+    const dbPath = join(root, 'history.sqlite');
+    const push: [string, Record<string, unknown>] = ['Bash', { command: 'git push origin main' }];
+    const first: Seen = { answers: [] };
+    const call = await plan(deps(first), settings);
+    const r1 = await call('build_feature', { settings, slug: 'club-hr', feature: 'F-01', provider: 'claude', apiKey: FAKE_KEY, dbPath });
+    expect(r1.error).toBeUndefined();
+    // The push was refused, with the new words, and is now waiting for joshua.
+    expect(r1.result.steps.find((s: { refused?: string }) => s.refused?.startsWith('Gatekeeper (push)')).refused).toBe("Gatekeeper (push): pushing code needs joshua's OK. Not done. It's in Needs you for your OK.");
+    const open = (await call('ask_list', { dbPath })).result;
+    expect(open).toMatchObject([{ slug: 'club-hr', feature: 'F-01', branch: r1.result.run.branch, tool: 'Bash', input: 'git push origin main', reason: "Gatekeeper (push): pushing code needs joshua's OK" }]);
+
+    const decided = await call('ask_decide', { dbPath, id: open[0].id, allow: true });
+    expect(decided.result.note).toContain('Allowed once');
+    expect((await call('ask_list', { dbPath })).result).toEqual([]);
+    expect((await call('history_list', { dbPath })).result[0]).toMatchObject({ kind: 'approval', label: 'Allowed once: Bash in club-hr' });
+
+    // The next build: the first try goes through, the second is refused (and asks again).
+    const next: Seen = { answers: [] };
+    const d2 = deps(next, true, { tries: [push, push], at: new Date('2026-11-11T18:00:00Z') });
+    const call2 = async (method: string, params: Record<string, unknown>) => JSON.parse(await handleLine(JSON.stringify({ id: 1, method, params }), d2, {}));
+    const r2 = await call2('build_feature', { settings, slug: 'club-hr', feature: 'F-01', provider: 'claude', apiKey: FAKE_KEY, dbPath });
+    expect(r2.error).toBeUndefined();
+    expect(next.answers.map((a) => (a as { allow: boolean }).allow)).toEqual([true, false]);
+    expect((await call2('ask_list', { dbPath })).result).toHaveLength(1);
+
+    // "No" closes a request and approves nothing.
+    const [again2] = (await call2('ask_list', { dbPath })).result;
+    expect((await call2('ask_decide', { dbPath, id: again2.id, allow: false })).result.note).toContain('Said No');
+    expect((await call2('history_list', { dbPath })).result[0]).toMatchObject({ kind: 'approval', label: 'Said No: Bash in club-hr' });
+    expect((await call2('ask_decide', { dbPath, id: again2.id, allow: false })).error).toContain('already answered');
   });
 
   it('adds a "Would ask" step for a command the new shell list would ask about, and still lets it run', async () => {
