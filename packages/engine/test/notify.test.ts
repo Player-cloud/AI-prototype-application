@@ -61,7 +61,13 @@ describe('phone messages for builds', () => {
     expect(body).toContain('- Checks: nothing blocks Keep; see notes on axe');
     expect(body).toContain('- Cost: £0.33 ($0.42)');
     expect(body).toContain('- Screens: changed since the last build');
-    expect(body).toContain('> Added the rota page.\n> Tests pass.');
+    expect(body).toContain('What the model says it did (its own words, not checked by the app):\n\n> Added the rota page.\n> Tests pass.');
+    expect(body).not.toContain('What the app found');
+    // V2 B: the model's claims, beside what the app found.
+    const withClaims = buildBody({ ...NEWS, claims: ['✓ Tests: The app checked this itself: passed.', '? Lint: The app doesn’t check this itself, so only the model says so.'] });
+    expect(withClaims).toContain(
+      'What the app found about those claims:\n\n- ✓ Tests: The app checked this itself: passed.\n- ? Lint: The app doesn’t check this itself, so only the model says so.',
+    );
   });
 
   it('posts an issue, lists it under Needs you, and closes both after Keep', async () => {

@@ -43,6 +43,10 @@ After the model finishes, the project's own tests run in the copy (`pnpm test`, 
 
 While the model works, the Build screen shows the build's own page live, at desktop and phone sizes, so you can watch it take shape. The app starts the page in the build's copy as soon as there is one to show (`next dev` or `vite` once its packages are installed, or a plain `index.html`), only on this computer (127.0.0.1), and starts it again if it stops (5 tries at most). Next.js and Vite update the page themselves; a plain page is reloaded as the build changes it. The model is told not to start its own dev server. The live view closes when the model is done, before the free checks and the final pictures, and always when a build fails or is stopped. It costs nothing.
 
+## Honest build report (V2)
+
+The build report keeps the model's own summary apart from what the app checked. The summary is shown as "What the model says it did", in its own words. Under it, each thing the summary claims (tests, audit, secrets, accessibility, phone width, type check, lint, production build) is set beside what the app found itself: ✓ the app's own check agrees, ✗ it disagrees, ? the app didn't check it (or its check didn't run), so only the model says so. The phone message shows the same lines.
+
 ## Free checks (step 9)
 
 After the tests, three free checks run in the build's copy (no model, no cost):

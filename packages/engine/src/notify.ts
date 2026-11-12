@@ -22,6 +22,8 @@ export interface BuildNews {
   costText: string;
   screensChanged: boolean | null;
   summary: string;
+  /** What the summary claims, checked against the app's own results (V2 B): "✓ Tests: …". */
+  claims?: string[];
 }
 
 export function buildTitle(n: BuildNews): string {
@@ -39,8 +41,11 @@ export function buildBody(n: BuildNews): string {
     `- Cost: ${n.costText}`,
     `- Screens: ${n.screensChanged === null ? 'no earlier pictures to compare' : n.screensChanged ? 'changed since the last build' : 'same as the last build'}`,
     '',
+    'What the model says it did (its own words, not checked by the app):',
+    '',
     '> ' + (n.summary.trim().slice(0, 1500) || 'No summary.').replace(/\n/g, '\n> '),
     '',
+    ...(n.claims?.length ? ['What the app found about those claims:', '', ...n.claims.map((c) => `- ${c}`), ''] : []),
     'Reply here with **keep**, **undo**, or a rating from **1** to **5**, or use the app on your PC. The app reads replies about once a minute while it’s open.',
     '',
     SIGNATURE,

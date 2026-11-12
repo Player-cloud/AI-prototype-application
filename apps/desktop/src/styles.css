@@ -190,3 +190,8 @@ body { margin: 0; min-height: 100vh; background: radial-gradient(circle at 20% 1
 .live-window { overflow: hidden; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.15); background: #fff; max-width: 100%; }
 .live-window iframe { border: 0; transform-origin: 0 0; display: block; }
 .live-frame figcaption { font-size: 0.8rem; opacity: 0.7; }
+.model-says { margin: 4px 0 8px; padding: 6px 10px; border-left: 3px solid rgba(255, 255, 255, 0.25); white-space: pre-wrap; }
+.claim-list { list-style: none; padding: 0; margin: 0 0 8px; }
+.claim-list li { margin: 2px 0; }
+.claim-list li.bad { color: #f2a08c; }
+.claim-list li.unchecked { opacity: 0.8; font-style: italic; }
