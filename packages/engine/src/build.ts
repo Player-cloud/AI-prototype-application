@@ -18,6 +18,7 @@ import { compareClaims, type Claim } from './claims.ts';
 import { gate } from './gate.ts';
 import { guidance } from './learn.ts';
 import { usingLine } from './using.ts';
+import { adviceFor } from './workflows.ts';
 import type { Interview } from './interview.ts';
 import { getInterview } from './projects.ts';
 import { specText } from './review.ts';
@@ -43,13 +44,15 @@ export interface BuildStep { text: string; refused?: string }
 
 /** What a running build reports as it goes. */
 export type BuildEvent =
-  | { type: 'using'; using: string; run: StartedRun }
+  | { type: 'using'; using: string; run: StartedRun; advice: string[] }
   | ({ type: 'step' } & BuildStep)
   | ({ type: 'live' } & LiveState);
 
 export interface BuildResult {
   run: StartedRun;
   using: string;
+  /** CI-4: what real builds say about this way of building. Advice only: it never changes the pick. */
+  advice: string[];
   steps: BuildStep[];
   /** What the model said it did. Not checked by the app: see `claims`. */
   summary: string;
@@ -202,7 +205,13 @@ export async function buildFeature(
   const { interview } = await getInterview(settings, p.slug);
   const run = await startRun(settings, p.slug, p.feature, now);
   const using = usingLine(model, ['file edits', 'shell', 'tests']);
-  onEvent?.({ type: 'using', using, run });
+  let advice: string[] = [];
+  try {
+    advice = await adviceFor(p.dbPath ?? undefined, model, (id) => deps.modelName(id), settings.gbpPerUsd);
+  } catch {
+    // The evidence is advice; a build never stops for it.
+  }
+  onEvent?.({ type: 'using', using, run, advice });
   const watch = deps.live === undefined ? (await import('@aip/checks')).watchLive : deps.live;
   const live = watch ? watch(run.path, (s) => onEvent?.({ type: 'live', ...s })) : null;
   try {
@@ -331,6 +340,7 @@ export async function buildFeature(
           summary: summary.slice(0, 2000),
           checks: checks.map((c) => ({ name: c.name, passed: c.passed, advisory: c.advisory ?? false, detail: c.detail ?? '' })),
           pictures: shots.pictures,
+          ms: Math.max(0, (deps.now?.() ?? new Date()).getTime() - now.getTime()),
         });
       } finally {
         log.close();
@@ -340,6 +350,7 @@ export async function buildFeature(
       runId,
       run,
       using,
+      advice,
       steps,
       summary: summary.slice(0, 2000),
       claims: compareClaims(summary, [{ ...tests, name: 'tests' }, ...checks]),

@@ -174,7 +174,7 @@ describe('build_feature', () => {
     const seen: Seen = { answers: [] };
     const d = deps(seen);
     const settings = { dataFolder: data, codeFolders: { 'club-hr': code } };
-    const events: { type: string; text?: string; using?: string; url?: string | null; note?: string }[] = [];
+    const events: { type: string; text?: string; using?: string; url?: string | null; note?: string; advice?: string[] }[] = [];
     const call = await plan(d, settings, { emit: (e) => events.push(e as (typeof events)[number]) });
     await writeFile(join(data, 'rules.md'), '- Ask first.\n');
     const dbPath = join(root, 'history.sqlite');
@@ -207,6 +207,9 @@ describe('build_feature', () => {
 
     // The screen saw the Using line first, then each step as it happened.
     expect(events[0]).toMatchObject({ type: 'using', using: 'Using: Sonnet 5.5, file edits, shell, tests' });
+    // CI-4: what real builds say comes with it; this is the first build, so it's untested.
+    expect(events[0].advice).toEqual(['No builds with Sonnet 5.5 yet, so this way of building is untested.']);
+    expect(out.advice).toEqual(events[0].advice);
     expect(events.filter((e) => e.type === 'step').map((e) => e.text)).toEqual(out.steps.map((s: { text: string }) => s.text));
 
     // While the model worked, the screen could watch the copy live (V2 A). The live view closed
@@ -249,6 +252,7 @@ describe('build_feature', () => {
     expect((await call('run_list', { dbPath, slug: 'club-hr' })).result).toMatchObject([
       { id: 1, feature: 'F-01', branch: out.run.branch, path: out.run.path, testsPassed: true, status: 'built', costUsd: 0.42 },
     ]);
+    expect(typeof (await call('run_list', { dbPath, slug: 'club-hr' })).result[0].ms).toBe('number');
     expect((await call('run_list', { dbPath, slug: 'club-hr' })).result[0].checks[2]).toEqual({
       name: 'checklist',
       passed: false,

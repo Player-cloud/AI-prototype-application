@@ -39,6 +39,11 @@ function fakeShell(opts: { fail?: string; runs?: (typeof WAITING)[] } = {}) {
     calls.push({ cmd, args });
     if (cmd === 'settings_get') return { gbpPerUsd: 0.79, runCapGbp: 0.8 } as T;
     if (cmd === 'run_list') return runs as T;
+    if (cmd === 'workflow_compare') {
+      return (runs.length
+        ? [{ model: 'claude-sonnet-5-5', name: 'Sonnet 5.5', finished: 0, kept: 0, safetyFailures: 0, text: 'Sonnet 5.5: no build kept or undone yet, 1 waiting.' }]
+        : []) as T;
+    }
     if (cmd === 'work_poll') {
       runs = runs.map((r) => ({ ...r, rating: 5 as unknown as null }));
       return { done: ['From your phone (issue #12): Rated F-02 5/5.'], changed: true } as T;
@@ -103,8 +108,10 @@ describe('Build screen', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Build F-02 (costs up to £0.80 ($1.01))' }));
 
     // While it runs: the Using line, the steps as they come, and a Stop button.
-    shell.step({ type: 'using', using: 'Using: Sonnet 5.5, file edits, shell', run: RUN });
+    shell.step({ type: 'using', using: 'Using: Sonnet 5.5, file edits, shell', run: RUN, advice: ['No builds with Sonnet 5.5 yet, so this way of building is untested.'] });
     expect(await screen.findByText('Using: Sonnet 5.5, file edits, shell')).toBeTruthy();
+    // CI-4: what real builds say about this way of building, beside the Using line.
+    expect(screen.getByRole('list', { name: 'What real builds say' }).textContent).toBe('No builds with Sonnet 5.5 yet, so this way of building is untested.');
     shell.step({ type: 'step', text: 'Write src/rota.tsx' });
     shell.step({ type: 'step', text: 'Refused: Bash', refused: 'Gatekeeper (push): pushing code needs joshua’s OK.' });
     const steps = await screen.findByRole('list', { name: 'Steps' });
@@ -231,6 +238,10 @@ describe('Build screen', () => {
     render(<Build invoke={shell.invoke} makeChannel={shell.makeChannel} />);
     const builds = await screen.findByRole('region', { name: 'Builds' });
     expect(within(builds).getByText(/F-02 · .* · tests and checks pass · waiting for Keep or Undo/)).toBeTruthy();
+    // CI-4: each way of building, compared from real builds; advice only.
+    const compared = await screen.findByRole('region', { name: 'Ways of building compared' });
+    expect(within(compared).getByText('Sonnet 5.5: no build kept or undone yet, 1 waiting.')).toBeTruthy();
+    expect(compared.textContent).toContain('the model for each job stays your choice');
     // It needs joshua, and it's on his phone, where he can reply.
     const needs = await screen.findByRole('region', { name: 'Needs you' });
     expect(within(needs).getByText('club-hr F-02: built, waiting for Keep or Undo')).toBeTruthy();

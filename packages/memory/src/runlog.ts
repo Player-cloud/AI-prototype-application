@@ -34,10 +34,13 @@ export interface NewRun {
   checks?: RunCheck[];
   /** Desktop and phone pictures (step 9c). */
   pictures?: RunPicture[];
+  /** CI-4: how long the build took, start to finish; null when not measured (older builds). */
+  ms?: number | null;
 }
 
-export interface Run extends Omit<NewRun, 'at' | 'checks' | 'pictures'> {
+export interface Run extends Omit<NewRun, 'at' | 'checks' | 'pictures' | 'ms'> {
   id: number;
+  ms: number | null;
   checks: RunCheck[];
   pictures: RunPicture[];
   at: string;
@@ -73,6 +76,7 @@ interface Row {
   kept_into: string;
   checks: string;
   pictures: string;
+  ms: number | null;
 }
 
 function parseList<T>(raw: string): T[] {
@@ -105,6 +109,7 @@ function toRun(r: Row): Run {
     keptInto: r.kept_into,
     checks: parseList<RunCheck>(r.checks),
     pictures: parseList<RunPicture>(r.pictures),
+    ms: r.ms ?? null,
   };
 }
 
@@ -134,22 +139,25 @@ export class RunLog {
       merge_commit TEXT NOT NULL DEFAULT '',
       kept_into TEXT NOT NULL DEFAULT '',
       checks TEXT NOT NULL DEFAULT '[]',
-      pictures TEXT NOT NULL DEFAULT '[]'
+      pictures TEXT NOT NULL DEFAULT '[]',
+      ms INTEGER
     )`);
     // Files made before steps 9b and 9c lack these columns.
     const cols = (db.prepare('PRAGMA table_info(runs)').all() as { name: string }[]).map((c) => c.name);
     for (const col of ['checks', 'pictures']) {
       if (!cols.includes(col)) db.exec(`ALTER TABLE runs ADD COLUMN ${col} TEXT NOT NULL DEFAULT '[]'`);
     }
+    // ...and files made before CI-4 lack the build time.
+    if (!cols.includes('ms')) db.exec('ALTER TABLE runs ADD COLUMN ms INTEGER');
     return new RunLog(db);
   }
 
   add(r: NewRun): number {
     const res = this.db
       .prepare(
-        'INSERT INTO runs (at, slug, feature, path, branch, base, model, cost_usd, tests_passed, fix_attempts, summary, checks, pictures) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        'INSERT INTO runs (at, slug, feature, path, branch, base, model, cost_usd, tests_passed, fix_attempts, summary, checks, pictures, ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       )
-      .run(r.at.toISOString(), r.slug, r.feature, r.path, r.branch, r.base, r.model, r.costUsd, r.testsPassed ? 1 : 0, r.fixAttempts, r.summary, JSON.stringify(r.checks ?? []), JSON.stringify(r.pictures ?? []));
+      .run(r.at.toISOString(), r.slug, r.feature, r.path, r.branch, r.base, r.model, r.costUsd, r.testsPassed ? 1 : 0, r.fixAttempts, r.summary, JSON.stringify(r.checks ?? []), JSON.stringify(r.pictures ?? []), r.ms ?? null);
     // Only finished runs are dropped; one waiting for Keep or Undo is never lost.
     this.db
       .prepare("DELETE FROM runs WHERE status != 'built' AND id NOT IN (SELECT id FROM runs ORDER BY id DESC LIMIT ?)")

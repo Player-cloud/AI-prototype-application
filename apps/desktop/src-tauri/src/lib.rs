@@ -261,6 +261,13 @@ async fn run_list(slug: Option<String>, app: tauri::AppHandle, state: tauri::Sta
     engine_call(&state, "run_list", serde_json::json!({ "dbPath": spend_path(&app)?, "slug": slug.unwrap_or_default() }))
 }
 
+/// CI-4: how each way of building has done in real builds on this computer.
+#[tauri::command]
+async fn workflow_compare(app: tauri::AppHandle, state: tauri::State<'_, Engine>) -> Result<serde_json::Value, String> {
+    let saved = settings::read(&settings_path(&app)?)?;
+    engine_call(&state, "workflow_compare", serde_json::json!({ "settings": saved, "dbPath": spend_path(&app)? }))
+}
+
 /// Keep merges a build into joshua's own copy (never pushes); Undo removes the build's copy.
 #[tauri::command]
 async fn run_decide(id: i64, keep: bool, app: tauri::AppHandle, state: tauri::State<'_, Engine>) -> Result<serde_json::Value, String> {
@@ -424,7 +431,7 @@ pub fn run() {
             });
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![version, engine_status, key_status, key_save, key_remove, test_model, settings_get, settings_save, data_overview, environment_check, eval_run, spend_summary, tool_rate, tool_switch_on, data_sync, gate_rules, history_list, history_undo, project, interview_suggest, interview_review, build_feature, build_stop, run_list, run_decide, run_rate, github_test, work_list, work_poll])
+        .invoke_handler(tauri::generate_handler![version, engine_status, key_status, key_save, key_remove, test_model, settings_get, settings_save, data_overview, environment_check, eval_run, spend_summary, tool_rate, tool_switch_on, data_sync, gate_rules, history_list, history_undo, project, interview_suggest, interview_review, build_feature, build_stop, run_list, workflow_compare, run_decide, run_rate, github_test, work_list, work_poll])
         .run(tauri::generate_context!())
         .expect("error while running the app");
 }

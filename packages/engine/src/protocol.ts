@@ -46,6 +46,8 @@
  *    and {type:"live"} for the live view of the build's page (V2 A).
  *    A model that fails 3 runs in a row is switched off (D-2) and refused until switched back on.
  *  - run_list: {dbPath, slug?} -> saved feature builds, newest first (waiting, kept or undone, rating).
+ *  - workflow_compare: {settings, dbPath} -> CI-4: how each way of building has done in real builds
+ *    on this computer (kept, defects, cost in £ and $, time, Undo; joshua's rating kept apart).
  *  - run_keep: {settings, dbPath, id} -> merges a build whose tests pass into joshua's own copy (never
  *    pushes), then removes the build's copy. Refused when his copy has uncommitted changes.
  *  - run_undo: {settings, dbPath, id} -> removes a waiting build's copy and branch.
@@ -74,6 +76,7 @@
  *    ask and check also take an optional `settings` (model choices, prices, £/$ rate).
  *    The key comes from the window's password store for this one call and is never echoed back.
  */
+import { compareWorkflows } from './workflows.ts';
 import type { CheckResult } from '@aip/checks';
 import type { Job, ModelAdapter, Provider } from '@aip/models';
 import { formatCost } from './money.ts';
@@ -413,6 +416,10 @@ const HANDLERS: Record<string, Handler> = {
     return r;
   },
   data_sync: (params) => syncNow(checkSettings(obj(params).settings)),
+  workflow_compare: (params, deps) => {
+    const p = obj(params);
+    return compareWorkflows(checkSettings(p.settings), str(p, 'dbPath'), (id) => deps.modelName(id));
+  },
   run_list: (params) => {
     const p = obj(params);
     return listRuns(str(p, 'dbPath'), typeof p.slug === 'string' && p.slug ? p.slug : undefined);

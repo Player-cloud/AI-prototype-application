@@ -7,7 +7,7 @@ export interface RunInfo { path: string; branch: string; feature: string; base: 
 export interface BuildStep { text: string; refused?: string }
 /** The build's own page while the model works (V2 A); url is null while there's nothing to show. */
 export interface LiveView { url: string | null; note: string; reloads: boolean }
-export type BuildEvent = { type: 'using'; using: string; run: RunInfo } | ({ type: 'step' } & BuildStep) | ({ type: 'live' } & LiveView);
+export type BuildEvent = { type: 'using'; using: string; run: RunInfo; advice?: string[] } | ({ type: 'step' } & BuildStep) | ({ type: 'live' } & LiveView);
 
 /** One free check (9b). Advice-only checks don't stop Keep. */
 export interface Check { name: string; passed: boolean; advisory?: boolean; detail?: string }
@@ -18,6 +18,8 @@ export interface Claim { topic: string; agrees: boolean | null; note: string }
 export interface BuildResult {
   run: RunInfo;
   using: string;
+  /** CI-4: what real builds say about this way of building (advice only). */
+  advice?: string[];
   steps: BuildStep[];
   /** The model's own words; not checked by the app. */
   summary: string;
@@ -91,6 +93,18 @@ export async function startBuild(
 export async function stopBuild(invoke: Invoke): Promise<boolean> {
   try {
     return await invoke<boolean>('build_stop');
+  } catch (err) {
+    throw plain(err);
+  }
+}
+
+/** CI-4: one way of building (the build model plus the app's fixed steps) and how it has done. */
+export interface WorkflowRow { model: string; name: string; text: string; finished: number; kept: number; safetyFailures: number }
+
+/** How each way of building has done in real builds on this computer. */
+export async function compareWorkflows(invoke: Invoke): Promise<WorkflowRow[]> {
+  try {
+    return await invoke<WorkflowRow[]>('workflow_compare');
   } catch (err) {
     throw plain(err);
   }
