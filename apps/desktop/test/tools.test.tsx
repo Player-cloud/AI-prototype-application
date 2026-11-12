@@ -51,6 +51,22 @@ const shell = (answer: DataOverview | string, calls: { cmd: string; args?: Recor
       if (syncError) throw syncError;
       return { committed: cmd === 'tool_rate', pushed: true, summary: 'Saved 1 file. Data repo is up to date on GitHub.' } as T;
     }
+    if (cmd === 'environment_check') {
+      return {
+        environment: {
+          computer: 'lapto',
+          checkedAt: '2026-11-12T10:30:00Z',
+          os: 'Windows 10.0.26100',
+          versions: { pnpm: '10.34.9' },
+          checks: [
+            { name: 'pnpm', ok: true, detail: 'pnpm 10.34.9 (pinned: 10.34.9).' },
+            { name: 'git name for commits', ok: false, detail: 'Not set. Run git config --global user.name "Your Name" and user.email once.' },
+          ],
+        },
+        differences: ['pnpm: joshu 10.20.0, lapto 10.34.9'],
+        synced: 'Saved 1 file. Data repo is up to date on GitHub.',
+      } as T;
+    }
     if (cmd !== 'data_overview') throw `unexpected ${cmd}`;
     if (typeof answer === 'string') throw answer;
     return answer as T;
@@ -81,6 +97,33 @@ describe('Tools page', () => {
     fireEvent.click(screen.getByRole('button', { name: /EGM/ }));
     expect(screen.getByText('unknown (not seen in use yet)')).toBeTruthy();
     expect(screen.getByText('egm')).toBeTruthy();
+  });
+
+  it('checks this computer and compares it with the others (CI-2)', async () => {
+    const calls: { cmd: string }[] = [];
+    const data = {
+      ...OVERVIEW,
+      computer: 'lapto',
+      environments: [{ computer: 'joshu', checkedAt: '2026-11-11T09:00:00Z', os: 'Windows 10.0.22631', versions: {}, checks: [{ name: 'pnpm', ok: false, detail: 'x' }] }],
+      differences: [],
+      clashes: ['Only CLI and Jina are both on for “web reading”. Keep one, or mark the other BACKUP.'],
+    };
+    render(<Tools invoke={shell(data, calls)} />);
+    const region = await screen.findByRole('region', { name: 'Computers' });
+    expect(region.textContent).toContain('This computer (lapto)');
+    expect(region.textContent).toContain('Not checked yet.');
+    expect(region.textContent).toMatch(/joshu · Windows 10\.0\.22631 · checked .* · 1 to fix/);
+    expect(screen.getByRole('list', { name: 'Tools that clash' }).textContent).toContain('both on for “web reading”');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Check this computer (free)' }));
+    expect(await screen.findByText('1 thing to fix on this computer. Saved 1 file. Data repo is up to date on GitHub.')).toBeTruthy();
+    expect(calls.some((c) => c.cmd === 'environment_check')).toBe(true);
+    const mine = screen.getByRole('list', { name: 'This computer’s checks' });
+    expect([...mine.querySelectorAll('li')].map((li) => li.textContent)).toEqual([
+      '✓ pnpm: pnpm 10.34.9 (pinned: 10.34.9).',
+      '✗ git name for commits: Not set. Run git config --global user.name "Your Name" and user.email once.',
+    ]);
+    expect(screen.getByRole('list', { name: 'Different versions between computers' }).textContent).toBe('pnpm: joshu 10.20.0, lapto 10.34.9');
   });
 
   it('shows tool health under the tool, warning about failures', async () => {

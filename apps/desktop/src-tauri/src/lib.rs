@@ -339,6 +339,13 @@ async fn data_overview(app: tauri::AppHandle, state: tauri::State<'_, Engine>) -
     engine_call(&state, "data_overview", serde_json::json!({ "settings": saved }))
 }
 
+/// CI-2: checks this computer (free) and saves the result in the data folder, then syncs.
+#[tauri::command]
+async fn environment_check(app: tauri::AppHandle, state: tauri::State<'_, Engine>) -> Result<serde_json::Value, String> {
+    let saved = settings::read(&settings_path(&app)?)?;
+    engine_call(&state, "environment_check", serde_json::json!({ "settings": saved }))
+}
+
 /// Saves a 1–5 rating for a tool in the data repo's ledger, then syncs it to GitHub.
 #[tauri::command]
 async fn tool_rate(
@@ -410,7 +417,7 @@ pub fn run() {
             });
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![version, engine_status, key_status, key_save, key_remove, test_model, settings_get, settings_save, data_overview, spend_summary, tool_rate, tool_switch_on, data_sync, gate_rules, history_list, history_undo, project, interview_suggest, interview_review, build_feature, build_stop, run_list, run_decide, run_rate, github_test, work_list, work_poll])
+        .invoke_handler(tauri::generate_handler![version, engine_status, key_status, key_save, key_remove, test_model, settings_get, settings_save, data_overview, environment_check, spend_summary, tool_rate, tool_switch_on, data_sync, gate_rules, history_list, history_undo, project, interview_suggest, interview_review, build_feature, build_stop, run_list, run_decide, run_rate, github_test, work_list, work_poll])
         .run(tauri::generate_context!())
         .expect("error while running the app");
 }

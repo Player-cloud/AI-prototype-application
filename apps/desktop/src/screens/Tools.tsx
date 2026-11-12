@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { Invoke } from '../engine';
-import { STATE_LABEL, getDataOverview, rateTool, savedPercent, switchToolOn, syncData, type DataOverview, type ToolRow, type ToolState } from '../data';
+import { STATE_LABEL, checkThisComputer, getDataOverview, rateTool, savedPercent, switchToolOn, syncData, type DataOverview, type Environment, type ToolRow, type ToolState } from '../data';
 
 const ORDER: ToolState[] = ['on', 'trial', 'untested', 'off', 'unknown'];
 
@@ -9,6 +9,73 @@ export function versionText(t: Pick<ToolRow, 'version' | 'testedVersion' | 'stal
   if (!t.version) return 'unknown (not seen in use yet)';
   if (t.testedVersion && t.testedVersion !== t.version) return `${t.version} (its evidence is for ${t.testedVersion}${t.stale ? ', retest due' : ''})`;
   return t.version;
+}
+
+const MARK = (ok: boolean | null) => (ok === true ? '✓' : ok === false ? '✗' : '?');
+
+/** CI-2: this computer and the others, what differs between them, and clashing tools. */
+export function Computers({ data, busy, onCheck }: { data: Extract<DataOverview, { configured: true }>; busy: boolean; onCheck: () => void }) {
+  const envs = data.environments ?? [];
+  const mine = envs.find((e) => e.computer === data.computer);
+  const others = envs.filter((e) => e.computer !== data.computer);
+  const problems = (e: Environment) => e.checks.filter((c) => c.ok === false).length;
+  const when = (e: Environment) => new Date(e.checkedAt).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' });
+  return (
+    <div className="computers" role="region" aria-label="Computers">
+      <h3>This computer{data.computer ? ` (${data.computer})` : ''}</h3>
+      {mine ? (
+        <>
+          <p className="muted">Checked {when(mine)} · {mine.os}</p>
+          <ul className="claim-list" aria-label="This computer’s checks">
+            {mine.checks.map((c) => (
+              <li key={c.name} className={c.ok === true ? 'ok' : c.ok === false ? 'bad' : 'unchecked'}>
+                <span aria-hidden="true">{MARK(c.ok)} </span>
+                {c.name}: {c.detail}
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : (
+        <p className="muted">Not checked yet. The check looks at Node, pnpm, git, the browser for pictures and the check tools. It’s free and changes nothing.</p>
+      )}
+      <button type="button" disabled={busy} onClick={onCheck}>
+        Check this computer (free)
+      </button>
+      {others.length > 0 && (
+        <>
+          <h3>Other computers</h3>
+          <ul>
+            {others.map((e) => (
+              <li key={e.computer}>
+                {e.computer} · {e.os} · checked {when(e)} · {problems(e) ? `${problems(e)} to fix` : 'all fine'}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      {(data.differences ?? []).length > 0 && (
+        <>
+          <h3>Different versions between computers</h3>
+          <ul aria-label="Different versions between computers">
+            {data.differences!.map((d) => (
+              <li key={d}>{d}</li>
+            ))}
+          </ul>
+          <p className="muted">Not a fault on its own, but the likeliest reason a build works on one computer and not the other.</p>
+        </>
+      )}
+      {(data.clashes ?? []).length > 0 && (
+        <>
+          <h3>Tools that clash</h3>
+          <ul aria-label="Tools that clash">
+            {data.clashes!.map((d) => (
+              <li key={d}>{d}</li>
+            ))}
+          </ul>
+        </>
+      )}
+    </div>
+  );
 }
 
 export function Tools({ invoke }: { invoke: Invoke | null }) {
@@ -81,6 +148,17 @@ export function Tools({ invoke }: { invoke: Invoke | null }) {
     );
   }
 
+  function checkComputer() {
+    if (!invoke || !data?.configured) return;
+    void work('Checking this computer…', async () => {
+      const r = await checkThisComputer(invoke);
+      const environments = [r.environment, ...(data.environments ?? []).filter((e) => e.computer !== r.environment.computer)];
+      setData({ ...data, computer: r.environment.computer, environments, differences: r.differences });
+      const bad = r.environment.checks.filter((c) => c.ok === false).length;
+      return { summary: `${bad ? `${bad} thing${bad === 1 ? '' : 's'} to fix on this computer.` : 'This computer has everything the app needs.'}${r.synced ? ` ${r.synced}` : ''}` };
+    });
+  }
+
   const tools = [...data.tools].sort((a, b) => ORDER.indexOf(a.state) - ORDER.indexOf(b.state));
   const onCount = data.tools.filter((t) => t.state === 'on').length;
   return (
@@ -102,6 +180,7 @@ export function Tools({ invoke }: { invoke: Invoke | null }) {
           {note.text}
         </p>
       )}
+      <Computers data={data} busy={busy} onCheck={checkComputer} />
       <ul className="tool-list">
         {tools.map((t) => (
           <li key={t.name} className="tool-row">
@@ -131,6 +210,7 @@ export function Tools({ invoke }: { invoke: Invoke | null }) {
                 <dd>{t.kind ?? 'unknown'}</dd>
                 <dt>Version</dt>
                 <dd>{versionText(t)}</dd>
+                {t.byComputer && (<><dt>On each computer</dt><dd>{t.byComputer}</dd></>)}
                 {t.useWhen && (<><dt>Use when</dt><dd>{t.useWhen}</dd></>)}
                 {t.dontUseWhen && (<><dt>Don’t use when</dt><dd>{t.dontUseWhen}</dd></>)}
                 {t.evidence && (<><dt>Evidence</dt><dd>{t.evidence}</dd></>)}

@@ -112,6 +112,36 @@ export function joinTools(ledger: LedgerEntry[], cards: ToolCard[]): ToolView[] 
   return views;
 }
 
+/**
+ * CI-2: duplicates and clashes in the ledger and cards, in plain words. Advice only: nothing is
+ * switched on or off because of them.
+ *  - Two lines with the same ID (their names make the same slug).
+ *  - Two tools ON for the same job (a BACKUP is fine).
+ *  - A card whose "Ledger:" line names a line that isn't there.
+ */
+export function toolClashes(tools: ToolView[]): string[] {
+  const out: string[] = [];
+  const byId = new Map<string, string[]>();
+  for (const t of tools) byId.set(t.id, [...(byId.get(t.id) ?? []), t.name]);
+  for (const [id, names] of byId) if (names.length > 1) out.push(`${names.join(' and ')} share the ID “${id}”. Rename one line, or give a card a Ledger: line.`);
+  const byJob = new Map<string, string[]>();
+  for (const t of tools) {
+    if (t.state !== 'on' || /^BACKUP/i.test(t.status) || !t.job.trim() || t.job.trim() === '-') continue;
+    const job = plain(t.job);
+    byJob.set(job, [...(byJob.get(job) ?? []), t.name]);
+  }
+  for (const [, names] of byJob) {
+    if (names.length > 1) {
+      const job = tools.find((t) => t.name === names[0])!.job;
+      out.push(`${names.join(' and ')} are both on for “${job}”. Keep one, or mark the other BACKUP.`);
+    }
+  }
+  for (const t of tools) {
+    if (t.card?.ledger && t.status === 'not in the ledger yet') out.push(`The ${t.card.name} card points to “${t.card.ledger}”, which isn’t in the ledger.`);
+  }
+  return out;
+}
+
 /** The stable ID for a tool name (as the ledger, a card or the app names it). */
 export function toolIdFor(tools: ToolView[], name: string): string {
   const p = plain(name);

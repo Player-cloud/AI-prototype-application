@@ -99,6 +99,14 @@ Each tool has a stable ID: its card's file name in `tools/` (for example `haiku`
 
 Each tool has a small health record in the data repo, `tool-health/<id>.json`: the version in use, the version its test evidence is for, and its recent failures. The app notes the versions in use on every build: the build model's ID, and the installed versions of secretlint, axe-core and Playwright. When a tool updates, its old evidence is marked stale and it gets a quick retest the next time it's used; for the check tools that's the same build, and the step list says so. A good run clears the mark. The Tools page shows this under each tool, for example "2 failures in a row." Each build model run counts as a use of that model (for example "Sonnet 5.5"); a Stop doesn't count. After 3 failures in a row the model is switched off, you're told, and builds refuse it until you press **Switch … back on** on the Tools page (it's then retested on its next use). Switching a tool off never uninstalls it.
 
+## Computers (Capability Intelligence)
+
+joshua uses two computers, so tool versions are tracked per computer: a different version on the laptop never marks the PC's evidence out of date. The Tools page shows each tool's version on each computer when they differ.
+
+**Check this computer** (Tools page, free, changes nothing) looks at Node (the app needs 22 or newer), pnpm against the pinned version, git and whether its name for commits is set, Edge or Chrome for the pictures, and the check tools (secretlint, axe-core, Playwright). It also notes the Claude Agent SDK's version. The result is saved as `environments/<computer>.json` in the data repo and synced, so each computer shows the other's last check and the versions that differ between them.
+
+The Tools page also lists duplicate or clashing tools in the ledger: two lines with the same ID, two tools both on for the same job (a BACKUP is fine), or a card whose `Ledger:` line names a line that isn't there. This is advice only; nothing is switched on or off because of it.
+
 ## Undo
 
 Every settings change and tool rating is kept in `history.sqlite` on this computer, with exactly what it was before and after. Settings → Change history lists them, each with an Undo button. Undo only puts a change back if nothing has changed it since; otherwise it says so and touches nothing. Undoing a rating also syncs the data repo. An undo can itself be undone (shown as Redo).
