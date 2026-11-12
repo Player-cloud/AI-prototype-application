@@ -1,5 +1,10 @@
+import { execFile } from 'node:child_process';
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, sep } from 'node:path';
+import { promisify } from 'node:util';
 import { describe, expect, it } from 'vitest';
-import { claudeEnv, createClaudeAdapter, friendlyError, modelName, redact, type QueryFn, type SdkMessage } from '../src/index.js';
+import { claudeEnv, sandboxEnv, createClaudeAdapter, friendlyError, modelName, redact, type QueryFn, type SdkMessage } from '../src/index.js';
 
 // Obviously fake test value, not a real key.
 const FAKE_KEY = 'sk-ant-test-0000000000000000';
@@ -122,6 +127,24 @@ describe('helpers', () => {
 });
 
 describe('Claude build runs', () => {
+  it('gives the build shell the sandbox home when asked, and today’s env when not', async () => {
+    const run = async (sandbox?: { home: string; pnpmStore?: string }) => {
+      const seen: { options?: Record<string, unknown> } = {};
+      const adapter = createClaudeAdapter({ apiKey: FAKE_KEY, query: fakeQuery([success], seen) });
+      await adapter.build!({ model: 'm', prompt: 'p', cwd: '/x', checkTool: async () => ({ allow: true }), ...(sandbox ? { sandbox } : {}) });
+      return seen.options!.env as Record<string, string>;
+    };
+    const boxed = await run({ home: join(tmpdir(), 'sb'), pnpmStore: '/store' });
+    expect(boxed.HOME).toBe(join(tmpdir(), 'sb'));
+    expect(boxed.GIT_CONFIG_NOSYSTEM).toBe('1');
+    expect(boxed.npm_config_store_dir).toBe('/store');
+    expect(boxed.ANTHROPIC_API_KEY).toBe(FAKE_KEY);
+    expect(boxed.CLAUDE_CONFIG_DIR).toContain('ai-prototype-claude');
+    const plain = await run();
+    expect(plain).toEqual(claudeEnv(FAKE_KEY));
+    expect('GIT_CONFIG_NOSYSTEM' in plain).toBe(false);
+  });
+
   type Can = (name: string, input: Record<string, unknown>, o: { signal: AbortSignal }) => Promise<{ behavior: string; message?: string }>;
 
   /** Stands in for the SDK: asks canUseTool about each tool call, as the real one does. */
@@ -193,4 +216,76 @@ describe('Claude build runs', () => {
     const adapter = createClaudeAdapter({ apiKey: FAKE_KEY, query });
     await expect(adapter.build!({ model: 'm', prompt: 'p', cwd: '/x', signal: stop.signal, checkTool: async () => ({ allow: true }) })).rejects.toThrow('Stopped.');
   });
+});
+
+describe('sandboxEnv', () => {
+  const home = join(tmpdir(), 'sb-home');
+  const base = { PATH: '/bin', HOME: '/real/joshua', USERPROFILE: 'C:\\Users\\joshua', HOMEDRIVE: 'C:', HOMEPATH: '\\Users\\joshua', APPDATA: 'x', LOCALAPPDATA: 'y', ANTHROPIC_API_KEY: FAKE_KEY, CLAUDE_CONFIG_DIR: '/cfg' };
+  const inside = (p: string | undefined) => (p ?? '').startsWith(home + sep);
+
+  function gitConfig(env: Record<string, string>): Record<string, string> {
+    const out: Record<string, string> = {};
+    for (let i = 0; i < Number(env.GIT_CONFIG_COUNT); i++) out[env[`GIT_CONFIG_KEY_${i}`]!] = env[`GIT_CONFIG_VALUE_${i}`]!;
+    return out;
+  }
+
+  it('moves home inside the sandbox and drops the drive and path variables', () => {
+    const e = sandboxEnv(base, home);
+    expect(e.HOME).toBe(home);
+    expect(e.USERPROFILE).toBe(home);
+    expect(inside(e.APPDATA)).toBe(true);
+    expect(inside(e.LOCALAPPDATA)).toBe(true);
+    expect('HOMEDRIVE' in e).toBe(false);
+    expect('HOMEPATH' in e).toBe(false);
+    for (const k of ['XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_CACHE_HOME', 'npm_config_cache']) expect(inside(e[k])).toBe(true);
+    expect(base.HOME).toBe('/real/joshua'); // the input is not changed
+  });
+
+  it('locks git down: no system or global config, no login, no push, a local author', () => {
+    const e = sandboxEnv(base, home);
+    expect(e.GIT_CONFIG_NOSYSTEM).toBe('1');
+    expect(inside(e.GIT_CONFIG_GLOBAL)).toBe(true);
+    expect(e.GIT_TERMINAL_PROMPT).toBe('0');
+    expect(e.GCM_INTERACTIVE).toBe('never');
+    const c = gitConfig(e);
+    expect(c['credential.helper']).toBe('');
+    expect(c['remote.origin.pushurl']).toMatch(/^blocked:/);
+    expect(c['remote.pushDefault']).toBe('blocked');
+    expect(e.GIT_AUTHOR_NAME).toBe('AI build');
+    expect(e.GIT_COMMITTER_EMAIL).toBe('ai-build@localhost');
+  });
+
+  it('keeps the key and the Claude config folder, and sets the pnpm store only when given', () => {
+    const e = sandboxEnv(base, home);
+    expect(e.ANTHROPIC_API_KEY).toBe(FAKE_KEY);
+    expect(e.CLAUDE_CONFIG_DIR).toBe('/cfg');
+    expect(e.PATH).toBe('/bin');
+    expect('npm_config_store_dir' in e).toBe(false);
+    expect(sandboxEnv(base, home, { pnpmStore: '/store' }).npm_config_store_dir).toBe('/store');
+  });
+
+  it('really cannot push from a clone, but can still commit', async () => {
+    const run = promisify(execFile);
+    const root = await mkdtemp(join(tmpdir(), 'aip-sandbox-'));
+    try {
+      const sb = join(root, 'home');
+      await mkdir(sb);
+      await writeFile(join(sb, '.gitconfig'), '');
+      const env = sandboxEnv({ PATH: process.env.PATH ?? process.env.Path ?? '', ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}) }, sb);
+      const g = (cwd: string, ...args: string[]) => run('git', args, { cwd, env });
+      const origin = join(root, 'origin.git');
+      await g(root, 'init', '--bare', '-q', origin);
+      const copy = join(root, 'copy');
+      await g(root, 'clone', '-q', origin, copy);
+      await writeFile(join(copy, 'a.txt'), 'hi');
+      await g(copy, 'add', '.');
+      await g(copy, 'commit', '-q', '-m', 'local commit');
+      expect((await g(copy, 'log', '-1', '--format=%an')).stdout.trim()).toBe('AI build');
+      await expect(g(copy, 'push', 'origin', 'HEAD')).rejects.toThrow();
+      expect((await g(origin, 'for-each-ref')).stdout.trim()).toBe(''); // nothing reached origin
+      expect(await readFile(join(copy, 'a.txt'), 'utf8')).toBe('hi');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  }, 30_000);
 });

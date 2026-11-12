@@ -66,7 +66,7 @@ describe('build_feature', () => {
   });
 
   /** A fake agent: tries a write in its copy, a push and a write outside, then reports. */
-  type Seen = { task?: BuildTask; maxUsd?: number; answers: unknown[]; prompts?: string[]; caps?: number[]; previous?: unknown[]; watched?: string[]; liveStops?: number };
+  type Seen = { task?: BuildTask; maxUsd?: number; answers: unknown[]; prompts?: string[]; caps?: number[]; previous?: unknown[]; watched?: string[]; liveStops?: number; homes?: string[]; removed?: string[] };
   /** opts.tests: what each test run gives (passes when it runs out); opts.fail: the model errors. */
   function deps(seen: Seen, withBuild = true, opts: { tests?: boolean[]; fail?: string; checks?: { name: string; passed: boolean; free: boolean; detail?: string; advisory?: boolean }[] } = {}): Deps {
     const results = [...(opts.tests ?? [])];
@@ -112,6 +112,15 @@ describe('build_feature', () => {
         return 'Sonnet 5.5';
       },
       now: () => NOW,
+      // The build agent's throwaway home: recorded, not made, and its removal is recorded too.
+      async sandboxHome(branch: string) {
+        const home = join(root, 'sandbox-home', branch.replace(/[^A-Za-z0-9._-]+/g, '-'));
+        (seen.homes ??= []).push(home);
+        return { home, pnpmStore: join(root, 'pnpm-store') };
+      },
+      async removeSandboxHome(home: string) {
+        (seen.removed ??= []).push(home);
+      },
       // The live view (V2 A): shows the copy at once, and counts how often it's stopped.
       live(dir: string, onChange: (s: { url: string | null; note: string; reloads: boolean }) => void) {
         (seen.watched ??= []).push(dir);
@@ -260,6 +269,27 @@ describe('build_feature', () => {
       detail: 'login.md:1 (Security): Use https:// links.',
     });
     expect((await call('run_list', { dbPath, slug: 'club-hr' })).result[0].pictures).toEqual([{ name: 'desktop', path: out.pictures[0].path, hash: 'h1' }]);
+  });
+
+  it('gives the build agent a throwaway home folder and removes it afterwards', async () => {
+    const settings = { dataFolder: data, codeFolders: { 'club-hr': code } };
+    const ok: Seen = { answers: [] };
+    const call = await plan(deps(ok), settings);
+    const r = await call('build_feature', { settings, slug: 'club-hr', feature: 'F-01', provider: 'claude', apiKey: FAKE_KEY, dbPath: null });
+    expect(r.error).toBeUndefined();
+    expect(ok.homes).toEqual([join(root, 'sandbox-home', 'aip-f-01-20261111-170000')]);
+    expect(ok.task?.sandbox).toEqual({ home: ok.homes![0], pnpmStore: join(root, 'pnpm-store') });
+    expect(ok.removed).toEqual(ok.homes);
+  });
+
+  it('removes the throwaway home folder even when the build fails', async () => {
+    const settings = { dataFolder: data, codeFolders: { 'club-hr': code } };
+    const bad: Seen = { answers: [] };
+    const call2 = await plan(deps(bad, true, { fail: 'boom' }), settings);
+    const r2 = await call2('build_feature', { settings, slug: 'club-hr', feature: 'F-01', provider: 'claude', apiKey: FAKE_KEY, dbPath: null });
+    expect(r2.error).toBeDefined();
+    expect(bad.removed).toEqual(bad.homes);
+    expect(bad.removed).toHaveLength(1);
   });
 
   it('records the versions in use, so an update marks old evidence stale until it works again (CI-1)', async () => {
