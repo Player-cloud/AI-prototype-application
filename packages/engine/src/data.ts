@@ -58,6 +58,8 @@ export type DataOverview =
       experiments: { id: string; capability: string; question: string; verdict: string; at: string; status: string }[];
       /** CI-6: updates found and joshua's decisions. */
       updates: import('./updates.ts').UpdateRow[];
+      /** CI-7: written instructions that look out of date or clash, with where they are. */
+      docIssues: string[];
     };
 
 function folderOf(settings: AppSettings): string {
@@ -144,6 +146,7 @@ export async function dataOverview(settings: AppSettings): Promise<DataOverview>
     differences: c.compareComputers(environments),
     clashes: m.toolClashes(repo.tools),
     updates: await (await import('./updates.ts')).listUpdates(settings),
+    docIssues: await (await import('./project-tools.ts')).docIssues(settings),
     experiments: (await m.listExperiments(settings.dataFolder)).slice(0, 10).map(({ id, capability, question, verdict, at, status }) => ({ id, capability, question, verdict, at, status })),
   };
 }

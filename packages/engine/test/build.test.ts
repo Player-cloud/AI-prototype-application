@@ -390,6 +390,24 @@ describe('build_feature', () => {
     expect((await call('tool_switch_on', { settings, tool: 'Sonnet 5.5' })).error).toBe('Sonnet 5.5 isn’t switched off.');
   });
 
+  it('once joshua has chosen tools for a project, only builds with an approved model, and adds the project’s rules (CI-7)', async () => {
+    const seen: Seen = { answers: [] };
+    const settings = { dataFolder: data, codeFolders: { 'club-hr': code } };
+    const d = deps(seen);
+    const call = await plan(d, settings);
+    const build = () => call('build_feature', { settings, slug: 'club-hr', feature: 'F-01', provider: 'claude', apiKey: FAKE_KEY, dbPath: null });
+    await writeFile(join(data, 'projects', 'club-hr', 'tools.md'), '# Approved tools for club-hr\n\n- secretlint\n');
+    await writeFile(join(data, 'projects', 'club-hr', 'rules.md'), '# Rules\n- Use British English\n');
+    const runs = git(code, 'worktree', 'list').trim().split('\n').length;
+    expect((await build()).error).toBe('Sonnet 5.5 isn’t approved for club-hr. Approve it in Projects → Tools for this project, or choose another model in Settings.');
+    expect(git(code, 'worktree', 'list').trim().split('\n')).toHaveLength(runs);
+    expect(seen.prompts).toBeUndefined();
+
+    await writeFile(join(data, 'projects', 'club-hr', 'tools.md'), '- secretlint\n- sonnet-5-5\n');
+    expect((await build()).error).toBeUndefined();
+    expect(seen.prompts![0]).toContain('Rules for this project (these beat the general rules and habits):\n- Use British English');
+  });
+
   it('doesn’t count a Stop as a failure', async () => {
     const seen: Seen = { answers: [] };
     const stop = new AbortController();

@@ -26,6 +26,10 @@
  *    `pnpm outdated`, installs nothing), keeps them in the data folder's updates.json and syncs.
  *  - update_decide: {settings, package, to, ok} -> joshua's OK or no on one update. Nothing is
  *    installed: an OK gives back the command for joshua to run himself.
+ *  - project_tools: {settings, slug} -> CI-7: the project's approved tools (null until chosen), which
+ *    tools the app suggests for it and why, and its own rules. Free; changes nothing.
+ *  - project_tools_approve: {settings, slug, tools, dbPath?} -> saves joshua's choice of tools for
+ *    the project (kept in the history so it can be undone) and syncs. Builds then use only those.
  *  - environment_check: {settings} -> checks this computer (Node, pnpm, git, browser, check tools),
  *    saves it as environments/<computer>.json in the data folder and syncs. Free.
  *  - tool_rate: {settings, tool, rating} -> saves a 1–5 rating in ledger.md and syncs the data repo.
@@ -92,6 +96,7 @@ import { compareWorkflows } from './workflows.ts';
 import { runRepeatExperiment } from './experiments.ts';
 import { setupPhone } from './phone.ts';
 import { checkUpdates, decideUpdateNow } from './updates.ts';
+import { approveProjectTools, projectTools } from './project-tools.ts';
 import type { CheckResult } from '@aip/checks';
 import type { Job, ModelAdapter, Provider } from '@aip/models';
 import { formatCost } from './money.ts';
@@ -333,6 +338,14 @@ const HANDLERS: Record<string, Handler> = {
     const p = obj(params);
     if (typeof p.ok !== 'boolean') throw new Error('Say OK or no.');
     return decideUpdateNow(checkSettings(p.settings), str(p, 'package'), str(p, 'to'), p.ok, deps.now?.() ?? new Date());
+  },
+  project_tools: (params) => {
+    const p = obj(params);
+    return projectTools(checkSettings(p.settings), str(p, 'slug'));
+  },
+  project_tools_approve: (params, deps) => {
+    const p = obj(params);
+    return approveProjectTools(checkSettings(p.settings), str(p, 'slug'), p.tools, optionalPath(p, 'dbPath'), deps.now?.() ?? new Date());
   },
   environment_check: (params, deps) => environmentCheck(checkSettings(obj(params).settings), deps.now?.() ?? new Date()),
   tool_rate: (params, deps) => {

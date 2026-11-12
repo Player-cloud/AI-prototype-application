@@ -317,6 +317,17 @@ export function Tools({ invoke }: { invoke: Invoke | null }) {
           </ul>
         </div>
       )}
+      {(data.docIssues ?? []).length > 0 && (
+        <div className="doc-check" role="region" aria-label="Doc check">
+          <h3>Instructions to check</h3>
+          <p className="muted">Your rules, habits, project rules and tool cards, read for ones that look out of date or clash. Nothing was changed: edit the file if you agree.</p>
+          <ul>
+            {data.docIssues!.map((d) => (
+              <li key={d}>{d}</li>
+            ))}
+          </ul>
+        </div>
+      )}
       {(data.experiments ?? []).length > 0 && (
         <div className="experiments" role="region" aria-label="Experiments">
           <h3>Experiments</h3>

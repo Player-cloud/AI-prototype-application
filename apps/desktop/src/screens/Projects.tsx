@@ -13,7 +13,10 @@ import {
   reviewPlan,
   checkCodeFolder,
   createCodeFolder,
+  getProjectTools,
+  approveProjectTools,
   type CodeFolderStatus,
+  type ProjectTools,
   type SuggestResult,
   type InterviewView,
   type Patch,
@@ -222,6 +225,97 @@ function CodeFolder({ invoke, slug }: { invoke: Invoke; slug: string }) {
   );
 }
 
+/** CI-7: which tools this project may use. The app suggests; joshua's choice is what's saved. */
+function ProjectToolsPanel({ invoke, slug }: { invoke: Invoke; slug: string }) {
+  const [data, setData] = useState<ProjectTools | null>(null);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [note, setNote] = useState<Note>(null);
+  const [busy, setBusy] = useState(false);
+
+  function show(t: ProjectTools) {
+    setData(t);
+    setPicked(new Set(t.approved ?? t.rows.filter((r) => r.suggested).map((r) => r.id)));
+  }
+
+  useEffect(() => {
+    let live = true;
+    getProjectTools(invoke, slug)
+      .then((t) => live && show(t))
+      .catch((err: Error) => live && setNote({ text: err.message, bad: true }));
+    return () => {
+      live = false;
+    };
+  }, [invoke, slug]);
+
+  function toggle(id: string) {
+    setPicked((p) => {
+      const next = new Set(p);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function onApprove() {
+    setBusy(true);
+    try {
+      const r = await approveProjectTools(invoke, slug, [...picked]);
+      show(r);
+      setNote({ text: `${r.summary} ${r.synced}`.trim(), bad: false });
+    } catch (err) {
+      setNote({ text: (err as Error).message, bad: true });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="review" role="region" aria-label="Tools for this project">
+      <h3>Tools for this project</h3>
+      {data && (
+        <>
+          <p className="muted">
+            {data.approved === null
+              ? 'Nothing chosen yet, so builds use your general tools. Ticked: what the app suggests. Approve to keep it.'
+              : `You approved ${data.approved.length}. Builds for this project only use an approved model. The safety checks always run.`}
+          </p>
+          {data.rows.length === 0 ? (
+            <p className="muted">No tools in your ledger yet.</p>
+          ) : (
+            <ul className="rule-list" aria-label="Project tools">
+              {data.rows.map((r) => (
+                <li key={r.id}>
+                  <label>
+                    <input type="checkbox" checked={picked.has(r.id)} onChange={() => toggle(r.id)} aria-label={`Approve ${r.name}`} /> {r.name}
+                  </label>{' '}
+                  <span className="muted">
+                    {r.suggested ? 'Suggested. ' : ''}
+                    {r.why}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+          <button type="button" disabled={busy || data.rows.length === 0} onClick={() => void onApprove()}>
+            Approve these tools
+          </button>
+          {data.rules.length > 0 && (
+            <>
+              <p className="muted">This project’s own rules (they beat your general rules and habits here):</p>
+              <ul className="rule-list" aria-label="Project rules">
+                {data.rules.map((r) => (
+                  <li key={r}>{r}</li>
+                ))}
+              </ul>
+            </>
+          )}
+        </>
+      )}
+      <NoteLine note={note} />
+    </div>
+  );
+}
+
 function InterviewScreen({ invoke, start, onBack }: { invoke: Invoke; start: InterviewView; onBack: () => void }) {
   const [view, setView] = useState(start);
   const [stage, setStage] = useState<StageId>(start.interview.current);
@@ -397,6 +491,7 @@ function InterviewScreen({ invoke, start, onBack }: { invoke: Invoke; start: Int
         </div>
       )}
       {view.finished && <CodeFolder invoke={invoke} slug={iv.slug} />}
+      {view.finished && <ProjectToolsPanel invoke={invoke} slug={iv.slug} />}
       {!stages && !note && <p className="muted">Loading…</p>}
       {stages && (
         <ol className="stage-list" aria-label="Stages">

@@ -9,6 +9,7 @@
  * health record; 3 failures in a row switch it off until joshua switches it back on (D-2). The
  * data folder syncs after the task.
  */
+import { notApproved, projectGuidance } from './project-tools.ts';
 import { readFile } from 'node:fs/promises';
 import { isAbsolute, relative, resolve } from 'node:path';
 import type { CheckResult, LiveState, Picture, PicturesResult } from '@aip/checks';
@@ -204,6 +205,8 @@ export async function buildFeature(
     const h = await m.readHealth(settings.dataFolder, tool, toolId);
     if (h.off) throw new Error(`${tool} is switched off: ${h.off.reason} Switch it back on in Tools to use it again.`);
   }
+  const refused = await notApproved(settings, p.slug, toolId, tool);
+  if (refused) throw new Error(refused);
   const adapter = await deps.makeAdapter(p.provider, p.apiKey, settings, cap);
   if (!adapter.build) throw new Error('Building needs Claude for now. Choose Claude in Settings → Budget and models.');
   const { interview } = await getInterview(settings, p.slug);
@@ -263,7 +266,7 @@ export async function buildFeature(
     };
 
     const prompt =
-      buildPrompt(interview, p.feature, specText(interview, new Date(interview.specAt ?? now))) + (await answersFor(settings, p.slug)) + (await guidance(settings, rulesFirst));
+      buildPrompt(interview, p.feature, specText(interview, new Date(interview.specAt ?? now))) + (await answersFor(settings, p.slug)) + (await projectGuidance(settings, p.slug)) + (await guidance(settings, rulesFirst));
     let summary = await once(prompt, adapter);
 
     const runTests = deps.runTests ?? (await import('@aip/checks')).runTests;

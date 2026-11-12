@@ -145,6 +145,14 @@ Tools → **Look for updates** checks for newer versions of the app's own packag
 
 Press **OK** or **No** for each update. The app never installs one. After an OK it shows the exact command to run in the app folder, for example `pnpm --filter @aip/checks update @secretlint/node@13.1.0`. Then run `pnpm install` and **Run free tests**: a pass on the new version clears its retest mark, and a test that does worse is flagged. A declined update isn't suggested again.
 
+## Tools for each project (Capability Intelligence)
+
+Open a finished project and look under **Tools for this project**. The app suggests tools that are on in your ledger and fit the project (axe-core only if the project checks Accessibility), and says why for each one it leaves out (switched off, not tested yet, waiting for a trial). Nothing is saved until you press **Approve these tools**; it goes in `projects/<slug>/tools.md` in the data repo, and you can undo it from History. Once you've chosen, builds for that project only use an approved model. The free safety checks always run, whatever the list says. A project's own rules go in `projects/<slug>/rules.md`: they beat your general rules and habits for that project only.
+
+## Instructions to check (Capability Intelligence)
+
+The Tools screen reads your `rules.md`, `habits.md`, each project's `rules.md` and the tool cards, and lists any that look out of date (a card written for an older version, a line naming an old major version, or relying on a switched-off tool) or that clash (a "never" line and another line about the same thing). Each one says the file and line. Nothing is changed: edit the file if you agree. Free.
+
 ## Ways of building compared (Capability Intelligence)
 
 Each build is measured from start to finish: whether it was kept or undone, whether the tests passed first time, problems found by the app's own checks, the secret scan, cost in £ and $, and time. Missing numbers stay missing, and joshua's 1–5 rating is shown on its own, never mixed in. The Build screen shows **Ways of building compared** (from this computer's history), and each build starts with what the evidence says beside the Using line.
