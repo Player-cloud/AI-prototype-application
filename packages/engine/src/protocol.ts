@@ -67,6 +67,10 @@
  *  - deps_approve: {dbPath, id} -> joshua's OK for the new packages a waiting build added. Keep is
  *    refused until then. Marks the build's "New packages" check passed, notes it in the history,
  *    and returns {run, note, keep: {keep, blocking}}.
+ *  - ask_list: {dbPath} -> open ask-first requests from builds, oldest first, for the "Needs you" panel
+ *    (project, feature, tool, the exact command or file path, the rule's reason).
+ *  - ask_decide: {dbPath, id, allow} -> joshua's answer. Allow once lets that exact tool and input through
+ *    one time in that project (24 hours); false closes it. Both go in the history. Returns {ask, note}.
  *  - run_undo: {settings, dbPath, id} -> removes a waiting build's copy and branch.
  *  - run_rate: {dbPath, id, rating, settings?} -> joshua's 1–5 rating for a build.
  *    run_keep, run_undo and run_rate also return `learned`: plain notes when the app added, updated
@@ -111,6 +115,7 @@ import type { CheckResult } from '@aip/checks';
 import type { Job, ModelAdapter, Provider } from '@aip/models';
 import { formatCost } from './money.ts';
 import { DEFAULT_SETTINGS, checkSettings, type AppSettings } from './settings.ts';
+import { decideAsk, listAsks } from './asks.ts';
 import { approveDeps, keepRun, listRuns, rateRun, undoRun } from './keep.ts';
 import { learnNow } from './learn.ts';
 import { githubCheck } from './github.ts';
@@ -516,6 +521,13 @@ const HANDLERS: Record<string, Handler> = {
   deps_approve: (params, deps) => {
     const p = obj(params);
     return approveDeps(str(p, 'dbPath'), runId(p), deps.now?.() ?? new Date());
+  },
+  ask_list: (params) => listAsks(str(obj(params), 'dbPath')),
+  ask_decide: (params, deps) => {
+    const p = obj(params);
+    if (typeof p.allow !== 'boolean') throw new Error('allow must be true or false');
+    if (typeof p.id !== 'number' || !Number.isInteger(p.id) || p.id < 1) throw new Error('id must be a request number');
+    return decideAsk(str(p, 'dbPath'), p.id, p.allow, deps.now?.() ?? new Date());
   },
   run_undo: async (params, deps) => {
     const p = obj(params);

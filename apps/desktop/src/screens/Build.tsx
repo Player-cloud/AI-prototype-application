@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Invoke } from '../engine';
 import { listProjects, openProject, type Feature, type ProjectRow } from '../projects';
 import { getSettings } from '../settings';
-import { CHECK_NAME, approvePackages, compareWorkflows, decideRun, keepable, listRuns, listWork, needsPackageOk, pollPhone, rateRun, startBuild, stopBuild, type BuildResult, type BuildRun, type BuildStep, type LiveView, type MakeChannel, type WorkItem, type WorkflowRow } from '../build';
+import { CHECK_NAME, approvePackages, compareWorkflows, decideAsk, decideRun, keepable, listAsks, listRuns, listWork, needsPackageOk, pollPhone, rateRun, startBuild, stopBuild, type BuildResult, type BuildRun, type AskRequest, type BuildStep, type LiveView, type MakeChannel, type WorkItem, type WorkflowRow } from '../build';
 
 type Note = { text: string; bad: boolean } | null;
 
@@ -71,6 +71,7 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
   const [busy, setBusy] = useState(false);
   const [learned, setLearned] = useState<string[]>([]);
   const [work, setWork] = useState<WorkItem[]>([]);
+  const [asks, setAsks] = useState<AskRequest[]>([]);
   const [liveView, setLiveView] = useState<LiveView | null>(null);
   const [reload, setReload] = useState(0);
   const lastReload = useRef(0);
@@ -90,6 +91,7 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
     listWork(invoke)
       .then((w) => live && setWork(w))
       .catch((err: Error) => live && setNote({ text: err.message, bad: true }));
+    listAsks(invoke).then((a) => live && setAsks(a), () => undefined);
     return () => {
       live = false;
     };
@@ -132,6 +134,7 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
     if (!invoke || !slug) return;
     const t = setInterval(() => {
       listWork(invoke).then(setWork, () => undefined);
+      listAsks(invoke).then(setAsks, () => undefined);
       listRuns(invoke, slug).then(setRuns, () => undefined);
     }, REFRESH_MS);
     return () => clearInterval(t);
@@ -176,6 +179,7 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
       setResult(r);
       setRuns(await listRuns(invoke, slug));
       setWork(await listWork(invoke));
+      setAsks(await listAsks(invoke).catch(() => []));
       setUsing(r.using);
       setAdvice(r.advice ?? []);
       setSteps(r.steps);
@@ -192,6 +196,21 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
       setNote({ text: (err as Error).message, bad: true });
     } finally {
       setRunning(false);
+    }
+  }
+
+  /** Allow once or No for a command a build asked about. */
+  async function answerAsk(a: AskRequest, allow: boolean) {
+    if (!invoke) return;
+    setBusy(true);
+    try {
+      const r = await decideAsk(invoke, a.id, allow);
+      setAsks(await listAsks(invoke));
+      setNote({ text: r.note, bad: false });
+    } catch (err) {
+      setNote({ text: (err as Error).message, bad: true });
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -248,10 +267,22 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
 
   return (
     <section className="card build">
-      {work.length > 0 && (
+      {work.length + asks.length > 0 && (
         <div className="needs-you" role="region" aria-label="Needs you">
-          <h3>Needs you ({work.length})</h3>
+          <h3>Needs you ({work.length + asks.length})</h3>
           <ul>
+            {asks.map((a) => (
+              <li key={`ask-${a.id}`}>
+                {a.slug} {a.feature} wants to run this, and a rule says to ask you first ({a.reason}):
+                <pre className="ask-input">{a.input}</pre>
+                <button type="button" disabled={busy || running} aria-label={`Allow once: ${a.input}`} onClick={() => void answerAsk(a, true)}>
+                  Allow once
+                </button>{' '}
+                <button type="button" disabled={busy || running} aria-label={`No: ${a.input}`} onClick={() => void answerAsk(a, false)}>
+                  No
+                </button>
+              </li>
+            ))}
             {work.map((w) => (
               <li key={w.id}>
                 {w.title}
