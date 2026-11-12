@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { Invoke } from '../engine';
-import { STATE_LABEL, checkThisComputer, getDataOverview, rateTool, savedPercent, switchToolOn, syncData, type DataOverview, type Environment, type ToolRow, type ToolState } from '../data';
+import { STATE_LABEL, checkThisComputer, getDataOverview, runFreeTests, rateTool, savedPercent, switchToolOn, syncData, type DataOverview, type Environment, type ToolRow, type ToolState } from '../data';
 
 const ORDER: ToolState[] = ['on', 'trial', 'untested', 'off', 'unknown'];
 
@@ -159,6 +159,16 @@ export function Tools({ invoke }: { invoke: Invoke | null }) {
     });
   }
 
+  function freeTests() {
+    if (!invoke) return;
+    void work('Running the free tests (about half a minute)…', async () => {
+      const r = await runFreeTests(invoke);
+      setData(await getDataOverview(invoke));
+      const bad = r.results.filter((x) => x.outcome !== 'passed').map((x) => `${x.suite}: ${x.outcome}${x.detail ? ` (${x.detail})` : ''}`);
+      return { summary: [r.summary, ...bad, r.synced].filter(Boolean).join(' ') };
+    });
+  }
+
   const tools = [...data.tools].sort((a, b) => ORDER.indexOf(a.state) - ORDER.indexOf(b.state));
   const onCount = data.tools.filter((t) => t.state === 'on').length;
   return (
@@ -173,6 +183,9 @@ export function Tools({ invoke }: { invoke: Invoke | null }) {
       <div className="key-controls">
         <button type="button" disabled={busy} onClick={() => invoke && void work('Syncing with GitHub…', () => syncData(invoke))}>
           Sync with GitHub
+        </button>
+        <button type="button" disabled={busy} onClick={freeTests}>
+          Run free tests
         </button>
       </div>
       {note && (
@@ -211,6 +224,8 @@ export function Tools({ invoke }: { invoke: Invoke | null }) {
                 <dt>Version</dt>
                 <dd>{versionText(t)}</dd>
                 {t.byComputer && (<><dt>On each computer</dt><dd>{t.byComputer}</dd></>)}
+                <dt>Tested by the app</dt>
+                <dd>{t.tested || 'Untested (no repeatable test has run yet).'}</dd>
                 {t.useWhen && (<><dt>Use when</dt><dd>{t.useWhen}</dd></>)}
                 {t.dontUseWhen && (<><dt>Don’t use when</dt><dd>{t.dontUseWhen}</dd></>)}
                 {t.evidence && (<><dt>Evidence</dt><dd>{t.evidence}</dd></>)}

@@ -67,6 +67,16 @@ const shell = (answer: DataOverview | string, calls: { cmd: string; args?: Recor
         synced: 'Saved 1 file. Data repo is up to date on GitHub.',
       } as T;
     }
+    if (cmd === 'eval_run') {
+      return {
+        results: [
+          { capability: 'secretlint', suite: 'secretlint-planted', outcome: 'passed', detail: '4 of 4 cases right' },
+          { capability: 'axe-core', suite: 'axe-planted', outcome: 'blocked', detail: 'run: Couldn’t run here: no browser' },
+        ],
+        summary: 'Free tests: 1 passed, 1 couldn’t run here (of 2). Cost: £0.00 ($0.00).',
+        synced: 'Saved 2 files.',
+      } as T;
+    }
     if (cmd !== 'data_overview') throw `unexpected ${cmd}`;
     if (typeof answer === 'string') throw answer;
     return answer as T;
@@ -124,6 +134,23 @@ describe('Tools page', () => {
       '✗ git name for commits: Not set. Run git config --global user.name "Your Name" and user.email once.',
     ]);
     expect(screen.getByRole('list', { name: 'Different versions between computers' }).textContent).toBe('pnpm: joshu 10.20.0, lapto 10.34.9');
+  });
+
+  it('runs the free tests and shows what each tool was tested on, or untested (CI-3)', async () => {
+    const calls: { cmd: string }[] = [];
+    const tools = [
+      row('secretlint', 'on', { tested: 'Tests: passed (4/4) on lapto, version 11.2.5, 12 Nov 2026. 1 run so far: a first look, not proof.' }),
+      row('EGM', 'on'),
+    ];
+    render(<Tools invoke={shell({ ...OVERVIEW, tools }, calls)} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Run free tests' }));
+    expect(await screen.findByText('Free tests: 1 passed, 1 couldn’t run here (of 2). Cost: £0.00 ($0.00). axe-planted: blocked (run: Couldn’t run here: no browser) Saved 2 files.')).toBeTruthy();
+    expect(calls.filter((c) => c.cmd === 'eval_run')).toHaveLength(1);
+    expect(calls.filter((c) => c.cmd === 'data_overview')).toHaveLength(2); // reloaded after the run
+    fireEvent.click(screen.getByRole('button', { name: /secretlint/ }));
+    expect(screen.getByText(/passed \(4\/4\) on lapto.*a first look, not proof/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /EGM/ }));
+    expect(screen.getByText('Untested (no repeatable test has run yet).')).toBeTruthy();
   });
 
   it('shows tool health under the tool, warning about failures', async () => {

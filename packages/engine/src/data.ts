@@ -15,6 +15,8 @@ export interface ToolRow {
   testedVersion: string | null;
   /** CI-2: the version on each computer that has used it, when there's more than one: "joshu 4.14.0 · lapto 4.15.0". */
   byComputer: string;
+  /** CI-3: the latest repeatable-test results and how sure they are; '' when never tested. */
+  tested: string;
   state: ToolState;
   status: string;
   job: string;
@@ -96,6 +98,7 @@ export async function dataOverview(settings: AppSettings): Promise<DataOverview>
   const healthOf = (t: { id: string; name: string }) => health.get(t.id) ?? m.emptyHealth(t.name, t.id);
   const c = await import('@aip/checks');
   const environments = await readEnvironments(settings.dataFolder);
+  const evals = await m.listEvals(settings.dataFolder);
   return {
     configured: true,
     folder: repo.folder,
@@ -106,6 +109,7 @@ export async function dataOverview(settings: AppSettings): Promise<DataOverview>
       version: healthOf(t).version ?? (t.card?.version || null),
       testedVersion: healthOf(t).testedVersion,
       byComputer: byComputer(healthOf(t)),
+      tested: m.evidenceNote(evals.get(t.id) ?? []),
       state: t.state,
       status: t.status,
       job: t.job,

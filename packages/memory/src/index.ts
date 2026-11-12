@@ -72,3 +72,5 @@ export {
   type ToolFailure,
   type ToolHealth,
 } from './health.js';
+
+export { KEEP_EVALS, SCREENING_BELOW, addEvals, evidenceNote, listEvals, readEvals, type StoredEval } from './evals.js';
