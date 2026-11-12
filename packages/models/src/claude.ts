@@ -12,6 +12,20 @@ import { join } from 'node:path';
 import type { BuildTask, Job, ModelAdapter, StepResult } from './index.js';
 
 /**
+ * The check that runs before every tool call, even ones the SDK would allow without asking
+ * (like reading a file inside the folder). If the app's check says no, the call is refused with
+ * its reason. If it says yes, no decision is given, so the normal permission flow carries on
+ * (and canUseTool asks again; a yes there adds nothing, so a refusal is only ever noted once).
+ */
+export function preToolUseHook(checkTool: BuildTask['checkTool']) {
+  return async (input: { tool_name: string; tool_input: unknown }) => {
+    const d = await checkTool(input.tool_name, (input.tool_input ?? {}) as Record<string, unknown>);
+    if (d.allow) return {};
+    return { hookSpecificOutput: { hookEventName: 'PreToolUse' as const, permissionDecision: 'deny' as const, permissionDecisionReason: d.reason } };
+  };
+}
+
+/**
  * Only these variables from the PC are passed to Claude. Anything else, in particular other
  * Claude or Anthropic logins, is left out so a run can only ever use the key saved in Settings.
  * The plain ask (no tools) keeps the home variables because it runs nothing. A build does not:
@@ -207,6 +221,8 @@ export function createClaudeAdapter(opts: ClaudeAdapterOptions): ModelAdapter {
               const d = await task.checkTool(name, input);
               return d.allow ? { behavior: 'allow', updatedInput: input } : { behavior: 'deny', message: d.reason };
             },
+            // Runs for every tool call, so nothing skips the check. If it fails, the call is blocked.
+            hooks: { PreToolUse: [{ hooks: [preToolUseHook(task.checkTool)], onFailure: 'block' }] },
             maxTurns: BUILD_TURNS,
             persistSession: false,
             abortController: abort,

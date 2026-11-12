@@ -11,9 +11,9 @@
  */
 import { notApproved, projectGuidance } from './project-tools.ts';
 import { execFile } from 'node:child_process';
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { isAbsolute, join, relative, resolve } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import type { CheckResult, LiveState, Picture, PicturesResult } from '@aip/checks';
 import type { ModelAdapter, Provider, ToolDecision } from '@aip/models';
 import { readBudget, recordSpend } from './budget.ts';
@@ -176,9 +176,45 @@ export function staysInside(runPath: string, input: Record<string, unknown>): bo
   return true;
 }
 
-/** The check before every tool call: inside the copy, then the gatekeeper. */
-export function checkStep(settings: AppSettings, runPath: string, tool: string, input: Record<string, unknown>): ToolDecision {
-  if (!staysInside(runPath, input)) return { allow: false, reason: 'Only files in this feature’s own copy can be used.' };
+/** The real place of a path, links followed. A file that isn't there yet gets its nearest existing folder. */
+async function realNearest(p: string): Promise<string> {
+  let cur = resolve(p);
+  for (;;) {
+    try {
+      return await realpath(cur);
+    } catch {
+      const up = dirname(cur);
+      if (up === cur) return cur;
+      cur = up;
+    }
+  }
+}
+
+/** Windows file names ignore capital letters. */
+const norm = (p: string) => (process.platform === 'win32' ? p.toLowerCase() : p);
+
+/**
+ * Like `staysInside`, but follows links. A link inside the copy that points outside (say
+ * `home -> your home folder`) passes the plain word check, so each file path is turned into its
+ * real place first and that must still be inside the copy's real place. Shell commands can't be
+ * checked this way; they only get the word check.
+ */
+export async function staysInsideReal(runPath: string, input: Record<string, unknown>): Promise<boolean> {
+  let root: string | undefined;
+  for (const k of PATH_KEYS) {
+    const v = input[k];
+    if (typeof v !== 'string' || v === '') continue;
+    root ??= await realNearest(runPath);
+    const real = await realNearest(resolve(runPath, v));
+    const rel = relative(norm(root), norm(real));
+    if (rel.startsWith('..') || isAbsolute(rel)) return false;
+  }
+  return true;
+}
+
+/** The check before every tool call: inside the copy (words, then real places), then the gatekeeper. */
+export async function checkStep(settings: AppSettings, runPath: string, tool: string, input: Record<string, unknown>): Promise<ToolDecision> {
+  if (!staysInside(runPath, input) || !(await staysInsideReal(runPath, input))) return { allow: false, reason: 'Only files in this feature’s own copy can be used.' };
   const d = gate(tool, input, settings);
   if (d.allow) return d;
   return { allow: false, reason: d.askJoshua ? `${d.reason}. Not done; joshua will be asked later.` : d.reason };
@@ -291,7 +327,7 @@ export async function buildFeature(
         sandbox,
         onStep: (text) => add({ text }),
         async checkTool(name, input) {
-          const d = checkStep(settings, run.path, name, input);
+          const d = await checkStep(settings, run.path, name, input);
           if (!d.allow) add({ text: `Refused: ${name}`, refused: d.reason });
           return d;
         },

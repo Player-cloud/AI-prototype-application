@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, sep } from 'node:path';
 import { promisify } from 'node:util';
 import { describe, expect, it } from 'vitest';
-import { claudeEnv, sandboxEnv, createClaudeAdapter, friendlyError, modelName, redact, type QueryFn, type SdkMessage } from '../src/index.js';
+import { claudeEnv, sandboxEnv, createClaudeAdapter, preToolUseHook, friendlyError, modelName, redact, type QueryFn, type SdkMessage } from '../src/index.js';
 
 // Obviously fake test value, not a real key.
 const FAKE_KEY = 'sk-ant-test-0000000000000000';
@@ -205,6 +205,29 @@ describe('Claude build runs', () => {
     expect(r).toEqual({ text: 'Built F-01.', usage: { inputTokens: 115, outputTokens: 2, costUsd: 0.31 } });
   });
 
+  it('checks every tool call in a hook too, so key files can’t be read without asking', async () => {
+    const seen: { options?: Record<string, unknown> } = {};
+    const adapter = createClaudeAdapter({ apiKey: FAKE_KEY, query: fakeQuery([success], seen) });
+    const asked: string[] = [];
+    await adapter.build!({
+      model: 'm',
+      prompt: 'p',
+      cwd: '/x',
+      async checkTool(tool, input) {
+        asked.push(`${tool} ${String(input.file_path)}`);
+        return input.file_path === '.env' ? { allow: false, reason: 'key files are never allowed' } : { allow: true };
+      },
+    });
+    const pre = (seen.options!.hooks as { PreToolUse: { hooks: ((i: unknown, id: undefined, o: unknown) => Promise<unknown>)[]; onFailure?: string }[] }).PreToolUse;
+    expect(pre).toHaveLength(1);
+    expect(pre[0]!.onFailure).toBe('block');
+    const call = (file: string) => pre[0]!.hooks[0]!({ hook_event_name: 'PreToolUse', tool_name: 'Read', tool_input: { file_path: file } }, undefined, { signal: new AbortController().signal });
+    expect(await call('.env')).toEqual({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: 'key files are never allowed' } });
+    expect(await call('src/a.ts')).toEqual({});
+    expect(asked).toEqual(['Read .env', 'Read src/a.ts']);
+    expect(typeof seen.options!.canUseTool).toBe('function'); // still asked as well
+  });
+
   it('says Stopped when the run is stopped', async () => {
     const stop = new AbortController();
     const query: QueryFn = ({ options }) =>
@@ -288,4 +311,14 @@ describe('sandboxEnv', () => {
       await rm(root, { recursive: true, force: true });
     }
   }, 30_000);
+});
+
+describe('preToolUseHook', () => {
+  it('denies with the reason when the check refuses, and gives no decision when it allows', async () => {
+    const hook = preToolUseHook(async (tool) => (tool === 'Bash' ? { allow: false, reason: 'no pushing' } : { allow: true }));
+    expect(await hook({ tool_name: 'Bash', tool_input: { command: 'git push' } })).toEqual({
+      hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: 'no pushing' },
+    });
+    expect(await hook({ tool_name: 'Read', tool_input: { file_path: 'a.ts' } })).toEqual({});
+  });
 });
