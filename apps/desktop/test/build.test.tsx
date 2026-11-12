@@ -39,10 +39,13 @@ function fakeShell(opts: { fail?: string; runs?: (typeof WAITING)[] } = {}) {
     calls.push({ cmd, args });
     if (cmd === 'settings_get') return { gbpPerUsd: 0.79, runCapGbp: 0.8 } as T;
     if (cmd === 'run_list') return runs as T;
+    if (cmd === 'work_list') {
+      return runs.filter((r) => r.status === 'built').map((r, i) => ({ id: i + 1, at: '', kind: 'build', runId: r.id, title: `club-hr ${r.feature}: built, waiting for Keep or Undo`, issue: 12, issueUrl: 'https://github.com/o/r/issues/12' })) as T;
+    }
     if (cmd === 'run_decide') {
       const keep = args?.keep === true;
       runs = runs.map((r) => (r.id === args?.id ? { ...r, status: keep ? 'kept' : 'undone', keptInto: keep ? 'main' : '' } : r));
-      return { run: runs[0], note: keep ? 'Kept F-02 in your copy on main. Nothing was pushed.' : 'Undone: F-02’s build was removed. Your copy wasn’t touched.', learned: [] } as T;
+      return { run: runs[0], note: keep ? 'Kept F-02 in your copy on main. Nothing was pushed.' : 'Undone: F-02’s build was removed. Your copy wasn’t touched.', learned: [], phone: 'Closed issue #12 on your phone.' } as T;
     }
     if (cmd === 'run_rate') {
       runs = runs.map((r) => (r.id === args?.id ? { ...r, rating: args?.rating as null } : r));
@@ -130,6 +133,7 @@ describe('Build screen', () => {
       ],
       screensChanged: true,
       picturesNote: 'Pictures taken with Edge; the screens changed since the last build.',
+      phone: 'Sent to your phone: issue #12 on o/r.',
     });
     expect((await screen.findByRole('status')).textContent).toBe('Done and the tests pass. Cost: £0.33 ($0.42). Check it, then press Keep or Undo below.');
     const result = screen.getByRole('region', { name: 'Build result' });
@@ -144,6 +148,7 @@ describe('Build screen', () => {
     expect(within(result).getByAltText('Desktop picture of the build')).toBeTruthy();
     expect(within(result).getByText(/^Checklist rules: advice \(doesn’t stop Keep\)/)).toBeTruthy();
     expect(within(result).getByText('src/rota.tsx:3 (Accessibility): Every image needs alt text.')).toBeTruthy();
+    expect(within(result).getByText('Phone: Sent to your phone: issue #12 on o/r.')).toBeTruthy();
   });
 
   it('says plainly when the tests still fail after the fix attempts', async () => {
@@ -177,7 +182,10 @@ describe('Build screen', () => {
     const builds = await screen.findByRole('region', { name: 'Builds' });
     expect(within(builds).getByText(/F-02 · .* · tests and checks pass · waiting for Keep or Undo/)).toBeTruthy();
     fireEvent.click(within(builds).getByRole('button', { name: 'Keep F-02' }));
-    expect((await screen.findByRole('status')).textContent).toBe('Kept F-02 in your copy on main. Nothing was pushed.');
+    // It needs joshua, and it's on his phone.
+    expect(within(screen.getByRole('region', { name: 'Needs you' })).getByText('club-hr F-02: built, waiting for Keep or Undo')).toBeTruthy();
+    expect((await screen.findByRole('status')).textContent).toBe('Kept F-02 in your copy on main. Nothing was pushed. Closed issue #12 on your phone.');
+    expect(screen.queryByRole('region', { name: 'Needs you' })).toBeNull();
     expect(shell.calls).toContainEqual({ cmd: 'run_decide', args: { id: 7, keep: true } });
     expect(within(builds).getByText(/kept into main/)).toBeTruthy();
     expect(within(builds).queryByRole('button', { name: 'Keep F-02' })).toBeNull();
@@ -205,7 +213,7 @@ describe('Build screen', () => {
     const keep = (await screen.findByRole('button', { name: 'Keep F-02' })) as HTMLButtonElement;
     expect(keep.disabled).toBe(true);
     fireEvent.click(screen.getByRole('button', { name: 'Undo F-02' }));
-    expect((await screen.findByRole('status')).textContent).toBe('Undone: F-02’s build was removed. Your copy wasn’t touched.');
+    expect((await screen.findByRole('status')).textContent).toBe('Undone: F-02’s build was removed. Your copy wasn’t touched. Closed issue #12 on your phone.');
     expect(screen.queryByRole('group', { name: /Rate F-02/ })).toBeNull();
   });
 

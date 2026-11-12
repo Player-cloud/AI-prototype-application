@@ -79,6 +79,8 @@ The app messages your phone through GitHub Issues on your private data repo (the
 
 To set it up, make a **fine-grained** token on GitHub (Settings → Developer settings → Fine-grained tokens). Give it access to the data repo only, with **Issues: Read and write** and nothing else. Paste it into Settings → API keys → GitHub, then press **Test connection** (free: it only reads issues). The token is kept in the computer's password store like the model keys, and only ever sent to GitHub.
 
+When a build finishes it needs you (Keep or Undo), so it shows under **Needs you** at the top of the Build screen and, with a token saved, is posted as an issue with the tests, checks, cost in £ and $, and the build's summary. When you Keep or Undo it on the PC, the issue gets a short reply and is closed. A GitHub problem never stops a build or a Keep; the app just says the message didn't go.
+
 ## Tool health
 
 Each tool has a small health record in the data repo, `tool-health/<tool>.json`: the version in use, the version its test evidence is for, and its recent failures. When a tool updates, its old evidence is marked stale and it gets a quick retest the next time it's used. A good run clears the mark. The Tools page shows this under each tool, for example "2 failures in a row." Each build model run counts as a use of that model (for example "Sonnet 5.5"); a Stop doesn't count. After 3 failures in a row the model is switched off, you're told, and builds refuse it until you press **Switch … back on** on the Tools page (it's then retested on its next use). Switching a tool off never uninstalls it.

@@ -224,6 +224,7 @@ async fn build_feature(
     let key = keys::load(&OsKeyring, key_name(&provider)?)?;
     let params = serde_json::json!({
         "slug": slug, "feature": feature, "settings": saved, "provider": provider, "apiKey": key, "dbPath": spend_path(&app)?,
+        "githubToken": github_token(),
     });
     let mut helper = EngineHelper::start(&helper_command(std::env::var("AIP_ENGINE").ok()))?;
     {
@@ -265,7 +266,18 @@ async fn run_list(slug: Option<String>, app: tauri::AppHandle, state: tauri::Sta
 async fn run_decide(id: i64, keep: bool, app: tauri::AppHandle, state: tauri::State<'_, Engine>) -> Result<serde_json::Value, String> {
     let saved = settings::read(&settings_path(&app)?)?;
     let method = if keep { "run_keep" } else { "run_undo" };
-    engine_call(&state, method, serde_json::json!({ "settings": saved, "dbPath": spend_path(&app)?, "id": id }))
+    engine_call(&state, method, serde_json::json!({ "settings": saved, "dbPath": spend_path(&app)?, "id": id, "githubToken": github_token() }))
+}
+
+/// The GitHub token for phone messages, when one is saved (step 10). Without one, nothing is posted.
+fn github_token() -> Option<String> {
+    keys::load(&OsKeyring, "github").ok()
+}
+
+/// The "Needs you" panel: open work items, oldest first (step 10b).
+#[tauri::command]
+async fn work_list(app: tauri::AppHandle, state: tauri::State<'_, Engine>) -> Result<serde_json::Value, String> {
+    engine_call(&state, "work_list", serde_json::json!({ "dbPath": spend_path(&app)? }))
 }
 
 /// joshua's 1–5 rating for a build. The app may then update its learned habits (step 9d).
@@ -372,7 +384,7 @@ pub fn run() {
     tauri::Builder::default()
         .manage(Engine(Mutex::new(helper)))
         .manage(Build(Mutex::new(None)))
-        .invoke_handler(tauri::generate_handler![version, engine_status, key_status, key_save, key_remove, test_model, settings_get, settings_save, data_overview, spend_summary, tool_rate, tool_switch_on, data_sync, gate_rules, history_list, history_undo, project, interview_suggest, interview_review, build_feature, build_stop, run_list, run_decide, run_rate, github_test])
+        .invoke_handler(tauri::generate_handler![version, engine_status, key_status, key_save, key_remove, test_model, settings_get, settings_save, data_overview, spend_summary, tool_rate, tool_switch_on, data_sync, gate_rules, history_list, history_undo, project, interview_suggest, interview_review, build_feature, build_stop, run_list, run_decide, run_rate, github_test, work_list])
         .run(tauri::generate_context!())
         .expect("error while running the app");
 }

@@ -45,6 +45,8 @@ export { SpendLog, monthKey, type MonthSpend, type SpendRecord } from './spend.j
 
 export { HEADING as LEARNED_HEADING, MIN_BUILDS, MIN_REPEATS, applyLearned, learnHabits, type HabitChanges, type Learned } from './learn.js';
 
+export { KEEP_ITEMS, WorkItems, type WorkItem, type WorkKind } from './workitems.js';
+
 export { KEEP_RUNS, RunLog, type NewRun, type Run, type RunCheck, type RunPicture, type RunStatus } from './runlog.js';
 
 export { ChangeLog, KEEP_CHANGES, MAX_CHANGE_CHARS, type Change, type ChangeKind, type NewChange } from './history.js';
