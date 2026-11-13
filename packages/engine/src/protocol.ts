@@ -91,7 +91,9 @@
  *  - run_revert: {settings, dbPath, id} -> Undo a kept build: a new commit in joshua's copy reverses
  *    the merge Keep made (git revert; no reset, no force, no push). Refused with nothing changed when
  *    the copy has uncommitted changes, the kept commit isn't in the branch, or the reversal clashes.
- *    Status becomes 'reverted'. Returns {run, note, learned}.
+ *    Status becomes 'reverted'. Then the project's tests run in his copy (like a build: packages
+ *    installed with --ignore-scripts if missing); the note ends "Tests after undo: passed / N failed /
+ *    couldn't run (reason)". Failing tests never undo the revert. Returns {run, note, learned}.
  *  - run_rate: {dbPath, id, rating, settings?} -> joshua's 1–5 rating for a build.
  *    run_keep, run_undo and run_rate also return `learned`: plain notes when the app added, updated
  *    or dropped a habit in habits.md from the evidence (step 9d). Undoable from History.
@@ -591,7 +593,7 @@ const HANDLERS: Record<string, Handler> = {
     const p = obj(params);
     const settings = checkSettings(p.settings);
     const now = deps.now?.() ?? new Date();
-    const r = await revertKept(settings, str(p, 'dbPath'), runId(p), now);
+    const r = await revertKept(settings, str(p, 'dbPath'), runId(p), now, undefined, deps.runTests);
     return { ...r, learned: await learnNow(settings, str(p, 'dbPath'), (id) => deps.modelName(id), now) };
   },
   run_rate: async (params, deps) => {

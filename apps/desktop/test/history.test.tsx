@@ -71,3 +71,52 @@ describe('Settings: change history', () => {
     await waitFor(() => expect((screen.getByLabelText('Monthly budget (£)') as HTMLInputElement).value).toBe('20'));
   });
 });
+
+describe('History: undo a kept build', () => {
+  const KEPT = { id: 7, at: '2026-11-11T12:00:00Z', slug: 'club-hr', feature: 'F-02', status: 'kept', keptInto: 'main', decidedAt: '2026-11-11T12:10:00Z', findings: [] };
+  function keptShell(opts: { refuse?: string } = {}) {
+    let runs: Record<string, unknown>[] = [KEPT];
+    const calls: { cmd: string; args?: Record<string, unknown> }[] = [];
+    const invoke: Invoke = routeEngine(async <T,>(cmd: string, args?: Record<string, unknown>) => {
+      calls.push({ cmd, args });
+      if (cmd === 'history_list') return [RATED] as T;
+      if (cmd === 'run_list') return runs as T;
+      if (cmd === 'run_revert') {
+        if (opts.refuse) throw new Error(opts.refuse);
+        runs = [{ ...KEPT, status: 'reverted' }];
+        return { run: runs[0], note: 'Undid F-02: a new commit on main reverses it. Nothing was pushed and no history was rewritten. Tests after undo: 2 failed.', learned: [] } as T;
+      }
+      throw new Error(`unexpected ${cmd}`);
+    });
+    return { invoke, calls };
+  }
+
+  it('shows the kept build in the list and undoes it only after Are you sure, with the tests result in the note', async () => {
+    const shell = keptShell();
+    render(<History invoke={shell.invoke} />);
+    const list = await screen.findByRole('list', { name: 'Changes' });
+    await within(list).findByText(/Kept F-02 into main/);
+    fireEvent.click(within(list).getByRole('button', { name: 'Undo this kept build F-02 build 7' }));
+    expect(within(list).getByText('Are you sure? This adds a new commit that reverses it.')).toBeTruthy();
+    expect(shell.calls.some((c) => c.cmd === 'run_revert')).toBe(false);
+    // No backs out.
+    fireEvent.click(within(list).getByRole('button', { name: 'No, keep F-02' }));
+    expect(within(list).queryByText(/Are you sure/)).toBeNull();
+    expect(shell.calls.some((c) => c.cmd === 'run_revert')).toBe(false);
+    // Yes sends it.
+    fireEvent.click(within(list).getByRole('button', { name: 'Undo this kept build F-02 build 7' }));
+    fireEvent.click(within(list).getByRole('button', { name: 'Yes, undo kept F-02' }));
+    expect((await screen.findByRole('status')).textContent).toMatch(/Tests after undo: 2 failed\.$/);
+    expect(shell.calls).toContainEqual({ cmd: 'run_revert', args: { id: 7 } });
+    await waitFor(() => expect(within(list).queryByText(/Kept F-02/)).toBeNull());
+  });
+
+  it('shows the plain reason when the undo is refused, and keeps the entry', async () => {
+    const shell = keptShell({ refuse: 'Your copy (/code) has changes not committed yet. Nothing was changed.' });
+    render(<History invoke={shell.invoke} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Undo this kept build F-02 build 7' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Yes, undo kept F-02' }));
+    expect((await screen.findByRole('alert')).textContent).toBe('Your copy (/code) has changes not committed yet. Nothing was changed.');
+    expect(screen.getByRole('button', { name: 'Undo this kept build F-02 build 7' })).toBeTruthy();
+  });
+});
