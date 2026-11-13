@@ -1,12 +1,23 @@
 // @vitest-environment jsdom
+/// <reference types="node" />
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { App } from '../src/App';
 import { SCREENS } from '../src/screens';
 
 afterEach(cleanup);
 
 describe('App shell', () => {
+  it('keeps the menu in view while a long page scrolls', () => {
+    const css = readFileSync(join(__dirname, '../src/styles.css'), 'utf8');
+    const rail = /\n\.rail \{([^}]*)\}/.exec(css)?.[1] ?? '';
+    expect(rail).toMatch(/position:\s*sticky/);
+    expect(rail).toMatch(/top:\s*0/);
+    expect(rail).toMatch(/height:\s*100vh/);
+  });
+
   it('opens on Projects, the main screen', () => {
     render(<App />);
     expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Projects');
