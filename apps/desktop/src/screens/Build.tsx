@@ -54,13 +54,35 @@ export function limitText(gbp: number, gbpPerUsd: number): string {
 }
 
 /** Before a build: what this feature touched in earlier kept builds (the project map). */
-export function FeatureMap({ entry }: { entry: MapFeature | undefined }) {
+export function FeatureMap({ entry, decisions }: { entry: MapFeature | undefined; decisions?: Decisions | null }) {
   if (!entry || entry.files.length === 0) return <p className="muted">New feature: no files yet.</p>;
   const count = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
   return (
     <details className="feature-map">
       <summary>This feature touched before: {count(entry.files.length, 'file')}, {count(entry.tests.length, 'test')}</summary>
       {entry.note && <p className="muted">{entry.note}</p>}
+      {(entry.decisions?.length ?? 0) > 0 && (
+        <ul aria-label="Decisions for this feature">
+          {entry.decisions!.map((id) => (
+            <li key={id}>
+              {id}: {decisions?.decisions.find((d) => d.id === id)?.text ?? 'see the project record'}
+            </li>
+          ))}
+        </ul>
+      )}
+      {(entry.blockers?.length ?? 0) > 0 && (
+        <ul aria-label="Blockers for this feature">
+          {entry.blockers!.map((id) => {
+            const b = decisions?.blockers.find((x) => x.id === id);
+            return (
+              <li key={id}>
+                {id}: {b?.text ?? 'see the project record'}
+                {b && !b.open ? ' (closed)' : ''}
+              </li>
+            );
+          })}
+        </ul>
+      )}
       <ul aria-label="Files this feature touched before">
         {entry.files.map((f) => (
           <li key={f}>
@@ -419,7 +441,7 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
           )}
         </div>
       )}
-      {projects && projects.length > 0 && feature && <FeatureMap entry={map[feature]} />}
+      {projects && projects.length > 0 && feature && <FeatureMap entry={map[feature]} decisions={decisions} />}
       {using && <p className="using-line">{using}</p>}
       {advice.length > 0 && (
         <ul className="advice" aria-label="What real builds say">

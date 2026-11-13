@@ -26,6 +26,10 @@ export interface FeatureEntry {
   tests: string[];
   lastBuildId: number;
   lastKeptAt: string;
+  /** IDs (DEC-n) of the decisions that name this feature. Missing in older maps: read as none. */
+  decisions?: string[];
+  /** IDs (BLK-n) of the blockers, open or closed, that name this feature. Missing in older maps: read as none. */
+  blockers?: string[];
   /** Set when the file list was cut to the cap. */
   note?: string;
 }
@@ -98,6 +102,31 @@ export async function refreshMap(
   return { version: MAP_VERSION, updatedAt: build.keptAt, features };
 }
 
+/** The map with each feature's decision and blocker IDs taken from decisions.json. Only features already in the map are touched. */
+export function attachDecisions(map: ProjectMap, d: { decisions: { id: string; feature?: string }[]; blockers: { id: string; feature?: string }[] }): ProjectMap {
+  const features: Record<string, FeatureEntry> = {};
+  for (const [id, e] of Object.entries(map.features)) {
+    features[id] = { ...e, decisions: d.decisions.filter((x) => x.feature === id).map((x) => x.id), blockers: d.blockers.filter((x) => x.feature === id).map((x) => x.id) };
+  }
+  return { ...map, features };
+}
+
+/**
+ * When decisions or blockers change: refresh the IDs in the map. Does nothing when the project has
+ * no map yet, and writes only when something changed. Never throws (a map problem must not fail a decision).
+ */
+export async function updateMapDecisions(settings: AppSettings, slug: string): Promise<void> {
+  try {
+    const map = await readMap(settings, slug);
+    if (Object.keys(map.features).length === 0) return;
+    const { readDecisions } = await import('./decisions.ts');
+    const next = attachDecisions(map, await readDecisions(settings, slug));
+    if (JSON.stringify(next) !== JSON.stringify(map)) await writeMap(settings, slug, next);
+  } catch {
+    // best-effort
+  }
+}
+
 export async function writeMap(settings: AppSettings, slug: string, map: ProjectMap): Promise<void> {
   const file = await mapFile(settings, slug);
   await mkdir(join(file, '..'), { recursive: true });
@@ -127,7 +156,14 @@ export async function updateMapAfterKeep(
     }
     const exists = (p: string) => lstat(join(codeFolder, ...p.split('/'))).then(() => true, () => false);
     const next = await refreshMap(await readMap(settings, slug), { feature: build.feature, title, buildId: build.buildId, keptAt: build.keptAt.toISOString(), changed: build.changed }, exists);
-    await writeMap(settings, slug, next);
+    let withDecisions = next;
+    try {
+      const { readDecisions } = await import('./decisions.ts');
+      withDecisions = attachDecisions(next, await readDecisions(settings, slug));
+    } catch {
+      // the decisions file is a nice-to-have here: keep the map as refreshed
+    }
+    await writeMap(settings, slug, withDecisions);
     return '';
   } catch (err) {
     return ` The project map wasn’t updated (${(err as Error).message.split('\n')[0]}).`;
