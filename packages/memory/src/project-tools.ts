@@ -43,7 +43,7 @@ export function projectToolsText(slug: string, ids: string[]): string {
   const bad = ids.filter((id) => !TOOL_ID.test(id));
   if (bad.length) throw new Error(`Not a tool ID: ${bad.join(', ')}`);
   const sorted = [...new Set(ids)].sort();
-  return [`# Approved tools for ${slug}`, '', 'Chosen by joshua in the app. Builds for this project use only these.', '', ...sorted.map((id) => `- ${id}`), ''].join('\n');
+  return [`# Approved tools for ${slug}`, '', 'Chosen in the app. Builds for this project use only these.', '', ...sorted.map((id) => `- ${id}`), ''].join('\n');
 }
 
 /** Saves the approved tool IDs. Returns the written path (relative to the data folder). */

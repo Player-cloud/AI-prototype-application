@@ -112,7 +112,7 @@ describe('decisions and blockers', () => {
   it('puts at most the newest 10 decisions in the prompt hint, each short', () => {
     const decisions = Array.from({ length: 14 }, (_, i) => ({ id: `DEC-${i + 1}`, date: 'x', text: i === 13 ? 'z'.repeat(400) : `Decision ${i + 1}` }));
     const lines = decisionsHint({ ...emptyDecisions(), decisions }).split('\n');
-    expect(lines[1]).toBe('Decisions joshua made — follow them:');
+    expect(lines[1]).toBe('Decisions the user made — follow them:');
     const shown = lines.slice(2);
     expect(shown).toHaveLength(PROMPT_DECISIONS);
     expect(shown[0]).toBe('- DEC-5: Decision 5');
