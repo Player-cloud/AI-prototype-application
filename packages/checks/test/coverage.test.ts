@@ -1,6 +1,9 @@
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { canKeep } from '../src/index.js';
-import { coverageFinding, coverageFromFindings, idsInName, linkCriteria, neverCheckedLine, parseDoneList, parseTestCases } from '../src/coverage.js';
+import { coverageFinding, coverageFromFindings, flagNoAssertions, idsInName, linkCriteria, neverCheckedLine, parseDoneList, parseTestCases, testBlocks } from '../src/coverage.js';
 import { nameFlags, runTests } from '../src/tests.js';
 import { summarise, toFindings } from '../src/findings.js';
 
@@ -135,6 +138,76 @@ describe('running tests with names', () => {
       const r = await runTests(dir, async () => ({ code: 0, output: ' ✓ a.test.ts > D1: works 2ms' }));
       expect(r.cases).toEqual([{ name: 'D1: works', passed: true }]);
       expect((await runTests(dir, async () => ({ code: 0, output: '3 passed' }))).cases).toBeUndefined();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('tests with no assertions', () => {
+  const lines = parseDoneList('- A member can sign in\n- A wrong password shows an error\n- Sessions end after a day\n');
+  const pass = (...names: string[]) => names.map((name) => ({ name, passed: true }));
+  const run = (src: string, cases: { name: string; passed: boolean }[]) =>
+    flagNoAssertions(linkCriteria(lines, cases), cases, '/none', async () => [{ path: 'a.test.ts', text: src }]);
+
+  it('finds the blocks named with an id and says whether each asserts', () => {
+    const src = [
+      "it('D1: signs in', () => { expect(signIn()).toBe(true); });",
+      "test('D2 and D3: nothing', async () => { await signIn(); });",
+      "it('no id here', () => {});",
+      "it('D4: expression body', () => expect(1).toBe(1));",
+      "it('D5: node assert', () => { assert.equal(1, 1); });",
+      "it('D6: ava', (t) => { t.is(1, 1); });",
+      "it('D7: chai', () => { x.should.equal(1); });",
+      "it('D8: a ) in a string and // a comment', () => { // a comment\n  const s = ')';\n});",
+      "it.todo('D9: later');",
+    ].join('\n');
+    expect(testBlocks(src).map((b) => [b.ids.join('+'), b.asserts])).toEqual([
+      ['D1', true], ['D2+D3', false], ['D4', true], ['D5', true], ['D6', true], ['D7', true], ['D8', false],
+    ]);
+  });
+
+  it('marks a line not-checked, with the reason, when its only test has no assertion', async () => {
+    const out = await run("it('D1: signs in', async () => {\n  await signIn();\n});\nit('D2: error', () => { expect(a).toBe(b); });", pass('D1: signs in', 'D2: error'));
+    expect(out.map((c) => [c.id, c.status, c.reason])).toEqual([['D1', 'not-checked', 'test has no assertions'], ['D2', 'tested', undefined], ['D3', 'not-checked', undefined]]);
+  });
+
+  it('leaves the status alone when the body can’t be found, or another test for the line does assert', async () => {
+    // Body not in any file: unchanged.
+    expect((await run('// nothing here', pass('D1: signs in')))[0]!.status).toBe('tested');
+    // A name built at run time can't be read: unchanged.
+    expect((await run("it(`D1: ${x}`, () => {});", pass('D1: signs in')))[0]!.status).toBe('tested');
+    // Two tests for D1, one asserts: still tested.
+    expect((await run("it('D1: a', () => {});\nit('D1: b', () => { expect(1).toBe(1); });", pass('D1: a', 'D1: b')))[0]!.status).toBe('tested');
+    // Two passing tests name D1 but only one body was found, with no assertion: unsure, unchanged.
+    expect((await run("it('D1: a', () => {});", pass('D1: a', 'D1: elsewhere')))[0]!.status).toBe('tested');
+    // A failing line stays failed.
+    expect((await run("it('D1: a', () => {});", [{ name: 'D1: a', passed: false }]))[0]!.status).toBe('failed');
+  });
+
+  it('shows the reason in the finding and reads it back; it is advice, never a block', async () => {
+    const covered = await run("it('D1: signs in', () => {});", pass('D1: signs in'));
+    const f = coverageFinding(covered)!;
+    expect(f).toMatchObject({ level: 'warn', title: 'Done list: 3 of 3 lines were never checked (advice, doesn’t stop Keep)' });
+    expect(f.detail).toContain('D1 – not checked: A member can sign in\n  ↳ test has no assertions\nD2 ');
+    const back = coverageFromFindings([f])!;
+    expect(back[0]).toMatchObject({ id: 'D1', text: 'A member can sign in', status: 'not-checked', reason: 'test has no assertions' });
+    expect(back[1]).not.toHaveProperty('reason');
+    expect(summarise([...toFindings([{ name: 'tests', passed: true, free: true }]), f]).blocksKeep).toBe(false);
+  });
+
+  it('reads the test files of a real folder, skipping node_modules', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'aip-assert-'));
+    try {
+      await mkdir(join(dir, 'src'), { recursive: true });
+      await mkdir(join(dir, 'node_modules', 'x'), { recursive: true });
+      await writeFile(join(dir, 'src', 'login.test.ts'), "it('D1: signs in', () => { signIn(); });");
+      await writeFile(join(dir, 'node_modules', 'x', 'a.test.ts'), "it('D2: error', () => { expect(1).toBe(1); });");
+      const cases = pass('D1: signs in', 'D2: error');
+      const out = await flagNoAssertions(linkCriteria(lines, cases), cases, dir);
+      // D2's test lives only under node_modules, so it isn't looked at and stays tested.
+      expect(out.map((c) => c.status)).toEqual(['not-checked', 'tested', 'not-checked']);
+      expect(out[0]!.reason).toBe('test has no assertions');
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

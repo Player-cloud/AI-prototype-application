@@ -491,8 +491,8 @@ export async function buildFeature(
     for (const line of await noteCheckTools(settings, checks, shots.pictures.length > 0, now)) add({ text: line });
     const { canKeep, toFindings } = await import('@aip/checks');
     const findings = toFindings(checks);
-    const { coverageFinding, linkCriteria } = await import('@aip/checks');
-    const covered = coverageFinding(linkCriteria(criteria, tests.cases ?? []));
+    const { coverageFinding, flagNoAssertions, linkCriteria } = await import('@aip/checks');
+    const covered = coverageFinding(await flagNoAssertions(linkCriteria(criteria, tests.cases ?? []), tests.cases ?? [], run.path));
     if (covered) findings.push(covered);
     const keep = canKeep([{ ...tests, name: 'tests' }, ...checks]);
     const synced = await syncAfter(settings, `Build ${p.slug} ${p.feature}`);
