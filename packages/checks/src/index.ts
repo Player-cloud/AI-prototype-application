@@ -39,4 +39,4 @@ export { Blocked, RUBRIC, SUITES, overall, runSuites, type CaseResult, type Eval
 export { browserPaths, checkEnvironment, compareComputers, computerId, versionIn, type EnvCheck, type EnvOptions, type Environment, type Run } from './environment.js';
 export { findUpdates, levelOf, parseOutdated, type Level, type RunOut, type UpdateFound } from './updates.js';
 export { CHECK_TITLES, FINDING_LEVELS, FINDING_SOURCES, blockingChecks, summarise, toFinding, toFindings, type Finding, type FindingLevel, type FindingSource, type FindingSummary } from './findings.js';
-export { COVERAGE_CHECK, STATUS_MARK, coverageFinding, coverageFromFindings, idsInName, linkCriteria, neverCheckedLine, parseDoneList, parseTestCases, type Covered, type CoverageStatus, type Criterion, type TestCase } from './coverage.js';
+export { COVERAGE_CHECK, NO_ASSERTIONS, REASON_MARK, STATUS_MARK, coverageFinding, flagNoAssertions, testBlocks, coverageFromFindings, idsInName, linkCriteria, neverCheckedLine, parseDoneList, parseTestCases, type Covered, type CoverageStatus, type Criterion, type TestCase } from './coverage.js';

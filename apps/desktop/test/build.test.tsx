@@ -397,6 +397,14 @@ describe('Build screen', () => {
     ]);
   });
 
+  it('shows why a line with a test is still not checked', () => {
+    const lines = doneList([{ check: 'done-list', level: 'warn', title: 't', detail: 'D1 – not checked: Sign in\n  ↳ test has no assertions\nD2 – not checked: Error', source: 'rule' }]);
+    expect(lines).toEqual([
+      { id: 'D1', text: 'Sign in', status: 'not-checked', reason: 'test has no assertions' },
+      { id: 'D2', text: 'Error', status: 'not-checked' },
+    ]);
+  });
+
   it('shows no done list for a build saved before coverage existed', async () => {
     const shell = fakeShell();
     render(<Build invoke={shell.invoke} makeChannel={shell.makeChannel} />);

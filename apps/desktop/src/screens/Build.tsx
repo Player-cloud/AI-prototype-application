@@ -507,6 +507,7 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
                 {doneList(result.findings)!.map((l) => (
                   <li key={l.id} className={l.status === 'tested' ? 'ok' : l.status === 'failed' ? 'bad' : 'note'}>
                     {DONE_MARK[l.status]} · {l.id}: {l.text}
+                    {l.reason ? <span className="muted"> ({l.reason})</span> : null}
                   </li>
                 ))}
               </ul>

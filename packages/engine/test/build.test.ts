@@ -344,6 +344,22 @@ describe('build_feature', () => {
     expect(ok.result.findings.at(-1)).toMatchObject({ check: 'done-list', level: 'pass', detail: 'D1 ✓ tested: A member can sign in' });
   });
 
+  it('a linked test with no assertion is not tested: the line is not checked, with the reason', async () => {
+    const settings = { dataFolder: data, codeFolders: { 'club-hr': code } };
+    const d = deps({ answers: [] }, true, { cases: [{ name: 'D1: a member can sign in', passed: true }] });
+    const real = d.runTests!;
+    d.runTests = async (dir) => {
+      await mkdir(join(dir, 'src'), { recursive: true });
+      await writeFile(join(dir, 'src', 'login.test.ts'), "it('D1: a member can sign in', async () => {\n  await signIn();\n});\n");
+      return real(dir);
+    };
+    const call = await plan(d, settings);
+    const r = await call('build_feature', { settings, slug: 'club-hr', feature: 'F-01', provider: 'claude', apiKey: FAKE_KEY, dbPath: join(root, 'history.sqlite') });
+    expect(r.result.findings.at(-1)).toMatchObject({ check: 'done-list', level: 'warn', detail: 'D1 – not checked: A member can sign in\n  ↳ test has no assertions' });
+    // Advice only: Keep is still allowed.
+    expect(r.result.keep.keep).toBe(true);
+  });
+
   it('a linked failing test blocks Keep, as the failing tests already do', async () => {
     const settings = { dataFolder: data, codeFolders: { 'club-hr': code } };
     const seen: Seen = { answers: [] };

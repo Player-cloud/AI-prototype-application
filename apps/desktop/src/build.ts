@@ -31,7 +31,7 @@ export function findingsAt(findings: Finding[], level: FindingLevel): Finding[] 
 }
 
 export type CoverageStatus = 'tested' | 'failed' | 'not-checked';
-export interface DoneLine { id: string; text: string; status: CoverageStatus }
+export interface DoneLine { id: string; text: string; status: CoverageStatus; reason?: string }
 
 /** The done-list lines out of a build's coverage finding. null for an old row or a feature with no lines. */
 export function doneList(findings: Finding[]): DoneLine[] | null {
@@ -39,6 +39,10 @@ export function doneList(findings: Finding[]): DoneLine[] | null {
   if (!f?.detail) return null;
   const out: DoneLine[] = [];
   for (const line of f.detail.split('\n')) {
+    if (line.startsWith('  ↳ ') && out.length) {
+      out[out.length - 1]!.reason = line.slice(4);
+      continue;
+    }
     const m = /^(D\d+) (✓ tested|✗ failed|– not checked): (.*)$/.exec(line);
     if (m) out.push({ id: m[1]!, text: m[3]!, status: m[2] === '✓ tested' ? 'tested' : m[2] === '✗ failed' ? 'failed' : 'not-checked' });
   }
