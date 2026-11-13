@@ -18,6 +18,7 @@ const DEFAULTS: AppSettings = {
   extraRules: [],
   codeFolders: {},
   maintenance: { patchUpdates: false },
+  simpleView: false,
   runCapGbp: 0.8,
 };
 

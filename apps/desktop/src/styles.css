@@ -42,6 +42,7 @@ body { margin: 0; min-height: 100vh; background: radial-gradient(circle at 20% 1
 
 .engine-badge { margin-top: auto; padding: 8px 12px; font-size: 0.85rem; color: #8fd9a8; }
 .engine-stopped { color: #f0b37e; }
+.rail-switch { display: flex; gap: 8px; align-items: center; padding: 4px 12px 8px; font-size: 0.85rem; color: var(--muted); cursor: pointer; }
 
 .panel { flex: 1; padding: 32px; min-width: 0; }
 .panel h1 { margin: 0 0 4px; font-size: 1.6rem; }

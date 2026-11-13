@@ -108,4 +108,10 @@ describe('data folder setting', () => {
     expect(() => checkSettings({ codeFolders: { 'club-hr': 'a\nb' } })).toThrow('Code folder for club-hr must be a folder path');
     expect(() => checkSettings({ codeFolders: [] })).toThrow('code folders must be an object');
   });
+
+  it('Simple view is off unless turned on, and must be on or off', () => {
+    expect(checkSettings({}).simpleView).toBe(false);
+    expect(checkSettings({ simpleView: true }).simpleView).toBe(true);
+    expect(() => checkSettings({ simpleView: 'yes' })).toThrow('Simple view must be on or off');
+  });
 });
