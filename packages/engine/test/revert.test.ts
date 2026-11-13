@@ -57,7 +57,14 @@ describe('Undo a kept build', () => {
   };
   const passing = async () => ({ name: 'tests', passed: true, free: true as const, detail: 'ok' });
   const revert = (id: number, runTests: (dir: string) => Promise<unknown> = passing) => call('run_revert', { settings, dbPath: db, id }, { runTests });
-  const status = (id: number) => RunLog.open(db).get(id)!.status;
+  const status = (id: number) => {
+    const log = RunLog.open(db);
+    try {
+      return log.get(id)!.status;
+    } finally {
+      log.close(); // Windows can't delete the folder while the file is open
+    }
+  };
   const commits = () => git(code, 'rev-list', 'HEAD').trim().split('\n');
 
   it('adds one revert commit, restores the files and keeps every earlier commit as it was', async () => {

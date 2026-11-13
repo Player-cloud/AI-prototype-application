@@ -150,7 +150,16 @@ describe('a maintenance run', () => {
     git(code, 'add', '.');
     git(code, 'commit', '-q', '-m', 'first');
   });
+  // Every history file a test opens is closed before the folder is removed: Windows can't delete an open file.
+  let opened: RunLog[] = [];
+  const runs = () => {
+    const l = RunLog.open(db);
+    opened.push(l);
+    return l;
+  };
   afterEach(async () => {
+    for (const l of opened) l.close();
+    opened = [];
     await rm(root, { recursive: true, force: true });
   });
 
@@ -165,7 +174,7 @@ describe('a maintenance run', () => {
     expect(branches()).toEqual(['main']);
     expect(head()).toBe(before);
     expect(await exists(join(root, 'club-hr-runs'))).toBe(false);
-    expect(RunLog.open(db).list()).toEqual([]);
+    expect(runs().list()).toEqual([]);
   });
 
   it('the engine method also does nothing when off', async () => {
@@ -202,7 +211,7 @@ describe('a maintenance run', () => {
     expect(git(code, 'branch', '--merged', 'main', '--format=%(refname:short)').trim().split('\n')).toContain('main');
 
     // the waiting item: a build-like row, its own branch with one commit, only the manifest and lock file changed
-    const run = RunLog.open(db).get(r.items[0]!.runId!)!;
+    const run = runs().get(r.items[0]!.runId!)!;
     expect(run).toMatchObject({ status: 'built', slug: 'club-hr', feature: 'Maintenance: tool-a 1.2.3 → 1.2.5', model: MAINTENANCE_MODEL, testsPassed: true, costUsd: 0, base: before });
     expect(run.branch).toMatch(/^aip\/maint-tool-a-20261112-100000$/);
     expect(await exists(run.path)).toBe(true);
@@ -221,13 +230,13 @@ describe('a maintenance run', () => {
     expect(git(code, 'rev-list', '--parents', '-n', '1', 'HEAD').trim().split(' ')).toHaveLength(3); // a merge commit
     expect(git(code, 'log', '-1', '--format=%s').trim()).toMatch(/^Keep Maintenance: tool-a 1\.2\.3 → 1\.2\.5 \(build aip\/maint-tool-a-/);
     expect(await readFile(join(code, 'package.json'), 'utf8')).toContain('"tool-a": "^1.2.5"');
-    expect(await exists(RunLog.open(db).get(id)!.path)).toBe(false);
+    expect(await exists(runs().get(id)!.path)).toBe(false);
 
     const undone = await revertKept(settings(), db, id, NOW);
     expect(undone.note).toContain('a new commit on main reverses it');
     expect(await readFile(join(code, 'package.json'), 'utf8')).toContain('"tool-a": "^1.2.3"');
     expect(git(code, 'merge-base', '--is-ancestor', before, 'HEAD')).toBe(''); // history was not rewritten
-    expect(RunLog.open(db).get(id)!.status).toBe('reverted');
+    expect(runs().get(id)!.status).toBe('reverted');
   });
 
   it('green with GitHub readable: the branch status must be green, and it is said so', async () => {
@@ -268,7 +277,7 @@ describe('a maintenance run', () => {
     expect(git(code, 'status', '--porcelain').trim()).toBe('');
     expect(await readFile(join(code, 'package.json'), 'utf8')).toContain('"tool-a": "^1.2.3"');
 
-    const run = RunLog.open(db).get(r.items[0]!.runId!)!;
+    const run = runs().get(r.items[0]!.runId!)!;
     expect(run).toMatchObject({ status: 'failed', cause: 'tool', model: MAINTENANCE_MODEL, feature: 'Maintenance: tool-a 1.2.3 → 1.2.5' });
     expect(run.error).toContain('The tests failed');
     expect(run.decidedAt).not.toBeNull(); // already cleaned: no Undo offered
@@ -324,8 +333,8 @@ describe('a maintenance run', () => {
     expect(by['tool-e']!.outcome).toBe('waiting');
     expect(by['tool-f']!.outcome).toBe('waiting');
     expect(installs).toHaveLength(2);
-    expect(git(code, 'show', `${RunLog.open(db).get(by['tool-e']!.runId!)!.branch}:package.json`)).toContain('"tool-e": "1.0.1"');
-    expect(git(code, 'show', `${RunLog.open(db).get(by['tool-e']!.runId!)!.branch}:package.json`)).toContain('"dep-x": "^2.0.0"');
+    expect(git(code, 'show', `${runs().get(by['tool-e']!.runId!)!.branch}:package.json`)).toContain('"tool-e": "1.0.1"');
+    expect(git(code, 'show', `${runs().get(by['tool-e']!.runId!)!.branch}:package.json`)).toContain('"dep-x": "^2.0.0"');
   });
 
   it(`does at most ${MAX_PER_RUN} updates per run and tells joshua the rest come next time`, async () => {
@@ -372,9 +381,9 @@ describe('a maintenance run', () => {
   it('never marks a maintenance item as a build model in habits or comparisons', async () => {
     const r = await runMaintenance(settings(), 'club-hr', db, opts());
     await keepRun(settings(), db, r.items[0]!.runId!, NOW);
-    const runs = RunLog.open(db).list();
-    expect(workflowStats(runs)).toEqual([]);
-    const many = Array.from({ length: 6 }, (_, i) => ({ ...runs[0]!, id: 100 + i }));
+    const all = runs().list();
+    expect(workflowStats(all)).toEqual([]);
+    const many = Array.from({ length: 6 }, (_, i) => ({ ...all[0]!, id: 100 + i }));
     expect(learnHabits(many, (m) => m)).toEqual([]);
   });
 });
