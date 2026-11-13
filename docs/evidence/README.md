@@ -23,6 +23,7 @@ Status words are exact (PRD NFR-06): passed, failed, skipped, blocked, not run, 
 | 2026-11-13 | [R2 trial](2026-11-13-r2-spike.md) | Packed engine runs on bundled Node 24 with no other Node, from a folder with a space. Installer estimate rises to about 180–200 MB (Agent SDK program). Licence check needed for the Agent SDK program. |
 | 2026-11-13 | [R3](2026-11-13-r3.md) | Bundled pnpm and MinGit used on Windows CI; Local only; data folder made from Settings with no terminal and no global git settings. 788 tests. No installer or click-through yet. |
 | 2026-11-13 | [R5 draft installers](2026-11-13-r5.md) | Unsigned .exe (170 MB) and .msi (249 MB) built on Windows CI; the .exe installed for the current user, the installed engine ran on the installed tools, and it uninstalled. No window opened, no signing. |
+| 2026-11-13 | [Click-through video](2026-11-13-click-through.md) | joshua's laptop, 76 s: engine running, key saved, Club HR, Build (F-01 kept), Tools, Capability Centre and Settings all opened. Not shown: how it was started, Test connection, a build, Undo. Found: the left menu scrolls out of view on long pages (V-1). |
 
 ## Known limits (quoted in the proposal)
 
