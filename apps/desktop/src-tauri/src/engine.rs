@@ -67,6 +67,11 @@ impl EngineHelper {
         Ok(Self { child, stdin: Arc::new(Mutex::new(stdin)), stdout, next_id: 1 })
     }
 
+    /// Whether the helper program is still running.
+    pub fn is_running(&mut self) -> bool {
+        matches!(self.child.try_wait(), Ok(None))
+    }
+
     /// Sends one request and waits for its reply line.
     pub fn request(&mut self, method: &str) -> Result<Value, String> {
         self.request_with(method, Value::Null)
