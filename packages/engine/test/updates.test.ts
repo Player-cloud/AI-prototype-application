@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { UpdateFound } from '@aip/checks';
 import { decideUpdate, mergeUpdates } from '@aip/memory';
-import { adoptCommand, checkUpdates, decideUpdateNow, rollbackCommand, type UpdateTester } from '../src/updates.ts';
+import { adoptCommand, checkUpdates, decideUpdateNow, INSTALLED_TEXT, rollbackCommand, sourceFolder, type UpdateTester } from '../src/updates.ts';
 import { checkSettings } from '../src/settings.ts';
 import { handleLine } from '../src/protocol.ts';
 
@@ -64,6 +64,21 @@ describe('look for updates, OK or no (CI-6)', () => {
   it('says so when everything is up to date, and needs a data folder', async () => {
     expect((await checkUpdates(checkSettings({ dataFolder: data }), { find: async () => [] })).summary).toBe('Everything is up to date. Nothing was installed. Cost: £0.00 ($0.00).');
     await expect(checkUpdates(checkSettings({}), { find: async () => [] })).rejects.toThrow(/^Set the data folder in Settings first/);
+  });
+
+  it('in an installed app (no source folder) says updates come with a new installer, and checks nothing', async () => {
+    const installed = await mkdtemp(join(tmpdir(), 'aip-installed-'));
+    try {
+      expect(sourceFolder(installed)).toBeNull();
+      await expect(checkUpdates(checkSettings({ dataFolder: data }), { appDir: installed })).rejects.toThrow(INSTALLED_TEXT);
+      expect(await readFile(join(data, 'updates.json'), 'utf8').catch(() => 'none')).toBe('none');
+    } finally {
+      await rm(installed, { recursive: true, force: true });
+    }
+  });
+
+  it('finds the source folder when the app runs from it', () => {
+    expect(sourceFolder()).not.toBeNull();
   });
 
   it('checks an installed update really worked, and gives the way back (CI-8)', async () => {

@@ -10,10 +10,12 @@ import { dirname, join } from 'node:path';
 import type { Environment } from '@aip/checks';
 import type { AppSettings } from './settings.ts';
 
-/** The app's own pins: the package manager and Node range from its package.json. */
+/** The app's own pins: the package manager and Node range from its package.json (source folder only; an installed app uses the defaults, which match toolchain.json). */
 async function appPins(): Promise<{ packageManager?: string; node?: string }> {
   try {
-    const pkg = JSON.parse(await readFile(new URL('../../../package.json', import.meta.url), 'utf8')) as { packageManager?: string; engines?: { node?: string } };
+    const pkg = JSON.parse(await readFile(new URL('../../../package.json', import.meta.url), 'utf8')) as { name?: string; packageManager?: string; engines?: { node?: string } };
+    // An installed app has no source folder: whatever package.json sits above it isn't the app's.
+    if (pkg.name !== 'ai-prototype-application') throw new Error('not the app');
     return { packageManager: pkg.packageManager, node: pkg.engines?.node };
   } catch {
     return { packageManager: 'pnpm@10', node: '>=22' };
