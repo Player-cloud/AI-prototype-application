@@ -151,6 +151,16 @@ describe('making a new code folder', () => {
       if (args[0] === 'commit') throw new Error('Author identity unknown\n*** Please tell me who you are.');
       return git(cwd, ...args);
     };
-    await expect(createCodeFolder(join(root, 'n'), 'X', noName)).rejects.toThrow('Git doesn’t know your name and email yet');
+    await expect(createCodeFolder(join(root, 'n'), 'X', noName)).rejects.toThrow('Enter them in Settings');
+  });
+
+  it('sets the name and email from Settings for that folder only, so no terminal is needed', async () => {
+    const folder = join(root, 'named');
+    // Plain git, with no name from the command line or the test machine's global settings.
+    const plain = async (args: string[], cwd: string) =>
+      execFileSync('git', ['-c', 'commit.gpgsign=false', ...args], { cwd, encoding: 'utf8', env: { ...process.env, GIT_CONFIG_GLOBAL: join(root, 'no-global'), GIT_CONFIG_NOSYSTEM: '1' } });
+    await createCodeFolder(folder, 'X', plain, { name: 'Sam Evaluator', email: 'sam@example.com' });
+    expect(git(folder, 'config', '--local', 'user.name').trim()).toBe('Sam Evaluator');
+    expect(git(folder, 'log', '--format=%an <%ae>').trim()).toBe('Sam Evaluator <sam@example.com>');
   });
 });

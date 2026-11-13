@@ -66,6 +66,9 @@
  *  - code_folder_create: {settings, slug, path} -> makes a new empty git repo there (branch main, a
  *    README and a .gitignore that keeps keys out, one first commit) when the folder is empty or
  *    missing. Never pushes. Then joshua saves it as the project's code folder.
+ *  - data_create: {settings, path} -> R3: makes a new data folder there (starter ledger, rules, habits,
+ *    tool cards; a git folder with the name and email from Settings; one first commit) when the
+ *    folder is empty or missing. Never pushes: it is Local only until a remote is added.
  *  - code_folder_check: {settings, slug} -> checks the project's code folder on this computer (a git
  *    repo with a commit) and lists its feature runs (worktrees on aip/ branches).
  *  - build_feature: {settings, slug, feature, provider, apiKey, dbPath} -> builds one feature in its own
@@ -160,7 +163,8 @@ import { interviewForReview, recordReview } from './projects.ts';
 import { confirm, getInterview, interviewStages, listProjects, saveAnswers, startInterview } from './projects.ts';
 import { MAX_CALL_USD, readBudget, recordSpend } from './budget.ts';
 import { gate, listRules } from './gate.ts';
-import { checkCodeFolder, codeFolderOf, createCodeFolder } from './runs.ts';
+import { checkCodeFolder, codeFolderOf, createCodeFolder, identityOf } from './runs.ts';
+import { createDataFolder } from './data-create.ts';
 import { buildFeature } from './build.ts';
 import { environmentCheck } from './environment.ts';
 import { runFreeTests } from './evals.ts';
@@ -523,6 +527,10 @@ const HANDLERS: Record<string, Handler> = {
         : '';
     return { ...r, modelName: await deps.modelName(r.model), costText: cost, phone };
   },
+  data_create: (params) => {
+    const p = obj(params);
+    return createDataFolder(checkSettings(p.settings), str(p, 'path'));
+  },
   code_folder_check: (params) => {
     const p = obj(params);
     const settings = checkSettings(p.settings);
@@ -533,7 +541,7 @@ const HANDLERS: Record<string, Handler> = {
     const settings = checkSettings(p.settings);
     const slug = str(p, 'slug');
     const name = (await getInterview(settings, slug)).interview.name || slug;
-    return createCodeFolder(str(p, 'path').trim(), name);
+    return createCodeFolder(str(p, 'path').trim(), name, undefined, identityOf(settings));
   },
   history_list: (params) => historyList(str(obj(params), 'dbPath')),
   undo: async (params, deps) => {

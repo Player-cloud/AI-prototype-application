@@ -19,6 +19,8 @@ const DEFAULTS: AppSettings = {
   codeFolders: {},
   maintenance: { patchUpdates: false },
   simpleView: false,
+  gitName: '',
+  gitEmail: '',
   runCapGbp: 0.8,
 };
 
@@ -26,8 +28,14 @@ const DEFAULTS: AppSettings = {
 function fakeShell(start: AppSettings = DEFAULTS) {
   let stored = start;
   const saves: AppSettings[] = [];
+  const created: unknown[] = [];
   const invoke: Invoke = routeEngine(async <T,>(cmd: string, args?: Record<string, unknown>) => {
     if (cmd === 'settings_check') return stored as T;
+    if (cmd === 'data_create') {
+      if (!stored.gitName) throw 'Enter “Your name” and “Your email” in Settings and save them first';
+      created.push(args);
+      return { folder: String(args?.path), summary: `Made a new data folder at ${String(args?.path)}, saved on this computer only (GitHub sync is off). Press Save to use it.` } as T;
+    }
     if (cmd === 'spend_summary') return spend(stored) as T;
     if (cmd === 'settings_save') {
       const s = args?.settings as AppSettings;
@@ -38,7 +46,7 @@ function fakeShell(start: AppSettings = DEFAULTS) {
     }
     throw `unexpected ${cmd}`;
   });
-  return { invoke, saves };
+  return { invoke, saves, created };
 }
 
 const spend = (s: AppSettings) => ({
@@ -93,6 +101,31 @@ describe('Budget and models', () => {
     save();
     await waitFor(() => expect(shell.saves).toHaveLength(1));
     expect(shell.saves[0]!.dataFolder).toBe('D:\\data');
+  });
+
+  it('creates a new data folder with no terminal: saves the name and email, makes it, then uses it', async () => {
+    const shell = fakeShell();
+    render(<BudgetModels invoke={shell.invoke} />);
+    const create = (await screen.findByRole('button', { name: 'Create a new data folder here' })) as HTMLButtonElement;
+    expect(create.disabled).toBe(true); // no path typed yet
+    fireEvent.change(screen.getByLabelText('Your name'), { target: { value: ' Sam Evaluator ' } });
+    fireEvent.change(screen.getByLabelText('Your email'), { target: { value: 'sam@example.com' } });
+    fireEvent.change(screen.getByLabelText('Data folder'), { target: { value: 'C:\\Users\\sam\\AI data' } });
+    fireEvent.click(create);
+    expect(await screen.findByText(/Made a new data folder at C:\\Users\\sam\\AI data.*It’s now your data folder\./)).toBeTruthy();
+    expect(shell.created).toEqual([expect.objectContaining({ path: 'C:\\Users\\sam\\AI data' })]);
+    expect(shell.saves[0]).toMatchObject({ gitName: 'Sam Evaluator', gitEmail: 'sam@example.com', dataFolder: '' });
+    expect(shell.saves.at(-1)).toMatchObject({ gitName: 'Sam Evaluator', dataFolder: 'C:\\Users\\sam\\AI data' });
+    expect(((screen.getByLabelText('Data folder')) as HTMLInputElement).value).toBe('C:\\Users\\sam\\AI data');
+  });
+
+  it('says what is missing when the name and email are not entered', async () => {
+    const shell = fakeShell();
+    render(<BudgetModels invoke={shell.invoke} />);
+    fireEvent.change(await screen.findByLabelText('Data folder'), { target: { value: '/home/sam/data' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create a new data folder here' }));
+    expect((await screen.findByRole('alert')).textContent).toContain('Enter “Your name” and “Your email”');
+    expect(shell.created).toEqual([]);
   });
 
   it('shows the plain reason when a value is refused, and keeps what was typed', async () => {

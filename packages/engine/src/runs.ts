@@ -25,6 +25,26 @@ export interface StartedRun extends RunInfo { base: string }
 
 const FEATURE_ID = /^F-\d{2,3}$/;
 
+/** The name and email for the app's commits (from Settings); empty when not set. */
+export interface Identity { name: string; email: string }
+
+export const identityOf = (settings: AppSettings): Identity | undefined =>
+  settings.gitName && settings.gitEmail ? { name: settings.gitName, email: settings.gitEmail } : undefined;
+
+/**
+ * Sets the commit name and email for this one folder (its own .git/config, which its build copies
+ * share), so no `git config --global` is needed. Does nothing when Settings has none.
+ */
+export async function setIdentity(folder: string, identity: Identity | undefined, g: Git): Promise<void> {
+  if (!identity) return;
+  await g(['config', 'user.name', identity.name], folder);
+  await g(['config', 'user.email', identity.email], folder);
+}
+
+/** The plain message when git has no name and email for a commit. */
+export const NO_IDENTITY = 'Git doesn’t know your name and email yet, so it can’t save a commit. Enter them in Settings (“Your name” and “Your email”) and try again.';
+export const isIdentityError = (msg: string) => /user\.(name|email)|Please tell me who you are|identity/i.test(msg);
+
 async function defaultGit(): Promise<Git> {
   return (await import('@aip/memory')).realGit;
 }
@@ -91,7 +111,7 @@ const GITIGNORE = ['node_modules/', 'dist/', '.next/', '*.log', '', '# Keys neve
  * (README and a .gitignore that keeps keys out), so joshua doesn't have to clone anything first.
  * Only an empty or missing folder is used; anything else is left alone. Nothing is pushed.
  */
-export async function createCodeFolder(folder: string, name: string, git?: Git): Promise<CodeFolderStatus> {
+export async function createCodeFolder(folder: string, name: string, git?: Git, identity?: Identity): Promise<CodeFolderStatus> {
   const g = git ?? (await defaultGit());
   if (!folder.trim() || !resolve(folder)) throw new Error('Type the folder path first.');
   let entries: string[] = [];
@@ -105,6 +125,7 @@ export async function createCodeFolder(folder: string, name: string, git?: Git):
   if (entries.length) throw new Error(`${folder} isn’t empty, so nothing was changed. Pick a new folder, or a repo you’ve already cloned and press Save.`);
   await mkdir(folder, { recursive: true });
   await g(['init', '-q', '-b', 'main'], folder);
+  await setIdentity(folder, identity, g);
   await writeFile(join(folder, 'README.md'), `# ${name}\n\nBuilt with AI Prototype, one feature at a time.\n`, 'utf8');
   await writeFile(join(folder, '.gitignore'), GITIGNORE, 'utf8');
   await g(['add', '-A'], folder);
@@ -112,9 +133,7 @@ export async function createCodeFolder(folder: string, name: string, git?: Git):
     await g(['commit', '-q', '-m', `Start ${name}`], folder);
   } catch (err) {
     const msg = (err as Error).message;
-    if (/user\.(name|email)|Please tell me who you are|identity/i.test(msg)) {
-      throw new Error('Git doesn’t know your name and email yet, so it can’t make the first commit. Run: git config --global user.name "Your Name" and git config --global user.email "you@example.com", then try again.');
-    }
+    if (isIdentityError(msg)) throw new Error(NO_IDENTITY);
     throw new Error(`Couldn’t make the first commit: ${msg.split('\n')[0]}`);
   }
   return checkCodeFolder(folder, g);
