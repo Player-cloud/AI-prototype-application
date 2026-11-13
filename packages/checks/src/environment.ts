@@ -120,7 +120,7 @@ export async function checkEnvironment(opts: EnvOptions = {}): Promise<Environme
     checks.push(
       user && email
         ? { name: 'git name for commits', ok: true, detail: `Set (commits show “${user}”).` }
-        : { name: 'git name for commits', ok: false, detail: 'Not set. Run git config --global user.name "Your Name" and user.email once.' },
+        : { name: 'git name for commits', ok: false, detail: 'Not set for this computer. Enter “Your name” and “Your email” in Settings; the app sets them for its own folders.' },
     );
   }
 

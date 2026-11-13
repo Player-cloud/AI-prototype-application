@@ -114,4 +114,13 @@ describe('data folder setting', () => {
     expect(checkSettings({ simpleView: true }).simpleView).toBe(true);
     expect(() => checkSettings({ simpleView: 'yes' })).toThrow('Simple view must be on or off');
   });
+
+  it('keeps the name and email for commits, and refuses odd ones', () => {
+    expect(checkSettings({})).toMatchObject({ gitName: '', gitEmail: '' });
+    expect(checkSettings({ gitName: '  Sam Evaluator ', gitEmail: 'sam@example.com' })).toMatchObject({ gitName: 'Sam Evaluator', gitEmail: 'sam@example.com' });
+    expect(() => checkSettings({ gitEmail: 'not an email' })).toThrow('doesn’t look like an email address');
+    expect(() => checkSettings({ gitName: 'two\nlines' })).toThrow('one line');
+    expect(() => checkSettings({ gitName: 'a <b>' })).toThrow('no < or >');
+  });
 });
+

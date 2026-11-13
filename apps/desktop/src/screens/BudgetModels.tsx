@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import type { Invoke } from '../engine';
+import { engine, type Invoke } from '../engine';
 import {
   dollarsFor,
   getSettings,
@@ -34,6 +34,8 @@ interface Draft {
   models: Record<Other, { strong: string; everyday: string }>;
   prices: Record<string, { input: string; output: string }>;
   dataFolder: string;
+  gitName: string;
+  gitEmail: string;
 }
 
 function toDraft(s: AppSettings): Draft {
@@ -43,6 +45,8 @@ function toDraft(s: AppSettings): Draft {
     runCap: String(s.runCapGbp ?? 0.8),
     rate: String(s.gbpPerUsd),
     dataFolder: s.dataFolder,
+    gitName: s.gitName ?? '',
+    gitEmail: s.gitEmail ?? '',
     models: { openai: { ...s.models.openai }, deepseek: { ...s.models.deepseek } },
     prices: Object.fromEntries(
       Object.entries(s.prices).map(([m, p]) => [m, { input: String(p.inputPerM), output: String(p.outputPerM) }]),
@@ -62,6 +66,8 @@ function fromDraft(d: Draft): Omit<AppSettings, 'extraRules' | 'codeFolders' | '
     runCapGbp: toNumber(d.runCap),
     gbpPerUsd: toNumber(d.rate),
     dataFolder: d.dataFolder.trim(),
+    gitName: d.gitName.trim(),
+    gitEmail: d.gitEmail.trim(),
     models: {
       openai: { strong: d.models.openai.strong.trim(), everyday: d.models.openai.everyday.trim() },
       deepseek: { strong: d.models.deepseek.strong.trim(), everyday: d.models.deepseek.everyday.trim() },
@@ -127,6 +133,26 @@ export function BudgetModels({ invoke, onSaved, reload = 0 }: { invoke: Invoke; 
     }
   }
 
+  /** R3: makes a new data folder at the typed path, with no terminal and no GitHub, then uses it. */
+  async function onCreateData() {
+    if (!draft) return;
+    setBusy(true);
+    try {
+      // The engine reads the name and email from the saved settings, so save those first.
+      await saveSome(invoke, { gitName: draft.gitName.trim(), gitEmail: draft.gitEmail.trim() });
+      const made = await engine<{ folder: string; summary: string }>(invoke, 'data_create', { path: draft.dataFolder.trim() });
+      const saved = await saveSome(invoke, { dataFolder: made.folder });
+      setDraft(toDraft(saved));
+      setNote({ text: made.summary.replace(' Press Save to use it.', ' It’s now your data folder.'), bad: false });
+      onSaved?.();
+    } catch (err) {
+      // The shell sends engine errors as plain text, not Error objects.
+      setNote({ text: err instanceof Error ? err.message : String(err), bad: true });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const rate = toNumber(draft.rate);
   return (
     <form className="budget-form" onSubmit={onSave} aria-label="Budget and models">
@@ -161,6 +187,16 @@ export function BudgetModels({ invoke, onSaved, reload = 0 }: { invoke: Invoke; 
       <p className="hint">Used to show every cost in £ and $. 0.79 is a starting guess; set today’s rate.</p>
 
       <div className="field">
+        <label htmlFor="git-name">Your name</label>
+        <input id="git-name" autoComplete="name" value={draft.gitName} onChange={(e) => set({ gitName: e.target.value })} />
+      </div>
+      <div className="field">
+        <label htmlFor="git-email">Your email</label>
+        <input id="git-email" type="email" autoComplete="email" value={draft.gitEmail} onChange={(e) => set({ gitEmail: e.target.value })} />
+      </div>
+      <p className="hint">Every change the app saves (data folder, code, builds) is signed with these, set for the app’s own folders only. They stay on this computer.</p>
+
+      <div className="field">
         <label htmlFor="data-folder">Data folder</label>
         <input
           id="data-folder"
@@ -170,7 +206,10 @@ export function BudgetModels({ invoke, onSaved, reload = 0 }: { invoke: Invoke; 
           onChange={(e) => set({ dataFolder: e.target.value })}
         />
       </div>
-      <p className="hint">Where your private ai-prototype-data repo is cloned. The Tools page reads it.</p>
+      <button type="button" disabled={busy || !draft.dataFolder.trim()} onClick={() => void onCreateData()}>
+        Create a new data folder here
+      </button>
+      <p className="hint">Where the app keeps what it learns. New here? Type an empty folder’s path and press Create: it works on this computer with no GitHub. Already have one? Type its path and press Save.</p>
 
       <h3>Models</h3>
       <p className="hint">Claude follows the fixed rule: Opus plans and reviews, Sonnet builds, Haiku reads and tests.</p>

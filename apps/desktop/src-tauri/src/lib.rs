@@ -143,7 +143,7 @@ async fn settings_save(
 /// else is refused. Only plain pass-throughs belong here. Nothing that touches keys, writes the
 /// settings, spends money or runs a build (those keep their own commands), and nothing the phone
 /// path uses on its own.
-const ENGINE_METHODS: [&str; 39] = [
+const ENGINE_METHODS: [&str; 40] = [
     "spend_summary",
     "gate_rules",
     "settings_check",
@@ -178,6 +178,7 @@ const ENGINE_METHODS: [&str; 39] = [
     "interview_confirm",
     "code_folder_check",
     "code_folder_create",
+    "data_create",
     "run_revert",
     "decisions_get",
     "decision_add",
@@ -514,7 +515,7 @@ mod tests {
         for m in old {
             assert_eq!(engine_method(m), Ok(m), "{m} was lost");
         }
-        assert_eq!(old.len() + 6, ENGINE_METHODS.len(), "only run_revert, the four decisions methods and maintenance_run were added since");
+        assert_eq!(old.len() + 7, ENGINE_METHODS.len(), "only run_revert, the four decisions methods, maintenance_run and data_create were added since");
     }
 
     #[test]

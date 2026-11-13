@@ -13,7 +13,7 @@ export interface AppSettings {
   gbpPerUsd: number;
   models: { openai: ModelChoice; deepseek: ModelChoice };
   prices: Record<string, Price>;
-  /** Folder where ai-prototype-data is cloned on this computer. '' = not set. */
+  /** The data folder on this computer (made by the app, or a clone of an existing one). '' = not set. */
   dataFolder: string;
   /** joshua's own ask-first rules. */
   extraRules: ExtraRule[];
@@ -25,6 +25,9 @@ export interface AppSettings {
   maintenance: { patchUpdates: boolean };
   /** Simple view: the rail shows only Projects, Build and Settings. */
   simpleView: boolean;
+  /** The name and email the app's own commits carry, set for its folders only. '' = not set. */
+  gitName: string;
+  gitEmail: string;
 }
 
 export interface ExtraRule { match: string; reason: string }

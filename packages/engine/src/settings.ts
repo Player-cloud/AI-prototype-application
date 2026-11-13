@@ -32,6 +32,12 @@ export interface AppSettings {
   maintenance: { patchUpdates: boolean };
   /** Simple view: the rail shows only Projects, Build and Settings (for demos and evaluators). Off by default. */
   simpleView: boolean;
+  /**
+   * The name and email the app's own commits carry (data folder, new code folders, builds), set
+   * for those folders only, so no `git config --global` in a terminal is needed. '' = not set.
+   */
+  gitName: string;
+  gitEmail: string;
 }
 
 export interface ExtraRule { match: string; reason: string }
@@ -54,6 +60,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   codeFolders: {},
   maintenance: { patchUpdates: false },
   simpleView: false,
+  gitName: '',
+  gitEmail: '',
   runCapGbp: 0.8,
 };
 
@@ -139,6 +147,25 @@ function choice(v: unknown, fallback: ModelChoice, label: string): ModelChoice {
   };
 }
 
+/** Your name for commits: one line, up to 100 characters. */
+function gitName(v: unknown): string {
+  if (v === undefined) return '';
+  if (typeof v !== 'string') throw new Error('Your name must be text');
+  const t = v.trim();
+  if (t.length > 100 || /[\r\n<>]/.test(t)) throw new Error('Your name must be one line, up to 100 characters, with no < or >');
+  return t;
+}
+
+/** Your email for commits: '' or something@something. */
+function gitEmail(v: unknown): string {
+  if (v === undefined) return '';
+  if (typeof v !== 'string') throw new Error('Your email must be text');
+  const t = v.trim();
+  if (t !== '' && !/^[^\s@<>]+@[^\s@<>]+$/.test(t)) throw new Error('Your email doesn’t look like an email address');
+  if (t.length > 200) throw new Error('Your email is too long');
+  return t;
+}
+
 /**
  * Fills in anything missing with the defaults and checks the rest. Throws a plain-words error on a
  * bad value, so Settings can show what to fix. `{}` (no file yet) gives the defaults.
@@ -177,6 +204,8 @@ export function checkSettings(raw: unknown): AppSettings {
     codeFolders: codeFolders(raw.codeFolders),
     maintenance: maintenance(raw.maintenance),
     simpleView: flag(raw.simpleView, 'Simple view'),
+    gitName: gitName(raw.gitName),
+    gitEmail: gitEmail(raw.gitEmail),
     runCapGbp: raw.runCapGbp === undefined ? d.runCapGbp : num(raw.runCapGbp, 'Cost limit per build run (£)', 0.05, 50),
     monthlyBudgetGbp: raw.monthlyBudgetGbp === undefined ? d.monthlyBudgetGbp : num(raw.monthlyBudgetGbp, 'Monthly budget (£)', 0, 10000),
     gbpPerUsd: raw.gbpPerUsd === undefined ? d.gbpPerUsd : num(raw.gbpPerUsd, '£ per $ rate', 0.1, 5),
