@@ -580,8 +580,20 @@ describe('Build screen', () => {
     const keep = (await screen.findByRole('button', { name: 'Keep F-02' })) as HTMLButtonElement;
     expect(keep.disabled).toBe(true);
     fireEvent.click(screen.getByRole('button', { name: 'Undo F-02' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Yes, undo F-02' }));
     expect((await screen.findByRole('status')).textContent).toBe('Undone: F-02’s build was removed. Your copy wasn’t touched. Closed issue #12 on your phone.');
     expect(screen.queryByRole('group', { name: /Rate F-02/ })).toBeNull();
+  });
+
+  it('asks before Undo removes a build, and No changes nothing', async () => {
+    const shell = fakeShell({ runs: [{ ...WAITING }] });
+    render(<Build invoke={shell.invoke} makeChannel={shell.makeChannel} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Undo F-02' }));
+    expect(screen.getByRole('group', { name: /Confirm undoing F-02/ }).textContent).toContain('can’t be brought back');
+    fireEvent.click(screen.getByRole('button', { name: 'No, don’t undo F-02' }));
+    expect(screen.queryByRole('group', { name: /Confirm undoing F-02/ })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Undo F-02' })).toBeTruthy();
+    expect(screen.queryByRole('status')).toBeNull();
   });
 
   it('stops a running build', async () => {

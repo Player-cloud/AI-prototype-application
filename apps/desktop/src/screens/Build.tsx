@@ -295,6 +295,8 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
   }
 
   const [confirmRevert, setConfirmRevert] = useState<number | null>(null);
+  // Undo deletes the build's copy and branch, which can't be brought back, so it asks first.
+  const [confirmUndo, setConfirmUndo] = useState<number | null>(null);
 
   async function act(label: string, job: () => Promise<{ text: string; learned: string[] }>) {
     if (!invoke) return;
@@ -584,9 +586,31 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
                     <button type="button" disabled={busy || running || !keepable(r)} onClick={() => void decide(r, true)} aria-label={`Keep ${r.feature}`}>
                       Keep
                     </button>
-                    <button type="button" disabled={busy || running} onClick={() => void decide(r, false)} aria-label={`Undo ${r.feature}`}>
-                      Undo
-                    </button>
+                    {confirmUndo === r.id ? (
+                      <>
+                        <span role="group" aria-label={`Confirm undoing ${r.feature} build ${r.id}`}>
+                          Undo removes this build’s copy and branch. It can’t be brought back. Sure?
+                        </span>
+                        <button
+                          type="button"
+                          disabled={busy || running}
+                          onClick={() => {
+                            setConfirmUndo(null);
+                            void decide(r, false);
+                          }}
+                          aria-label={`Yes, undo ${r.feature}`}
+                        >
+                          Yes, undo
+                        </button>
+                        <button type="button" disabled={busy} onClick={() => setConfirmUndo(null)} aria-label={`No, don’t undo ${r.feature}`}>
+                          No
+                        </button>
+                      </>
+                    ) : (
+                      <button type="button" disabled={busy || running} onClick={() => setConfirmUndo(r.id)} aria-label={`Undo ${r.feature}`}>
+                        Undo
+                      </button>
+                    )}
                   </span>
                 )}
                 {r.status === 'kept' && (
