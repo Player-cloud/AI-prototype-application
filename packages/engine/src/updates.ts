@@ -9,6 +9,8 @@
  * really worked, and every installed update shows the command that puts the old version back.
  * Running that command is still joshua's job; the next look-up notices and marks it rolled back.
  */
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { UpdateFound } from '@aip/checks';
 import type { UpdateCheck, UpdateRecord } from '@aip/memory';
@@ -26,6 +28,16 @@ export interface UpdateRow extends UpdateRecord {
 export interface UpdatesReport { updates: UpdateRow[]; summary: string; synced: string }
 
 const APP_DIR = fileURLToPath(new URL('../../../', import.meta.url));
+
+/**
+ * The app's source folder (the monorepo), or null in an installed app: there the engine sits in
+ * <app>/engine and the app's own packages update with a new installer, not with `pnpm update`.
+ */
+export function sourceFolder(dir = APP_DIR): string | null {
+  return existsSync(join(dir, 'pnpm-workspace.yaml')) && existsSync(join(dir, 'packages', 'engine')) ? dir : null;
+}
+
+export const INSTALLED_TEXT = 'This is an installed copy of the app: its own packages update with a new installer, so “Look for updates” only works in the app’s source folder. Nothing was checked.';
 
 /** The command that adopts one OK'd update, for joshua to run himself. */
 export function adoptCommand(u: Pick<UpdateRecord, 'package' | 'to' | 'usedBy'>): string {
@@ -116,12 +128,14 @@ async function save(settings: AppSettings, updates: UpdateRecord[], message: str
 }
 
 /** Settings → Tools → Look for updates. Free; installs nothing. */
-export async function checkUpdates(settings: AppSettings, opts: { now?: Date; find?: () => Promise<UpdateFound[]>; test?: UpdateTester } = {}): Promise<UpdatesReport> {
+export async function checkUpdates(settings: AppSettings, opts: { now?: Date; find?: () => Promise<UpdateFound[]>; test?: UpdateTester; appDir?: string } = {}): Promise<UpdatesReport> {
   if (!settings.dataFolder) throw new Error('Set the data folder in Settings first: updates found are kept there.');
+  const source = opts.find ? APP_DIR : sourceFolder(opts.appDir);
+  if (!source) throw new Error(INSTALLED_TEXT);
   const c = await import('@aip/checks');
   const m = await import('@aip/memory');
   const now = opts.now ?? new Date();
-  const found = await (opts.find ?? (() => c.findUpdates(APP_DIR)))();
+  const found = await (opts.find ?? (() => c.findUpdates(source)))();
   const before = await m.readUpdates(settings.dataFolder);
   // A package no longer listed as out of date has reached at least the newest version on record.
   const installed: Record<string, string> = {};
