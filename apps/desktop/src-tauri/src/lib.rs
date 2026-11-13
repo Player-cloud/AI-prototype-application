@@ -560,7 +560,7 @@ mod tests {
     /// A stand-in helper that answers one request and then exits, like a crash after the reply.
     fn one_shot() -> engine::HelperCommand {
         let script = r#"require('readline').createInterface({input:process.stdin}).once('line',l=>{const r=JSON.parse(l);process.stdout.write(JSON.stringify({id:r.id,result:{ok:true}})+'\n');setTimeout(()=>process.exit(0),10)})"#;
-        engine::HelperCommand { program: "node".into(), args: vec!["-e".into(), script.into()], path_first: None }
+        engine::HelperCommand { program: "node".into(), args: vec!["-e".into(), script.into()], path_first: vec![] }
     }
 
     #[test]
@@ -582,7 +582,7 @@ mod tests {
 
     #[test]
     fn a_missing_engine_program_still_gives_a_plain_reason() {
-        let cmd = engine::HelperCommand { program: "aip-no-such-program".into(), args: vec![], path_first: None };
+        let cmd = engine::HelperCommand { program: "aip-no-such-program".into(), args: vec![], path_first: vec![] };
         let mut slot: Result<EngineHelper, String> = Err("not started".into());
         let err = call_with_restart(&mut slot, &cmd, "ping", serde_json::Value::Null).unwrap_err();
         assert!(err.starts_with("engine not running: could not start"), "{err}");
