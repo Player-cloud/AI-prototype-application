@@ -120,7 +120,9 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
   const [map, setMap] = useState<Record<string, MapFeature>>({});
   const lastReload = useRef(0);
   const [decisions, setDecisions] = useState<Decisions | null>(null);
-  const [sure, setSure] = useState(false);
+  // "Build it anyway?" belongs to one project and feature. Keeping which one in the state (not
+  // clearing it from an effect) means a late effect can't undo a click that just asked.
+  const [sureFor, setSureFor] = useState<string | null>(null);
 
   useEffect(() => {
     if (!invoke) return;
@@ -190,8 +192,6 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
     };
   }, [invoke, slug]);
 
-  useEffect(() => setSure(false), [slug, feature]);
-
   // CI-4: the comparison follows the builds (new, kept, undone or rated). It's advice, so a failure is quiet.
   useEffect(() => {
     if (!invoke || !runsKey) return;
@@ -225,6 +225,8 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
   }
 
   const blockers = openBlockersFor(decisions, feature);
+  const sureKey = `${slug}/${feature}`;
+  const sure = sureFor === sureKey;
 
   async function onBuild() {
     if (!invoke || !makeChannel) return;
@@ -392,7 +394,7 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
       {projects && projects.length > 0 && (
         <div className="key-controls">
           <label htmlFor="build-project">Project</label>
-          <select id="build-project" value={slug} disabled={running} onChange={(e) => setSlug(e.target.value)}>
+          <select id="build-project" value={slug} disabled={running} onChange={(e) => { setSureFor(null); setSlug(e.target.value); }}>
             {projects.map((p) => (
               <option key={p.slug} value={p.slug}>
                 {p.name}
@@ -400,7 +402,7 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
             ))}
           </select>
           <label htmlFor="build-feature">Feature</label>
-          <select id="build-feature" value={feature} disabled={running} onChange={(e) => setFeature(e.target.value)}>
+          <select id="build-feature" value={feature} disabled={running} onChange={(e) => { setSureFor(null); setFeature(e.target.value); }}>
             {features.map((f) => (
               <option key={f.id} value={f.id}>
                 {f.id} {f.name}
@@ -412,7 +414,7 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
               Stop
             </button>
           ) : (
-            <button type="button" disabled={!slug || !feature} onClick={() => (blockers.length > 0 ? setSure(true) : void onBuild())}>
+            <button type="button" disabled={!slug || !feature} onClick={() => (blockers.length > 0 ? setSureFor(sureKey) : void onBuild())}>
               Build {feature} (costs up to {limit})
             </button>
           )}
@@ -431,10 +433,10 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
           {sure && (
             <p className="key-controls">
               Something is blocking {feature}. Build it anyway?{' '}
-              <button type="button" onClick={() => { setSure(false); void onBuild(); }}>
+              <button type="button" onClick={() => { setSureFor(null); void onBuild(); }}>
                 Yes, build anyway
               </button>
-              <button type="button" onClick={() => setSure(false)}>
+              <button type="button" onClick={() => setSureFor(null)}>
                 No
               </button>
             </p>
