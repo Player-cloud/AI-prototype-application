@@ -1,0 +1,98 @@
+name: installer-draft
+
+# Stage R5: builds UNSIGNED DRAFT Windows installers (.exe and .msi) with the engine, Node, pnpm and
+# git inside, installs the .exe on the runner, checks the installed engine, and uninstalls it.
+# The installers are kept as a workflow artifact for 7 days, visible only to people who can see this
+# private repo. Nothing is signed, published, released or sent anywhere else.
+# Runs by hand (Actions > installer-draft > Run workflow), and on pull requests that change how the
+# installer is made. Windows minutes count double, so it doesn't run on every change.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/installer-draft.yml'
+      - 'apps/desktop/src-tauri/tauri.conf.json'
+      - 'apps/desktop/src-tauri/tauri.bundle.conf.json'
+      - 'scripts/bundle-engine.mjs'
+      - 'scripts/smoke-bundle.mjs'
+      - 'toolchain.json'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: installer-draft-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+
+      - name: Pack the engine, Node, pnpm and git (toolchain.json, SHA-256 checked)
+        run: node scripts/bundle-engine.mjs
+
+      - name: Build the installers (unsigned)
+        working-directory: apps/desktop
+        run: pnpm tauri build --bundles nsis,msi --config src-tauri/tauri.bundle.conf.json
+
+      - name: List the installers, their sizes and SHA-256
+        shell: pwsh
+        run: |
+          $out = New-Item -ItemType Directory -Force -Path draft
+          $files = Get-ChildItem apps/desktop/src-tauri/target/release/bundle -Recurse -Include *.exe,*.msi
+          if ($files.Count -lt 2) { throw "Expected an .exe and an .msi, found $($files.Count)" }
+          $lines = foreach ($f in $files) {
+            Copy-Item $f.FullName $out
+            $h = (Get-FileHash $f.FullName -Algorithm SHA256).Hash.ToLower()
+            "{0}  {1}  ({2:N1} MB)" -f $h, $f.Name, ($f.Length / 1MB)
+          }
+          $lines | Tee-Object -FilePath draft/SHA256SUMS.txt
+          "UNSIGNED DRAFT built by CI from $env:GITHUB_SHA on $(Get-Date -Format u). Not for anyone outside the project. Windows will warn that the publisher is unknown." | Set-Content draft/README.txt
+
+      - name: Install the .exe silently, as a user without admin rights would
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem draft -Filter *-setup.exe | Select-Object -First 1
+          if (-not $exe) { $exe = Get-ChildItem draft -Filter *.exe | Select-Object -First 1 }
+          Start-Process -FilePath $exe.FullName -ArgumentList '/S' -Wait
+          $dir = Join-Path $env:LOCALAPPDATA 'AI Prototype'
+          if (-not (Test-Path $dir)) { throw "Not installed at $dir" }
+          Get-ChildItem $dir | Format-Table Name, Length
+          foreach ($p in 'engine/dist/helper.js', 'engine/starter-data/ledger.md', 'node/node.exe', 'node/pnpm.cmd', 'pnpm/bin/pnpm.cjs', 'git/cmd/git.exe') {
+            if (-not (Test-Path (Join-Path $dir $p))) { throw "Missing after install: $p" }
+          }
+          if (-not (Get-ChildItem $dir -Filter *.exe | Where-Object { $_.Name -notmatch 'uninstall' })) { throw 'The app program is missing' }
+          "{0:N1} MB installed" -f ((Get-ChildItem $dir -Recurse -File | Measure-Object Length -Sum).Sum / 1MB)
+          "INSTALL_DIR=$dir" | Out-File -Append $env:GITHUB_ENV
+
+      - name: Check the installed engine runs on the installed tools
+        run: node scripts/smoke-bundle.mjs "${{ env.INSTALL_DIR }}"
+
+      - name: Uninstall, and check it's gone
+        shell: pwsh
+        run: |
+          $un = Get-ChildItem $env:INSTALL_DIR -Filter 'uninstall*.exe' | Select-Object -First 1
+          Start-Process -FilePath $un.FullName -ArgumentList '/S' -Wait
+          for ($i = 0; $i -lt 30 -and (Test-Path (Join-Path $env:INSTALL_DIR 'engine')); $i++) { Start-Sleep 2 }
+          if (Test-Path (Join-Path $env:INSTALL_DIR 'engine')) { throw 'The engine folder is still there after uninstall' }
+          'Uninstalled.'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ai-prototype-unsigned-draft
+          path: draft/
+          retention-days: 7
+          if-no-files-found: error
