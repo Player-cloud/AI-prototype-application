@@ -47,15 +47,16 @@ describe('Undo a kept build', () => {
     log.close();
     return { id };
   }
-  const call = async (method: string, params: Record<string, unknown>) =>
-    JSON.parse(await handleLine(JSON.stringify({ id: 1, method, params }), { now: () => LATER, modelName: (id: string) => id } as never));
+  const call = async (method: string, params: Record<string, unknown>, extra: Record<string, unknown> = {}) =>
+    JSON.parse(await handleLine(JSON.stringify({ id: 1, method, params }), { now: () => LATER, modelName: (id: string) => id, ...extra } as never));
   const keep = async (feature = 'F-01', edit?: (path: string) => Promise<void>) => {
     const b = await built(feature, edit);
     const r = await call('run_keep', { settings, dbPath: db, id: b.id });
     expect(r.error).toBeUndefined();
     return b;
   };
-  const revert = (id: number) => call('run_revert', { settings, dbPath: db, id });
+  const passing = async () => ({ name: 'tests', passed: true, free: true as const, detail: 'ok' });
+  const revert = (id: number, runTests: (dir: string) => Promise<unknown> = passing) => call('run_revert', { settings, dbPath: db, id }, { runTests });
   const status = (id: number) => RunLog.open(db).get(id)!.status;
   const commits = () => git(code, 'rev-list', 'HEAD').trim().split('\n');
 
@@ -64,7 +65,7 @@ describe('Undo a kept build', () => {
     const before = commits();
     const r = await revert(b.id);
     expect(r.error).toBeUndefined();
-    expect(r.result.note).toBe('Undid F-01: a new commit on main reverses it. Nothing was pushed and no history was rewritten.');
+    expect(r.result.note).toBe('Undid F-01: a new commit on main reverses it. Nothing was pushed and no history was rewritten. Tests after undo: passed.');
     expect(r.result.run.status).toBe('reverted');
     expect(await exists(join(code, 'F-01.md'))).toBe(false);
     expect(await readFile(join(code, 'README.md'), 'utf8')).toBe('# Club HR\n');
@@ -167,5 +168,54 @@ describe('Undo a kept build', () => {
     log.close();
     expect((await revert(old.id)).error).toMatch(/no record of which commit kept this build/);
     expect(status(old.id)).toBe('kept');
+  });
+
+  it('runs the tests in joshua’s copy after the revert and reports the result; failing tests keep the revert', async () => {
+    const b = await keep('F-01');
+    const dirs: string[] = [];
+    const r = await revert(b.id, async (dir) => {
+      dirs.push(dir);
+      // The revert is already in his copy when the tests run.
+      expect(await exists(join(dir, 'F-01.md'))).toBe(false);
+      return { name: 'tests', passed: false, free: true, detail: 'FAIL', cases: [{ name: 'a', passed: false }, { name: 'b', passed: true }, { name: 'c', passed: false }] };
+    });
+    expect(dirs).toEqual([code]);
+    expect(r.error).toBeUndefined();
+    expect(r.result.note).toMatch(/ Tests after undo: 2 failed\.$/);
+    expect(r.result.run.status).toBe('reverted');
+    expect(status(b.id)).toBe('reverted');
+  });
+
+  it('says "failed" when the output has no test names, and "couldn’t run" with the reason', async () => {
+    const b1 = await keep('F-01');
+    const r1 = await revert(b1.id, async () => ({ name: 'tests', passed: false, free: true, detail: 'Error: boom' }));
+    expect(r1.result.note).toMatch(/ Tests after undo: failed\.$/);
+    const b2 = await keep('F-02');
+    const r2 = await revert(b2.id, async () => ({ name: 'tests', passed: false, free: true, detail: 'package.json has no "test" script. Add tests and a test script.' }));
+    expect(r2.result.note).toMatch(/ Tests after undo: couldn’t run \(package\.json has no "test" script\)\.$/);
+    const b3 = await keep('F-03');
+    const r3 = await revert(b3.id, async () => {
+      throw new Error('npm is missing');
+    });
+    expect(r3.result.note).toMatch(/ Tests after undo: couldn’t run \(npm is missing\)\.$/);
+    expect(r3.result.run.status).toBe('reverted');
+  });
+
+  it('uses the real test runner by default: a folder with no package.json couldn’t run', async () => {
+    const b = await keep('F-01');
+    const r = await call('run_revert', { settings, dbPath: db, id: b.id });
+    expect(r.result.note).toMatch(/ Tests after undo: couldn’t run \(No package\.json, so there are no tests to run\)\.$/);
+  });
+
+  it('does not run the tests when the undo is refused', async () => {
+    const b = await keep('F-01');
+    await writeFile(join(code, 'notes.txt'), 'mine\n');
+    let ran = false;
+    const r = await revert(b.id, async () => {
+      ran = true;
+      return { name: 'tests', passed: true, free: true };
+    });
+    expect(r.error).toBeDefined();
+    expect(ran).toBe(false);
   });
 });

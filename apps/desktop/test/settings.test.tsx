@@ -125,7 +125,7 @@ describe('Settings: API keys', () => {
     const shell = fakeShell(['anthropic']);
     render(<Settings invoke={shell.invoke} />);
     await within(row('Claude (Anthropic)')).findByText('Key saved');
-    expect(shell.calls.every((c) => ['key_status', 'key_save', 'key_remove', 'test_model', 'github_test', 'phone_setup', 'settings_check', 'spend_summary', 'gate_rules', 'history_list'].includes(c.cmd))).toBe(true);
+    expect(shell.calls.every((c) => ['key_status', 'key_save', 'key_remove', 'test_model', 'github_test', 'phone_setup', 'settings_check', 'spend_summary', 'gate_rules', 'history_list', 'run_list'].includes(c.cmd))).toBe(true);
   });
 
   it('tests the Claude connection and shows the reply and cost', async () => {

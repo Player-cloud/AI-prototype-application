@@ -193,9 +193,9 @@ export async function compareWorkflows(invoke: Invoke): Promise<WorkflowRow[]> {
 }
 
 /** Saved builds for a project, newest first. */
-export async function listRuns(invoke: Invoke, slug: string): Promise<BuildRun[]> {
+export async function listRuns(invoke: Invoke, slug?: string): Promise<BuildRun[]> {
   try {
-    return await engine<BuildRun[]>(invoke, 'run_list', { slug });
+    return await engine<BuildRun[]>(invoke, 'run_list', slug ? { slug } : {});
   } catch (err) {
     throw plain(err);
   }

@@ -187,7 +187,14 @@ async function keptFiles(g: Git, folder: string, commit: string, parents: number
  * has changes not committed yet, the kept commit isn't in the branch he has checked out, or the
  * reversal clashes with later work (it is aborted and the clashing files are named).
  */
-export async function revertKept(settings: AppSettings, dbPath: string, id: number, now: Date, git?: Git): Promise<KeepResult> {
+export async function revertKept(
+  settings: AppSettings,
+  dbPath: string,
+  id: number,
+  now: Date,
+  git?: Git,
+  runTests?: (dir: string) => Promise<import('@aip/checks').CheckResult>,
+): Promise<KeepResult> {
   const g = await gitOf(git);
   const { revertRecorded } = await import('./history.ts');
   const result = await withRuns(dbPath, async (log) => {
@@ -243,6 +250,22 @@ export async function revertKept(settings: AppSettings, dbPath: string, id: numb
     extra += ` The change history wasn’t updated (${(err as Error).message.split('\n')[0]}).`;
   }
   extra += await updateMapAfterRevert(settings, run.slug, { feature: run.feature, changed, at: now }, folder);
+  extra += ` ${await testsAfterUndo(folder, runTests)}`;
   const done = await withRuns(dbPath, (log) => log.get(id)!);
   return { run: done, note: `Undid ${run.feature}: a new commit on ${status.branch} reverses it. Nothing was pushed and no history was rewritten.${extra}` };
+}
+
+/** What the tests said in the code folder after Undo, in one line. Failing tests never undo the revert. */
+async function testsAfterUndo(folder: string, runTests?: (dir: string) => Promise<import('@aip/checks').CheckResult>): Promise<string> {
+  try {
+    // Same as a build: packages are installed with --ignore-scripts when the folder has none.
+    const t = await (runTests ?? (await import('@aip/checks')).runTests)(folder);
+    if (t.passed) return 'Tests after undo: passed.';
+    const first = (t.detail ?? '').split(/\r?\n/).find((l) => l.trim()) ?? 'unknown reason';
+    if (/^(No package\.json|package\.json has no "test" script|Installing packages failed)/.test(first)) return `Tests after undo: couldn’t run (${first.split(/\.(?:\s|$)/)[0]!.replace(/:$/, '')}).`;
+    const failed = (t.cases ?? []).filter((c) => !c.passed).length;
+    return failed > 0 ? `Tests after undo: ${failed} failed.` : 'Tests after undo: failed.';
+  } catch (err) {
+    return `Tests after undo: couldn’t run (${(err as Error).message.split('\n')[0]}).`;
+  }
 }
