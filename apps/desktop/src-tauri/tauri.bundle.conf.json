@@ -3,7 +3,9 @@
   "bundle": {
     "resources": {
       "bundle-resources/engine/": "engine/",
-      "bundle-resources/node/": "node/"
+      "bundle-resources/node/": "node/",
+      "bundle-resources/pnpm/": "pnpm/",
+      "bundle-resources/git/": "git/"
     }
   }
 }

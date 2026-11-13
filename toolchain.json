@@ -1,5 +1,5 @@
 {
-  "$comment": "Tools the installer bundles. Change a version here (with its SHA-256 from the official SHASUMS256.txt) and rebuild; no code changes. Read by scripts/bundle-engine.mjs.",
+  "$comment": "Tools the installer bundles. Change a version here (with its SHA-256) and rebuild; no code changes. Read by scripts/bundle-engine.mjs. Node: SHA-256 from nodejs.org SHASUMS256.txt. pnpm: npm registry tarball, matches the registry's SHA-512. MinGit: Git for Windows release (Windows only).",
   "node": {
     "version": "24.22.3",
     "files": {
@@ -12,6 +12,20 @@
         "url": "https://nodejs.org/dist/v24.22.3/node-v24.22.3-linux-x64.tar.xz",
         "sha256": "4f2b175a6d53a5c617a80dba2676238a0688cef28c6da4eba35c7d844e66fcfb",
         "program": "node-v24.22.3-linux-x64/bin/node"
+      }
+    }
+  },
+  "pnpm": {
+    "version": "10.34.9",
+    "url": "https://registry.npmjs.org/pnpm/-/pnpm-10.34.9.tgz",
+    "sha256": "7e8a946108e7baab119e51d27c24d6178b46545422643dbc91e34e2f1ee32e0f"
+  },
+  "mingit": {
+    "version": "2.56.1.windows.1",
+    "files": {
+      "win-x64": {
+        "url": "https://github.com/git-for-windows/git/releases/download/v2.56.1.windows.1/MinGit-2.56.1-64-bit.zip",
+        "sha256": ""
       }
     }
   }

@@ -8,13 +8,13 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::{Arc, Mutex};
 
-/// How to start the helper: a program plus its arguments, and a folder to put first on PATH
-/// (the bundled Node's folder, so builds use the same Node as the engine).
+/// How to start the helper: a program plus its arguments, and folders to put first on PATH
+/// (the bundled Node, pnpm and git, so builds use the app's own tools, not whatever the PC has).
 #[derive(Debug, Clone, PartialEq)]
 pub struct HelperCommand {
     pub program: String,
     pub args: Vec<String>,
-    pub path_first: Option<PathBuf>,
+    pub path_first: Vec<PathBuf>,
 }
 
 /// The bundled Node program inside `dir` (`node/node.exe` on Windows, `node/node` elsewhere).
@@ -27,6 +27,7 @@ fn bundled_node(dir: &Path) -> PathBuf {
 /// 2. An installed app has its engine next to its own program: `<app>/engine/dist/helper.js`.
 /// 3. Otherwise (dev), the monorepo's built engine next to this source.
 /// The bundled Node (`<app>/node/`) is used when it is there; otherwise `node` from PATH.
+/// `<app>/node/` (Node and the pnpm launcher) and `<app>/git/cmd/` go first on PATH when they exist.
 pub fn helper_command(env_override: Option<String>, app_dir: Option<&Path>) -> HelperCommand {
     let bundled = app_dir.map(|d| d.join("engine").join("dist").join("helper.js")).filter(|p| p.is_file());
     let script = env_override.or_else(|| bundled.map(|p| p.to_string_lossy().into_owned())).unwrap_or_else(|| {
@@ -36,13 +37,15 @@ pub fn helper_command(env_override: Option<String>, app_dir: Option<&Path>) -> H
         }
         p.to_string_lossy().into_owned()
     });
+    let path_first: Vec<PathBuf> = app_dir
+        .map(|d| vec![d.join("node"), d.join("git").join("cmd")])
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|p| p.is_dir())
+        .collect();
     match app_dir.map(bundled_node).filter(|p| p.is_file()) {
-        Some(node) => HelperCommand {
-            program: node.to_string_lossy().into_owned(),
-            args: vec![script],
-            path_first: node.parent().map(Path::to_path_buf),
-        },
-        None => HelperCommand { program: "node".into(), args: vec![script], path_first: None },
+        Some(node) => HelperCommand { program: node.to_string_lossy().into_owned(), args: vec![script], path_first },
+        None => HelperCommand { program: "node".into(), args: vec![script], path_first },
     }
 }
 
@@ -77,9 +80,9 @@ impl EngineHelper {
             const CREATE_NO_WINDOW: u32 = 0x0800_0000;
             command.creation_flags(CREATE_NO_WINDOW);
         }
-        if let Some(dir) = &cmd.path_first {
+        if !cmd.path_first.is_empty() {
             let rest = std::env::var_os("PATH").unwrap_or_default();
-            let joined = std::env::join_paths(std::iter::once(dir.clone()).chain(std::env::split_paths(&rest)))
+            let joined = std::env::join_paths(cmd.path_first.iter().cloned().chain(std::env::split_paths(&rest)))
                 .map_err(|e| format!("could not set PATH for the engine: {e}"))?;
             command.env("PATH", joined);
         }
@@ -240,7 +243,7 @@ mod tests {
     #[test]
     fn helper_command_uses_override_or_monorepo_path() {
         let c = helper_command(Some("x/helper.js".into()), None);
-        assert_eq!(c, HelperCommand { program: "node".into(), args: vec!["x/helper.js".into()], path_first: None });
+        assert_eq!(c, HelperCommand { program: "node".into(), args: vec!["x/helper.js".into()], path_first: vec![] });
         let d = helper_command(None, None);
         assert!(d.args[0].ends_with("helper.js"));
         assert!(d.args[0].contains("engine"));
@@ -248,8 +251,8 @@ mod tests {
     }
 
     /// A made-up installed app in a folder with a space in its name.
-    fn fake_app(with_node: bool) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("aip app {}-{}", std::process::id(), with_node));
+    fn fake_app(name: &str, with_node: bool) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("aip app {}-{}", std::process::id(), name));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("engine").join("dist")).unwrap();
         std::fs::write(dir.join("engine").join("dist").join("helper.js"), "").unwrap();
@@ -262,11 +265,11 @@ mod tests {
 
     #[test]
     fn an_installed_app_uses_its_own_engine_and_node() {
-        let dir = fake_app(true);
+        let dir = fake_app("own", true);
         let c = helper_command(None, Some(&dir));
         assert_eq!(PathBuf::from(&c.args[0]), dir.join("engine").join("dist").join("helper.js"));
         assert_eq!(PathBuf::from(&c.program), bundled_node(&dir));
-        assert_eq!(c.path_first, Some(dir.join("node")));
+        assert_eq!(c.path_first, vec![dir.join("node")]);
         // AIP_ENGINE still wins for the script, and the bundled Node still runs it.
         let o = helper_command(Some("x/helper.js".into()), Some(&dir));
         assert_eq!(o.args, vec!["x/helper.js".to_string()]);
@@ -275,11 +278,20 @@ mod tests {
     }
 
     #[test]
+    fn bundled_git_goes_on_path_after_node() {
+        let dir = fake_app("git", true);
+        std::fs::create_dir_all(dir.join("git").join("cmd")).unwrap();
+        let c = helper_command(None, Some(&dir));
+        assert_eq!(c.path_first, vec![dir.join("node"), dir.join("git").join("cmd")]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn an_installed_engine_without_bundled_node_uses_node_from_path() {
-        let dir = fake_app(false);
+        let dir = fake_app("pathnode", false);
         let c = helper_command(None, Some(&dir));
         assert_eq!(c.program, "node");
-        assert_eq!(c.path_first, None);
+        assert_eq!(c.path_first, Vec::<PathBuf>::new());
         assert_eq!(PathBuf::from(&c.args[0]), dir.join("engine").join("dist").join("helper.js"));
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -289,7 +301,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("aip path {}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let script = r#"process.stdout.write(JSON.stringify({id:1,result:process.env.PATH.split(require('path').delimiter)[0]})+'\n')"#;
-        let cmd = HelperCommand { program: "node".into(), args: vec!["-e".into(), script.into()], path_first: Some(dir.clone()) };
+        let cmd = HelperCommand { program: "node".into(), args: vec!["-e".into(), script.into()], path_first: vec![dir.clone()] };
         let mut h = EngineHelper::start(&cmd).expect("node should start");
         assert_eq!(PathBuf::from(h.request("x").unwrap().as_str().unwrap()), dir);
         let _ = std::fs::remove_dir_all(&dir);
@@ -298,7 +310,7 @@ mod tests {
     #[test]
     fn sends_params_and_reads_the_reply() {
         let script = r#"require('readline').createInterface({input:process.stdin}).on('line',l=>{const r=JSON.parse(l);process.stdout.write(JSON.stringify({id:r.id,result:{got:r.params}})+'\n')})"#;
-        let cmd = HelperCommand { program: "node".into(), args: vec!["-e".into(), script.into()], path_first: None };
+        let cmd = HelperCommand { program: "node".into(), args: vec!["-e".into(), script.into()], path_first: vec![] };
         let mut h = EngineHelper::start(&cmd).expect("node should start");
         let v = h.request_with("ask", json!({ "prompt": "hi" })).unwrap();
         assert_eq!(v["got"]["prompt"], "hi");
@@ -316,7 +328,7 @@ mod tests {
     #[test]
     fn passes_events_on_and_can_be_cancelled() {
         let script = r#"const rl=require('readline').createInterface({input:process.stdin});rl.on('line',l=>{const r=JSON.parse(l);const w=o=>process.stdout.write(JSON.stringify(o)+'\n');if(r.method==='cancel'){w({id:r.id,result:{cancelled:true}});w({id:r.params.id,error:'Stopped.'});return;}w({id:r.id,event:{n:1}});w({id:r.id,event:{n:2}});})"#;
-        let cmd = HelperCommand { program: "node".into(), args: vec!["-e".into(), script.into()], path_first: None };
+        let cmd = HelperCommand { program: "node".into(), args: vec!["-e".into(), script.into()], path_first: vec![] };
         let mut h = EngineHelper::start(&cmd).expect("node should start");
         let id = h.next_id();
         let stop = h.canceller();
@@ -333,7 +345,7 @@ mod tests {
 
     #[test]
     fn missing_program_gives_stopped_reason() {
-        let cmd = HelperCommand { program: "aip-no-such-program".into(), args: vec![], path_first: None };
+        let cmd = HelperCommand { program: "aip-no-such-program".into(), args: vec![], path_first: vec![] };
         match EngineHelper::start(&cmd) {
             Ok(_) => panic!("should not start"),
             Err(e) => assert!(e.contains("could not start")),
@@ -344,7 +356,7 @@ mod tests {
     #[test]
     fn talks_to_a_real_process() {
         let script = r#"require('readline').createInterface({input:process.stdin}).on('line',l=>{const r=JSON.parse(l);process.stdout.write(JSON.stringify({id:r.id,result:{ok:true,version:'9.9.9'}})+'\n')})"#;
-        let cmd = HelperCommand { program: "node".into(), args: vec!["-e".into(), script.into()], path_first: None };
+        let cmd = HelperCommand { program: "node".into(), args: vec!["-e".into(), script.into()], path_first: vec![] };
         let mut h = EngineHelper::start(&cmd).expect("node should start");
         assert_eq!(h.status(), EngineStatus::Running { version: "9.9.9".into() });
         assert_eq!(h.status(), EngineStatus::Running { version: "9.9.9".into() });
