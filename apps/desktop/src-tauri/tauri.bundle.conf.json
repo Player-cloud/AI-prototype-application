@@ -1,0 +1,9 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "resources": {
+      "bundle-resources/engine/": "engine/",
+      "bundle-resources/node/": "node/"
+    }
+  }
+}

@@ -41,7 +41,7 @@ async fn engine_status(state: tauri::State<'_, Engine>) -> Result<EngineStatus, 
         Err(_) => false,
     };
     if !alive {
-        *guard = EngineHelper::start(&helper_command(std::env::var("AIP_ENGINE").ok()));
+        *guard = EngineHelper::start(&helper_command(std::env::var("AIP_ENGINE").ok(), engine::app_dir().as_deref()));
     }
     Ok(match guard.as_mut() {
         Ok(helper) => helper.status(),
@@ -82,7 +82,7 @@ fn engine_call(state: &tauri::State<'_, Engine>, method: &str, params: serde_jso
         Ok(g) => g,
         Err(poisoned) => poisoned.into_inner(),
     };
-    call_with_restart(&mut guard, &helper_command(std::env::var("AIP_ENGINE").ok()), method, params)
+    call_with_restart(&mut guard, &helper_command(std::env::var("AIP_ENGINE").ok(), engine::app_dir().as_deref()), method, params)
 }
 
 /// Sends one request, restarting the helper first if it isn't running. A request whose helper dies
@@ -102,7 +102,7 @@ fn call_with_restart(slot: &mut Result<EngineHelper, String>, cmd: &engine::Help
 /// A paid call (plan ideas, plan review) can take minutes. It runs in its own helper, like a build,
 /// so the shared helper stays free and the other screens keep answering meanwhile.
 fn own_helper_call(method: &str, params: serde_json::Value) -> Result<serde_json::Value, String> {
-    let mut helper = EngineHelper::start(&helper_command(std::env::var("AIP_ENGINE").ok()))?;
+    let mut helper = EngineHelper::start(&helper_command(std::env::var("AIP_ENGINE").ok(), engine::app_dir().as_deref()))?;
     helper.request_with(method, params)
 }
 
@@ -294,7 +294,7 @@ fn run_build(app: &tauri::AppHandle, slug: String, feature: String, on_event: im
         "slug": slug, "feature": feature, "settings": saved, "provider": provider, "apiKey": key, "dbPath": spend_path(app)?,
         "githubToken": github_token(),
     });
-    let mut helper = EngineHelper::start(&helper_command(std::env::var("AIP_ENGINE").ok()))?;
+    let mut helper = EngineHelper::start(&helper_command(std::env::var("AIP_ENGINE").ok(), engine::app_dir().as_deref()))?;
     let build = app.state::<Build>();
     {
         let mut running = build.0.lock().unwrap_or_else(|p| p.into_inner());
@@ -440,7 +440,7 @@ async fn github_test(app: tauri::AppHandle, state: tauri::State<'_, Engine>) -> 
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let helper = EngineHelper::start(&helper_command(std::env::var("AIP_ENGINE").ok()));
+    let helper = EngineHelper::start(&helper_command(std::env::var("AIP_ENGINE").ok(), engine::app_dir().as_deref()));
     tauri::Builder::default()
         .manage(Engine(Mutex::new(helper)))
         .manage(Build(Mutex::new(None)))
@@ -560,7 +560,7 @@ mod tests {
     /// A stand-in helper that answers one request and then exits, like a crash after the reply.
     fn one_shot() -> engine::HelperCommand {
         let script = r#"require('readline').createInterface({input:process.stdin}).once('line',l=>{const r=JSON.parse(l);process.stdout.write(JSON.stringify({id:r.id,result:{ok:true}})+'\n');setTimeout(()=>process.exit(0),10)})"#;
-        engine::HelperCommand { program: "node".into(), args: vec!["-e".into(), script.into()] }
+        engine::HelperCommand { program: "node".into(), args: vec!["-e".into(), script.into()], path_first: None }
     }
 
     #[test]
@@ -582,7 +582,7 @@ mod tests {
 
     #[test]
     fn a_missing_engine_program_still_gives_a_plain_reason() {
-        let cmd = engine::HelperCommand { program: "aip-no-such-program".into(), args: vec![] };
+        let cmd = engine::HelperCommand { program: "aip-no-such-program".into(), args: vec![], path_first: None };
         let mut slot: Result<EngineHelper, String> = Err("not started".into());
         let err = call_with_restart(&mut slot, &cmd, "ping", serde_json::Value::Null).unwrap_err();
         assert!(err.starts_with("engine not running: could not start"), "{err}");
