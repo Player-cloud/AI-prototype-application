@@ -18,7 +18,7 @@ Status words are exact (PRD NFR-06): passed, failed, skipped, blocked, not run, 
 
 | Date | Entry | Summary |
 | --- | --- | --- |
-| 2026-11-13 | [Baseline](2026-11-13-baseline.md) | Linux: all checks passed. Windows CI: 11 test failures (test clean-up), fix in PR #73. No app click-through yet. |
+| 2026-11-13 | [Baseline](2026-11-13-baseline.md) | Linux: all checks passed. Windows CI: 11 test failures (test clean-up), fixed in PR #73; Windows and Ubuntu CI green (run 152). No app click-through yet. |
 
 ## Known limits (quoted in the proposal)
 
