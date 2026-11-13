@@ -40,8 +40,9 @@
  *  - project_tools_approve: {settings, slug, tools, dbPath?} -> saves joshua's choice of tools for
  *    the project (kept in the history so it can be undone) and syncs. Builds then use only those.
  *  - project_map: {settings, project} -> the project's map (projects/<project>/map.json): per feature the
- *    files and tests its kept builds changed (repo-relative, forward slashes). An empty map when
- *    there is none yet. Free; changes nothing.
+ *    files and tests its kept builds changed (repo-relative, forward slashes), plus `decisions` and
+ *    `blockers` (DEC-n / BLK-n ids from decisions.json that name the feature; refreshed after Keep
+ *    and whenever they change; missing in older maps). An empty map when there is none yet. Free; changes nothing.
  *  - decisions_get: {settings, slug} -> projects/<slug>/decisions.json: decisions joshua made and blockers
  *    (open or closed). Empty when there is none. Free; changes nothing.
  *  - decision_add: {settings, slug, text, why?, feature?, dbPath?} -> appends a decision (DEC-n; never edited

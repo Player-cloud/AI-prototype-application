@@ -11,6 +11,7 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileChanged } from './history.ts';
+import { updateMapDecisions } from './project-map.ts';
 import type { AppSettings } from './settings.ts';
 
 export const DECISIONS_VERSION = 1;
@@ -93,6 +94,7 @@ async function save(settings: AppSettings, slug: string, next: DecisionsFile, la
   await writeFile(tmp, text, 'utf8');
   await rename(tmp, file);
   if (dbPath) await fileChanged(dbPath, file, before, text, label, now);
+  await updateMapDecisions(settings, slug); // the project map lists these IDs per feature
 }
 
 async function mustExist(settings: AppSettings, slug: string): Promise<void> {

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { RunLog } from '@aip/memory';
-import { HINT_MAX, MAX_FILES, cleanPath, emptyMap, isTestPath, mapHint, refreshMap, type ProjectMap } from '../src/project-map.ts';
+import { HINT_MAX, MAX_FILES, attachDecisions, cleanPath, emptyMap, isTestPath, mapHint, refreshMap, type ProjectMap } from '../src/project-map.ts';
 import { handleLine } from '../src/protocol.ts';
 
 const NOW = new Date('2026-11-12T09:00:00Z');
@@ -152,5 +152,48 @@ describe('project map: Keep and the engine command', () => {
     const r = await call('project_map', { settings: { dataFolder: data }, project: 'club-hr' });
     expect(r.result).toEqual({ version: 1, updatedAt: null, features: {} });
     expect((await call('project_map', { settings: { dataFolder: data }, project: '../x' })).error).toBeDefined();
+  });
+
+  describe('decisions and blockers in the map', () => {
+    const settings = () => ({ dataFolder: data, codeFolders: { 'club-hr': code } });
+    const readMapFile = async () => JSON.parse(await readFile(mapPath(), 'utf8'));
+
+    it('lists the ids of decisions and blockers that name a feature, after Keep and when they change', async () => {
+      await call('interview_start', { settings: settings(), name: 'Club HR' });
+      await call('decision_add', { settings: settings(), slug: 'club-hr', text: 'Use SQLite', feature: 'F-01' });
+      await call('decision_add', { settings: settings(), slug: 'club-hr', text: 'UK dates' }); // no feature: not listed
+      await call('blocker_add', { settings: settings(), slug: 'club-hr', text: 'Waiting for the logo', feature: 'F-01' });
+      // No map yet: changing decisions doesn't create one.
+      await expect(readFile(mapPath(), 'utf8')).rejects.toThrow();
+      const id = await built({ 'src/a.ts': 'a' });
+      expect((await call('run_keep', { settings: settings(), dbPath: db, id })).error).toBeUndefined();
+      expect((await readMapFile()).features['F-01']).toMatchObject({ decisions: ['DEC-1'], blockers: ['BLK-1'] });
+      // Changes made later refresh the map.
+      await call('decision_add', { settings: settings(), slug: 'club-hr', text: 'Use Tailwind', feature: 'F-01' });
+      await call('blocker_add', { settings: settings(), slug: 'club-hr', text: 'Other feature', feature: 'F-09' });
+      expect((await readMapFile()).features['F-01']).toMatchObject({ decisions: ['DEC-1', 'DEC-3'], blockers: ['BLK-1'] });
+      // A closed blocker stays listed (the screen shows it as closed).
+      await call('blocker_close', { settings: settings(), slug: 'club-hr', id: 'BLK-1', note: 'Got it' });
+      expect((await readMapFile()).features['F-01'].blockers).toEqual(['BLK-1']);
+      // F-09 has no map entry, so the map doesn't invent one.
+      expect(Object.keys((await readMapFile()).features)).toEqual(['F-01']);
+    });
+
+    it('reads an old map without the new fields, and fills them in on the next Keep', async () => {
+      const old = { version: 1, updatedAt: NOW.toISOString(), features: { 'F-01': { title: 'F-01', files: ['old.ts'], tests: [], lastBuildId: 1, lastKeptAt: NOW.toISOString() } } };
+      await mkdir(join(mapPath(), '..'), { recursive: true });
+      await writeFile(mapPath(), JSON.stringify(old));
+      expect((await call('project_map', { settings: settings(), project: 'club-hr' })).result).toEqual(old);
+      const id = await built({ 'src/b.ts': 'b' });
+      expect((await call('run_keep', { settings: settings(), dbPath: db, id })).error).toBeUndefined();
+      expect((await readMapFile()).features['F-01']).toMatchObject({ files: ['old.ts', 'src/b.ts'], decisions: [], blockers: [] });
+    });
+
+    it('attachDecisions only touches features already in the map', () => {
+      const m: ProjectMap = { version: 1, updatedAt: null, features: { 'F-01': { title: 'a', files: [], tests: [], lastBuildId: 1, lastKeptAt: '' } } };
+      const out = attachDecisions(m, { decisions: [{ id: 'DEC-1', feature: 'F-01' }, { id: 'DEC-2', feature: 'F-02' }], blockers: [] });
+      expect(Object.keys(out.features)).toEqual(['F-01']);
+      expect(out.features['F-01']).toMatchObject({ decisions: ['DEC-1'], blockers: [] });
+    });
   });
 });

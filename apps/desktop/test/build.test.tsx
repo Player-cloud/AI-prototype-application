@@ -30,7 +30,7 @@ const WAITING = {
   findings: [] as Finding[],
 };
 
-function fakeShell(opts: { blockers?: { id: string; date: string; text: string; feature?: string; open: boolean }[]; map?: Record<string, unknown>; fail?: string; runs?: (typeof WAITING)[]; asks?: { id: number; at: string; slug: string; feature: string; branch: string; tool: string; input: string; reason: string }[] } = {}) {
+function fakeShell(opts: { decisions?: { id: string; date: string; text: string; feature?: string }[]; blockers?: { id: string; date: string; text: string; feature?: string; open: boolean }[]; map?: Record<string, unknown>; fail?: string; runs?: (typeof WAITING)[]; asks?: { id: number; at: string; slug: string; feature: string; branch: string; tool: string; input: string; reason: string }[] } = {}) {
   let runs = [...(opts.runs ?? [])];
   let asks = [...(opts.asks ?? [])];
   const calls: { cmd: string; args?: Record<string, unknown> }[] = [];
@@ -96,7 +96,7 @@ function fakeShell(opts: { blockers?: { id: string; date: string; text: string; 
         { slug: 'club-hr', name: 'Club HR', status: 'Spec ready', finished: true, updatedAt: '' },
       ] as T;
     }
-    if (cmd === 'decisions_get') return { version: 1, decisions: [], blockers: opts.blockers ?? [] } as T;
+    if (cmd === 'decisions_get') return { version: 1, decisions: opts.decisions ?? [], blockers: opts.blockers ?? [] } as T;
     if (cmd === 'project_map') return { version: 1, updatedAt: null, features: opts.map ?? {} } as T;
     if (cmd === 'interview_get' && p.slug === 'club-hr') {
       return { interview: { features: [{ id: 'F-01', name: 'Login', what: '' }, { id: 'F-02', name: 'Rota', what: '' }] } } as T;
@@ -120,6 +120,27 @@ describe('Build screen: project map', () => {
     const list = screen.getByRole('list', { name: 'Files this feature touched before' });
     expect([...list.querySelectorAll('li')].map((li) => li.textContent)).toEqual(['src/Login.tsx', 'src/Login.test.tsx (test)', 'src/Session.ts']);
     expect(shell.calls.find((c) => c.cmd === 'project_map')?.args).toMatchObject({ project: 'club-hr' });
+  });
+
+  it('lists the decisions and blockers that name the feature, and reads an old map without them', async () => {
+    const entry = { title: 'Login', files: ['a.ts'], tests: [], lastBuildId: 1, lastKeptAt: 'x' };
+    const shell = fakeShell({
+      map: { 'F-01': { ...entry, decisions: ['DEC-1'], blockers: ['BLK-1', 'BLK-2'] } },
+      decisions: [{ id: 'DEC-1', date: '2026-11-12', text: 'Use SQLite', feature: 'F-01' }],
+      blockers: [{ id: 'BLK-1', date: '2026-11-12', text: 'Waiting for the logo', feature: 'F-01', open: false }, { id: 'BLK-2', date: '2026-11-12', text: 'Need the rota', feature: 'F-01', open: true }],
+    });
+    render(<Build invoke={shell.invoke} makeChannel={shell.makeChannel} />);
+    await screen.findByText('This feature touched before: 1 file, 0 tests');
+    const dec = await screen.findByRole('list', { name: 'Decisions for this feature' });
+    expect([...dec.querySelectorAll('li')].map((li) => li.textContent)).toEqual(['DEC-1: Use SQLite']);
+    const blk = screen.getByRole('list', { name: 'Blockers for this feature' });
+    expect([...blk.querySelectorAll('li')].map((li) => li.textContent)).toEqual(['BLK-1: Waiting for the logo (closed)', 'BLK-2: Need the rota']);
+    cleanup();
+    const old = fakeShell({ map: { 'F-01': entry } });
+    render(<Build invoke={old.invoke} makeChannel={old.makeChannel} />);
+    await screen.findByText('This feature touched before: 1 file, 0 tests');
+    expect(screen.queryByRole('list', { name: 'Decisions for this feature' })).toBeNull();
+    expect(screen.queryByRole('list', { name: 'Blockers for this feature' })).toBeNull();
   });
 
   it('says New feature for a feature with no files yet', async () => {
