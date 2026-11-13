@@ -78,11 +78,13 @@ describe('live view of a build', () => {
   it('says why a page didn’t start, and tries again', async () => {
     await mkdir(join(dir, 'node_modules'));
     await writeFile(join(dir, 'package.json'), '{}');
+    // A script file, not `node -e`: on Windows the page server starts through the shell, which splits `-e` code at its spaces.
+    await writeFile(join(dir, 'fails.cjs'), "console.error('Module not found: next');process.exit(1);");
     const states: LiveState[] = [];
     live = watchLive(dir, (s) => states.push(s), {
       pollMs: 50,
       maxStarts: 1,
-      command: async () => ({ cmd: process.execPath, args: ['-e', "console.error('Module not found: next');process.exit(1)", '--'] }),
+      command: async () => ({ cmd: process.execPath, args: ['fails.cjs'] }),
     });
     const bad = await until(states, (s) => s.note.startsWith('The page didn’t start'));
     expect(bad.note).toContain('Module not found: next');
