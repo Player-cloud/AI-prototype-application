@@ -1,6 +1,8 @@
 # AI-prototype-application: system architecture
 
-**Status:** working architecture, 2026-11-12. Checked against the code at `99ac216` (merge of PR #56). The previous version described `c2b3fcf` (11 Nov, step 6b).
+**Status:** working architecture, 2026-11-13. Header and stale lines updated for `4461c8a` (PR #72); sections not mentioned in the note below were last checked at `99ac216` (PR #56).
+> **Update, 13 Nov 2026 (`4461c8a`, PR #72):** Phase 1 to 3 of the architecture roadmap are merged (#57–#72): run records for every build (failed ones too, with a cause), one shape for check results (Findings), the project map, advice confidence, done-check coverage, undo of a kept build, project decisions and blockers, and opt-in maintenance. GitHub Actions runs again: on 13 Nov Ubuntu passed and Windows failed 11 of 768 tests (test clean-up only; fixed in PR #73). The customer is now companies that license the app (see [CUSTOMER_AND_SCOPE.md](CUSTOMER_AND_SCOPE.md)); evidence is logged in [evidence/](evidence/README.md). Older lines below that disagree with this note are out of date.
+
 **Authority:** the Claude Doc "AI-prototype-application: full plan" (10 Nov 2026). If this file disagrees with it, the plan wins and this file is wrong.
 **Related:** [Product requirements](PRODUCT_REQUIREMENTS.md) · [Current-state audit](CURRENT_STATE_AUDIT.md)
 
@@ -168,8 +170,8 @@ Rules: keys never go in either store; sync refuses key-shaped text; sync never f
 - **Verified (first real build):** `runTests` (installs with `--ignore-scripts`, then the project's tests), the free checks, pictures, `canKeep` (no Keep unless tests ran and every non-advice check passed).
 - **Implemented:** the "New packages" check (a package the build added to any `package.json` stops Keep until joshua approves), `isBigBuild` (5+ features, or logins, payments or personal data), the live preview, the environment check (CI-2, **Verified** on one computer), repeatable free tests per tool (CI-3, **Verified** on one computer), update look-up (CI-6, **Verified**).
 - **Planned:** one shape for all check results, with trust levels (Phase 1 "Findings"). Paid and fresh-eyes reviews on big builds exist for plans (step 7c); code reviews by a model are not built.
-- **CI for this repo (Partial):** two workflows. `ci.yml` runs typecheck, tests, secretlint and `pnpm audit` on `ubuntu-24.04` and `windows-latest`, with a 20-minute limit. `shell.yml` runs the Rust `cargo test` on both only when `apps/desktop/src-tauri` changes. **No GitHub Actions job has started since 11 Nov 19:12 UTC** (account billing). Branch protection isn't available on the private free plan, so checks can't be required. Until Actions runs again the only gate is the local `pnpm check`.
-- **Tests today:** 605 TypeScript tests in 68 files, plus 22 Rust tests (counted, not run here). Run `pnpm typecheck` before `pnpm test` on a fresh checkout so the packages' output exists.
+- **CI for this repo (Partial):** two workflows. `ci.yml` runs typecheck, tests, secretlint and `pnpm audit` on `ubuntu-24.04` and `windows-latest`, with a 20-minute limit. `shell.yml` runs the Rust `cargo test` on both only when `apps/desktop/src-tauri` changes. Actions was blocked by billing from 11 Nov and runs again from 13 Nov (Ubuntu passed; Windows 11 test failures fixed in PR #73). Branch protection isn't available on the private free plan, so checks can't be required; the local `pnpm check` stays the gate before a push.
+- **Tests today (13 Nov):** 768 TypeScript tests in 76 files and 28 Rust tests, all passed on Linux. Run `pnpm typecheck` before `pnpm test` on a fresh checkout so the packages' output exists.
 
 ## 10. Gatekeeper
 
@@ -380,7 +382,7 @@ Dependency direction (no cycles): desktop → engine → {models, tools, memory,
 
 ## 17. Compatibility and lifecycle
 
-- **V1:** CI on Ubuntu and Windows is written but **not running** (billing, §9). Template rules (pnpm 10 pinned, shadcn via npx). Lifecycle = the ledger status column plus tool health (switched off, stale).
+- **V1:** CI on Ubuntu and Windows runs again from 13 Nov (§9). Template rules (pnpm 10 pinned, shadcn via npx). Lifecycle = the ledger status column plus tool health (switched off, stale).
 - **Implemented (D-2):** tool update → old results stale → re-test on next use (CI-1); 3 failures in a row → tell joshua and switch off (Q-3 narrows what counts); uninstalling is decided together.
 
 **Tool lifecycle split (D-2):**
@@ -408,13 +410,13 @@ See §12.4–12.5. Capability, version, evaluation run, evidence item, usage and
 - Sync clash → stop, keep the local change, say so; never force. **Implemented.**
 - Undo when something changed since → refuse and touch nothing; CI-8 checks the file or setting is back. **Implemented.**
 - Model fails 3 times in a row for its own fault → off, tell joshua. **Implemented.**
-- A failed build is not saved as a run record yet. **Missing** (Phase 1).
+- A failed, stopped or interrupted build is saved as a run record with its cause. **Implemented** (#57).
 - Evaluation tool unavailable → "blocked" or "not run", never "passed". **Implemented.**
 - Project-file undo → drop the worktree. **Verified.**
 
 ## 20. Next
 
-The roadmap puts **Phase 1** next. It adds:
+Phase 1 to 3 are done (#57–#72). Next is the readiness plan for a company evaluation (see [CUSTOMER_AND_SCOPE.md](CUSTOMER_AND_SCOPE.md)). Phase 1 added:
 
 1. **Run records:** a build ID, every build including failed ones, and the cause of each failure.
 2. **Findings:** one shape for check results, with trust levels.
