@@ -6,3 +6,7 @@ dist/
 *.pem
 .DS_Store
 dist-types/
+
+# Stage R2: packed engine and downloaded tools (made by scripts/bundle-engine.mjs)
+apps/desktop/src-tauri/bundle-resources/
+.toolchain-cache/

@@ -35,3 +35,9 @@ jobs:
       - run: pnpm test
       - run: pnpm secrets
       - run: pnpm audit --audit-level high
+      # Stage R2: pack the engine with the pinned Node (toolchain.json) and check that it runs the
+      # way the installed app runs it. Windows only: it's the only platform the installer claims.
+      - if: runner.os == 'Windows'
+        run: node scripts/bundle-engine.mjs
+      - if: runner.os == 'Windows'
+        run: node scripts/smoke-bundle.mjs
