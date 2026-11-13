@@ -188,6 +188,20 @@ describe('Build screen: open blockers', () => {
     expect(builds(shell)).toBe(0);
   });
 
+  it('drops the question when you pick another feature, and it stays gone on coming back', async () => {
+    const shell = fakeShell({ blockers });
+    render(<Build invoke={shell.invoke} makeChannel={shell.makeChannel} />);
+    await screen.findByRole('alert', { name: 'Blocked' });
+    fireEvent.click(screen.getByRole('button', { name: /^Build F-01/ }));
+    expect(await screen.findByText(/Build it anyway\?/)).toBeTruthy();
+    const feature = screen.getByLabelText('Feature') as HTMLSelectElement;
+    fireEvent.change(feature, { target: { value: 'F-02' } });
+    expect(screen.queryByText(/Build it anyway\?/)).toBeNull();
+    fireEvent.change(feature, { target: { value: 'F-01' } });
+    expect(screen.queryByText(/Build it anyway\?/)).toBeNull();
+    expect(builds(shell)).toBe(0);
+  });
+
   it('builds when joshua says Yes', async () => {
     const shell = fakeShell({ blockers });
     render(<Build invoke={shell.invoke} makeChannel={shell.makeChannel} />);
