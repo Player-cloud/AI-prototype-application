@@ -11,9 +11,14 @@
 import type { Run } from '@aip/memory';
 import type { AppSettings } from './settings.ts';
 import { checkCodeFolder, codeFolderOf, type Git } from './runs.ts';
-import { updateMapAfterKeep, updateMapAfterRevert } from './project-map.ts';
+import { mapPrediction, readMap, updateMapAfterKeep, updateMapAfterRevert } from './project-map.ts';
 
 export type RunRow = Run;
+
+/** "The map named 4 of 5 files this build changed (80%)" */
+export function mapScoreText(named: number, changed: number): string {
+  return `The map named ${named} of ${changed} file${changed === 1 ? '' : 's'} this build changed (${Math.round((named / changed) * 100)}%)`;
+}
 
 export interface KeepResult { run: Run; note: string }
 
@@ -142,15 +147,29 @@ export async function keepRun(settings: AppSettings, dbPath: string, id: number,
     log.decide(id, 'kept', now, { mergeCommit, keptInto: status.branch });
     // Project map: what this build changed (read before the build's branch goes). A map problem never fails Keep.
     let mapNote: string;
+    let scoreNote = '';
     try {
       const changed = (await g(['diff', '--name-only', '-z', '--no-renames', `${run.base}..${run.branch}`], folder)).split('\0').filter(Boolean);
       // A maintenance item (dev-tool patch update) is not a feature: the map isn't touched.
-      mapNote = run.model === (await import('@aip/memory')).MAINTENANCE_MODEL ? '' : await updateMapAfterKeep(settings, run.slug, { feature: run.feature, buildId: id, keptAt: now, changed }, folder);
+      const isFeature = run.model !== (await import('@aip/memory')).MAINTENANCE_MODEL;
+      // How well did the map predict these files? Measured before the map is refreshed with them.
+      if (isFeature) {
+        try {
+          const hit = await mapPrediction((await readMap(settings, run.slug)).features[run.feature], changed);
+          if (hit) {
+            log.setMapHit(id, hit.hit, hit.changed);
+            scoreNote = ` ${mapScoreText(hit.named, hit.changed)}.`;
+          }
+        } catch {
+          // not measured: never fails Keep
+        }
+      }
+      mapNote = !isFeature ? '' : await updateMapAfterKeep(settings, run.slug, { feature: run.feature, buildId: id, keptAt: now, changed }, folder);
     } catch (err) {
       mapNote = ` The project map wasn’t updated (${(err as Error).message.split('\n')[0]}).`;
     }
     const left = await tidy(g, folder, run, 'merged');
-    return { run: log.get(id)!, note: `Kept ${run.feature} in your copy on ${status.branch}. Nothing was pushed.${left}${mapNote}` };
+    return { run: log.get(id)!, note: `Kept ${run.feature} in your copy on ${status.branch}. Nothing was pushed.${left}${scoreNote}${mapNote}` };
   });
 }
 

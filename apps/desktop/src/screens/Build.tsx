@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Invoke } from '../engine';
 import { getDecisions, listProjects, openBlockersFor, openProject, projectMap, type Decisions, type Feature, type MapFeature, type ProjectRow } from '../projects';
 import { getSettings } from '../settings';
-import { CHECK_NAME, LEVEL_HEADING, LEVEL_ORDER, approvePackages, findingsAt, costSoFar, DONE_MARK, doneList, neverCheckedLine, endedWords, endedEarly, compareWorkflows, decideAsk, decideRun, keepable, revertRun, listAsks, listRuns, listWork, needsPackageOk, pollPhone, rateRun, startBuild, stopBuild, type BuildResult, type BuildRun, type AskRequest, type BuildStep, type LiveView, type MakeChannel, type WorkItem, type WorkflowRow } from '../build';
+import { CHECK_NAME, LEVEL_HEADING, LEVEL_ORDER, approvePackages, findingsAt, costSoFar, DONE_MARK, doneList, neverCheckedLine, endedWords, endedEarly, compareWorkflows, decideAsk, decideRun, keepable, revertRun, listAsks, listRuns, listWork, mapScoreLine, needsPackageOk, pollPhone, rateRun, startBuild, stopBuild, type BuildResult, type BuildRun, type AskRequest, type BuildStep, type LiveView, type MakeChannel, type WorkItem, type WorkflowRow } from '../build';
 
 type Note = { text: string; bad: boolean } | null;
 
@@ -563,6 +563,7 @@ export function Build({ invoke, makeChannel }: { invoke: Invoke | null; makeChan
                     ? `${endedWords(r)} · cost so far ${costSoFar(r.costUsd, gbpPerUsd)}`
                     : `${!r.testsPassed ? 'tests fail' : keepable(r) ? 'tests and checks pass' : 'a check failed'} · ${STATUS[r.status]}`}
                   {r.status === 'kept' && r.keptInto ? ` into ${r.keptInto}` : ''}
+                  {mapScoreLine(r) ? <span className="muted"> · {mapScoreLine(r)}</span> : null}
                   {endedEarly(r) && r.error && r.status !== 'stopped' ? <span className="muted"> ({r.error})</span> : null}
                 </span>
                 {endedEarly(r) && !r.decidedAt && (

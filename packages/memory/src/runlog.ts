@@ -149,6 +149,10 @@ export interface Run extends Omit<NewRun, 'at' | 'checks' | 'findings' | 'pictur
   error: string;
   /** When a failed, stopped or interrupted build ended; null for the rest. */
   endedAt: string | null;
+  /** At Keep: the share of the changed files the project map already named for the feature (0 to 1). null when not measured. */
+  mapHit: number | null;
+  /** At Keep: how many files the build changed, when the map hit was measured. */
+  mapChanged: number | null;
   ms: number | null;
   /** The free checks' findings. Rows saved with the old checks are converted when read. */
   findings: RunFinding[];
@@ -190,6 +194,8 @@ interface Row {
   cause: RunCause | null;
   error: string;
   ended_at: string | null;
+  map_hit?: number | null;
+  map_changed?: number | null;
 }
 
 function parseList<T>(raw: string): T[] {
@@ -231,6 +237,8 @@ function toRun(r: Row): Run {
     cause: r.cause ?? null,
     error: r.error ?? '',
     endedAt: r.ended_at ?? null,
+    mapHit: r.map_hit ?? null,
+    mapChanged: r.map_changed ?? null,
   };
 }
 
@@ -277,6 +285,9 @@ export class RunLog {
     if (!cols.includes('cause')) db.exec('ALTER TABLE runs ADD COLUMN cause TEXT');
     if (!cols.includes('error')) db.exec("ALTER TABLE runs ADD COLUMN error TEXT NOT NULL DEFAULT ''");
     if (!cols.includes('ended_at')) db.exec('ALTER TABLE runs ADD COLUMN ended_at TEXT');
+    // ...and files made before the map was measured lack how well it named the changed files.
+    if (!cols.includes('map_hit')) db.exec('ALTER TABLE runs ADD COLUMN map_hit REAL');
+    if (!cols.includes('map_changed')) db.exec('ALTER TABLE runs ADD COLUMN map_changed INTEGER');
     const log = new RunLog(db, path);
     log.sweepInterrupted();
     return log;
@@ -372,6 +383,12 @@ export class RunLog {
       .prepare("UPDATE runs SET status = ?, decided_at = ?, merge_commit = ?, kept_into = ? WHERE id = ? AND status = 'built'")
       .run(status, at.toISOString(), kept.mergeCommit, kept.keptInto, id);
     if (Number(res.changes) !== 1) throw new Error('That build was already kept or undone.');
+  }
+
+  /** How well the project map named the files a kept build changed. Only a kept run can be marked. */
+  setMapHit(id: number, hit: number, changed: number): void {
+    const res = this.db.prepare("UPDATE runs SET map_hit = ?, map_changed = ? WHERE id = ? AND status = 'kept'").run(hit, changed, id);
+    if (Number(res.changes) !== 1) throw new Error('Only a kept build can be given a map score.');
   }
 
   /** A kept build was reversed by a new commit. Only a kept run can be marked. */
