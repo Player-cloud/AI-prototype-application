@@ -442,7 +442,7 @@ describe('build_feature', () => {
     expect(out.keep).toEqual({ keep: true, blocking: [] });
     expect(out.findings.map((f: { check: string }) => f.check)).toEqual(['secrets', 'audit', 'checklist', 'axe', 'phone-overflow', 'done-list']);
     expect(out.tests).toEqual({ passed: true, output: '3 passed', fixAttempts: 0 });
-    expect(out.synced).toMatch(/^Saved here, but not synced yet: .*not a git clone/);
+    expect(out.synced).toMatch(/^Saved here, but not synced yet: .*isn’t a git folder/);
 
     // The cost counts against the month's budget.
     expect((await call('spend_summary', { settings, dbPath })).result.calls).toBe(1);
@@ -653,7 +653,7 @@ describe('build_feature', () => {
 
     // Switching it back on clears the count; the sync fails here (not a git clone) but the file is saved.
     const on = await call('tool_switch_on', { settings, tool: 'Sonnet 5.5' });
-    expect(on.error).toMatch(/not a git clone/);
+    expect(on.error).toMatch(/isn’t a git folder/);
     const after = JSON.parse(await readFile(join(data, 'tool-health', 'sonnet-5-5.json'), 'utf8'));
     expect(after).toMatchObject({ off: null, consecutiveFailures: 0, retestDue: true });
     expect((await call('tool_switch_on', { settings, tool: 'Sonnet 5.5' })).error).toBe('Sonnet 5.5 isn’t switched off.');
