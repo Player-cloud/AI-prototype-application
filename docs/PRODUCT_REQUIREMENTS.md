@@ -1,6 +1,8 @@
 # AI-prototype-application: product requirements
 
-**Status:** working PRD, 2026-11-12. Checked against the code at `99ac216` (merge of PR #56). The previous version described `c2b3fcf` (11 Nov, step 6b).
+**Status:** working PRD, 2026-11-13. Checked against the code at `4461c8a` (PR #72). The previous version described `99ac216` (PR #56).
+> **Update, 13 Nov 2026 (`4461c8a`, PR #72):** Phase 1 to 3 of the architecture roadmap are merged (#57–#72): run records for every build (failed ones too, with a cause), one shape for check results (Findings), the project map, advice confidence, done-check coverage, undo of a kept build, project decisions and blockers, and opt-in maintenance. GitHub Actions runs again: on 13 Nov Ubuntu passed and Windows failed 11 of 768 tests (test clean-up only; fixed in PR #73). The customer is now companies that license the app (see [CUSTOMER_AND_SCOPE.md](CUSTOMER_AND_SCOPE.md)); evidence is logged in [evidence/](evidence/README.md). Older lines below that disagree with this note are out of date.
+
 **Authority:** the Claude Doc "AI-prototype-application: full plan" (10 Nov 2026). If this file disagrees with it, the plan wins.
 **Related:** [System architecture](SYSTEM_ARCHITECTURE.md) · [Current-state audit](CURRENT_STATE_AUDIT.md)
 
@@ -34,7 +36,9 @@ A desktop app for one person, joshua, on Windows and Linux (no macOS). You descr
 
 ## 2. User and goals
 
-**User:** joshua only. Plain words, short replies, money in £ and $. Starts tasks from the PC and follows or answers from his phone. Two Windows laptops; a Linux machine planned.
+**User (until 13 Nov):** joshua only. Plain words, short replies, money in £ and $. Starts tasks from the PC and follows or answers from his phone. Two Windows laptops; a Linux machine planned.
+
+**Customer from 13 Nov:** companies that license the app, any team size from one person up, each bringing its own Claude API key and budget; Windows first; GitHub optional. See [CUSTOMER_AND_SCOPE.md](CUSTOMER_AND_SCOPE.md). joshua stays the owner and first user.
 
 **Goals:**
 
@@ -77,7 +81,7 @@ One pull request per step (steps may be split into smaller PRs, as steps 3–6 w
 - MUST · Owner: repo · Depends: none · V1 · **Partial** (setup Verified; CI not running)
 - The monorepo, a short `CLAUDE.md`, and automatic checks on Windows and Linux.
 - Done when: CI runs typecheck, tests and secret scan on both systems and passes.
-- Now: the workflows exist (PR #49 repaired them) but no GitHub Actions job has started since 11 Nov 19:12 UTC (account billing), and branch protection isn't available on the private free plan, so checks can't be required. Until Actions runs again the only gate is the local `pnpm check`.
+- Now: the workflows exist (PR #49 repaired them). Actions was blocked by billing from 11 Nov 19:12 UTC; it runs again from 13 Nov (run 151: Ubuntu passed, Windows failed 11 tests, fixed in PR #73). Branch protection isn't available on the private free plan, so checks can't be required; the local `pnpm check` stays the gate before a push.
 
 ### V1-03 Window and screens
 - MUST · Owner: apps/desktop · Depends: V1-02 · V1 · **Verified**
@@ -161,7 +165,7 @@ Capability Intelligence = the app's evidence about what it can use (models, tool
 
 ### 5.1 V1 foundations (already inside V1 steps; nothing new)
 
-(Statuses are from the code at `99ac216`.)
+(Statuses are from the code at `4461c8a`.)
 
 #### CAP-V1-01 Trial records
 - MUST · Owner: memory · Depends: V1-01 · V1 · **Verified**
@@ -271,7 +275,7 @@ Status now: SUP-A **Partial** (environment check **Verified** on one computer; d
 
 | ID | Requirement | Priority | Release |
 | --- | --- | --- | --- |
-| NFR-01 | Works on Windows and Linux; CI on both; platform differences (paths, shells, keyring) handled explicitly. **Partial:** CI is written for both but not running (billing); Windows is untested for the sandbox environment and for links and junctions | MUST | V1 |
+| NFR-01 | Works on Windows and Linux; CI on both; platform differences (paths, shells, keyring) handled explicitly. **Partial:** CI runs on both again (13 Nov); Windows tests pass once PR #73 merges; Windows is untested for the sandbox environment and for links and junctions | MUST | V1 |
 | NFR-02 | Token-light: summaries first, tools loaded only when picked, no idle agents | MUST | V1 |
 | NFR-03 | Failures reported honestly; retries limited (2 fix attempts); work isolated per worktree. **Verified** for one build; failed builds are saved with their cause (#57, **Implemented**) | MUST | V1 |
 | NFR-04 | Enough records to explain choices, costs, failures and changes, without keys or unneeded private code | MUST | V1 |
@@ -328,7 +332,8 @@ All: Owner desktop (shows), engine/memory (data) · Depends: CAP-01..06 · Done 
 ## 12. Release priorities
 
 1. **V1 steps 7 to 11:** built. Open: the real-use evidence for every step of V1-11, and the Linux check. CI-green is not available until Actions runs again.
-2. **Phase 1 (next):** run records (build ID, every build including failed ones, causes), findings (one shape for check results, with trust levels), project map (feature, files, tests). See §14.
+2. **Phase 1 to 3:** done (#57–#72): run records, findings, project map, advice confidence, done-check coverage, undo of a kept build, decisions and blockers, opt-in maintenance.
+3. **Next (from 13 Nov):** the readiness plan for a company evaluation (stages R0–R7), starting with [CUSTOMER_AND_SCOPE.md](CUSTOMER_AND_SCOPE.md) and the [evidence log](evidence/README.md).
 3. **Then:** CAP-04 (confidence and freshness), CAP-01 profile fields, cost per successful task (needs run records), the rest of CAP-02/CAP-03 and EVAL kinds.
 4. **Later:** CAP-05/CAP-06 beyond workflows, UI-02, UI-03, SUP-A conflict tests, SUP-B wider review, narrow self-maintenance (Q-5, Phase 3).
 
@@ -338,7 +343,7 @@ All: Owner desktop (shows), engine/memory (data) · Depends: CAP-01..06 · Done 
 
 **After V1:** recommendations raise success or cut cost without lowering quality; stale or incompatible versions are caught before they cause trouble; joshua can see and challenge why something was picked. Targets are set from measured starting points; none is claimed yet.
 
-**Tests today (12 Nov, `99ac216`):** 605 TypeScript tests in 68 files passed (after `pnpm typecheck` builds the packages), plus 22 Rust tests (counted, not run here).
+**Tests today (13 Nov, `4461c8a`):** `pnpm check` passed on Linux: 768 TypeScript tests in 76 files, typecheck and secret scan. `cargo test`: 28 Rust tests passed on Linux. On Windows CI, 757 of 768 passed; the 11 failures are fixed in PR #73 (see the [evidence log](evidence/2026-11-13-baseline.md)).
 
 ## 14. Decisions and next
 
@@ -353,7 +358,7 @@ All: Owner desktop (shows), engine/memory (data) · Depends: CAP-01..06 · Done 
 - **Q-4 (12 Nov):** approved. New packages need joshua's OK before Keep; changed versions don't block. Built in #53.
 - **Q-5 (12 Nov):** narrow self-maintenance. Approved for later (Phase 3). Nothing is built.
 
-**Next (the roadmap's Phase 1):**
+**Done since (Phase 1, #57–#60), kept here for the record:**
 
 1. **Run records:** a build ID, a record for every build including failed ones, and the cause of each failure.
 2. **Findings:** one shape for check results, with trust levels.

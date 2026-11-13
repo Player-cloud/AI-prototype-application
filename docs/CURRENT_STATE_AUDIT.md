@@ -1,7 +1,9 @@
 # Current-state audit
 
 **Date:** 2026-11-12
-**Repo:** `Player-cloud/AI-prototype-application`, branch `main` at `99ac216` (merge of PR #56). The previous version of this audit described `c2b3fcf` (11 Nov, step 6b).
+**Repo:** `Player-cloud/AI-prototype-application`, branch `main`. Sections 1–8 describe `99ac216` (PR #56); the note below brings the headline facts to `4461c8a` (PR #72, 13 Nov).
+> **Update, 13 Nov 2026 (`4461c8a`, PR #72):** Phase 1 to 3 of the architecture roadmap are merged (#57–#72): run records for every build (failed ones too, with a cause), one shape for check results (Findings), the project map, advice confidence, done-check coverage, undo of a kept build, project decisions and blockers, and opt-in maintenance. GitHub Actions runs again: on 13 Nov Ubuntu passed and Windows failed 11 of 768 tests (test clean-up only; fixed in PR #73). The customer is now companies that license the app (see [CUSTOMER_AND_SCOPE.md](CUSTOMER_AND_SCOPE.md)); evidence is logged in [evidence/](evidence/README.md). Older lines below that disagree with this note are out of date.
+
 **Data repo:** `Player-cloud/ai-prototype-data`. Not visible from here. Anything below that comes from it is marked "given" (told to this audit by joshua's records, not re-read).
 **Authority:** the Claude Doc "AI-prototype-application: full plan" (10 Nov 2026). Where anything below differs from it, the plan wins.
 **Related:** [System architecture](SYSTEM_ARCHITECTURE.md) · [Product requirements](PRODUCT_REQUIREMENTS.md)
@@ -231,7 +233,7 @@ No duplicate engine, database, test runner or approval authority was found. `his
 
 ## 7. Next
 
-The roadmap puts Phase 1 next. It adds three things:
+Phase 1 is done (#57–#60), followed by Phases 2–3 (#61–#72). Phase 1 added three things:
 
 1. **Run records:** a build ID, a record for every build including failed ones, and the cause of each failure.
 2. **Findings:** one shape for check results, with trust levels.
