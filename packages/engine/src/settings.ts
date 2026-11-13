@@ -30,6 +30,8 @@ export interface AppSettings {
    * patch updates itself (never merged: joshua still presses Keep).
    */
   maintenance: { patchUpdates: boolean };
+  /** Simple view: the rail shows only Projects, Build and Settings (for demos and evaluators). Off by default. */
+  simpleView: boolean;
 }
 
 export interface ExtraRule { match: string; reason: string }
@@ -51,6 +53,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   extraRules: [],
   codeFolders: {},
   maintenance: { patchUpdates: false },
+  simpleView: false,
   runCapGbp: 0.8,
 };
 
@@ -78,6 +81,12 @@ function codeFolders(v: unknown): Record<string, string> {
     if (p) out[slug] = p;
   }
   return out;
+}
+
+function flag(v: unknown, label: string): boolean {
+  if (v === undefined) return false;
+  if (typeof v !== 'boolean') throw new Error(`${label} must be on or off`);
+  return v;
 }
 
 function maintenance(v: unknown): { patchUpdates: boolean } {
@@ -167,6 +176,7 @@ export function checkSettings(raw: unknown): AppSettings {
     extraRules: extraRules(raw.extraRules),
     codeFolders: codeFolders(raw.codeFolders),
     maintenance: maintenance(raw.maintenance),
+    simpleView: flag(raw.simpleView, 'Simple view'),
     runCapGbp: raw.runCapGbp === undefined ? d.runCapGbp : num(raw.runCapGbp, 'Cost limit per build run (£)', 0.05, 50),
     monthlyBudgetGbp: raw.monthlyBudgetGbp === undefined ? d.monthlyBudgetGbp : num(raw.monthlyBudgetGbp, 'Monthly budget (£)', 0, 10000),
     gbpPerUsd: raw.gbpPerUsd === undefined ? d.gbpPerUsd : num(raw.gbpPerUsd, '£ per $ rate', 0.1, 5),

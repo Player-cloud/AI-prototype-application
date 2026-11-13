@@ -23,6 +23,8 @@ export interface AppSettings {
   codeFolders: Record<string, string>;
   /** Self-maintenance (Q-5). Off unless joshua turns it on. */
   maintenance: { patchUpdates: boolean };
+  /** Simple view: the rail shows only Projects, Build and Settings. */
+  simpleView: boolean;
 }
 
 export interface ExtraRule { match: string; reason: string }
