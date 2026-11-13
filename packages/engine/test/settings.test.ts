@@ -115,6 +115,18 @@ describe('data folder setting', () => {
     expect(() => checkSettings({ simpleView: 'yes' })).toThrow('Simple view must be on or off');
   });
 
+  it('the app’s own build loop is off unless turned on, and the Claude adapter follows it', async () => {
+    expect(checkSettings({}).ownBuildLoop).toBe(false);
+    expect(checkSettings({ ownBuildLoop: true }).ownBuildLoop).toBe(true);
+    expect(() => checkSettings({ ownBuildLoop: 'yes' })).toThrow('must be on or off');
+    const task = { model: 'claude-sonnet-5-5', prompt: 'p', cwd: '.', checkTool: async () => ({ allow: true as const }) };
+    // The app's own loop refuses to start without a price for the model; the SDK adapter has no such rule.
+    const own = await realDeps.makeAdapter('claude', 'sk-ant-test-0000000000000000', checkSettings({ ownBuildLoop: true }), 1);
+    await expect(own.build!(task)).rejects.toThrow('Set the price for claude-sonnet-5-5');
+    const sdk = await realDeps.makeAdapter('claude', 'sk-ant-test-0000000000000000', checkSettings({}), 1);
+    expect(sdk.build).toBeDefined();
+  });
+
   it('keeps the name and email for commits, and refuses odd ones', () => {
     expect(checkSettings({})).toMatchObject({ gitName: '', gitEmail: '' });
     expect(checkSettings({ gitName: '  Sam Evaluator ', gitEmail: 'sam@example.com' })).toMatchObject({ gitName: 'Sam Evaluator', gitEmail: 'sam@example.com' });

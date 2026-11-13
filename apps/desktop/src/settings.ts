@@ -25,6 +25,8 @@ export interface AppSettings {
   maintenance: { patchUpdates: boolean };
   /** Simple view: the rail shows only Projects, Build and Settings. */
   simpleView: boolean;
+  /** Claude builds with the app's own loop instead of the Agent SDK. */
+  ownBuildLoop: boolean;
   /** The name and email the app's own commits carry, set for its folders only. '' = not set. */
   gitName: string;
   gitEmail: string;

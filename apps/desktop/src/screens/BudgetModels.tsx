@@ -36,7 +36,11 @@ interface Draft {
   dataFolder: string;
   gitName: string;
   gitEmail: string;
+  ownBuildLoop: boolean;
 }
+
+/** The Claude models a build or review may use; their prices matter only for the app's own build loop. */
+const CLAUDE_MODELS = ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5'] as const;
 
 function toDraft(s: AppSettings): Draft {
   return {
@@ -47,6 +51,7 @@ function toDraft(s: AppSettings): Draft {
     dataFolder: s.dataFolder,
     gitName: s.gitName ?? '',
     gitEmail: s.gitEmail ?? '',
+    ownBuildLoop: s.ownBuildLoop === true,
     models: { openai: { ...s.models.openai }, deepseek: { ...s.models.deepseek } },
     prices: Object.fromEntries(
       Object.entries(s.prices).map(([m, p]) => [m, { input: String(p.inputPerM), output: String(p.outputPerM) }]),
@@ -68,6 +73,7 @@ function fromDraft(d: Draft): Omit<AppSettings, 'extraRules' | 'codeFolders' | '
     dataFolder: d.dataFolder.trim(),
     gitName: d.gitName.trim(),
     gitEmail: d.gitEmail.trim(),
+    ownBuildLoop: d.ownBuildLoop,
     models: {
       openai: { strong: d.models.openai.strong.trim(), everyday: d.models.openai.everyday.trim() },
       deepseek: { strong: d.models.deepseek.strong.trim(), everyday: d.models.deepseek.everyday.trim() },
@@ -76,9 +82,9 @@ function fromDraft(d: Draft): Omit<AppSettings, 'extraRules' | 'codeFolders' | '
   };
 }
 
-/** The model names currently chosen for OpenAI and DeepSeek, once each. */
+/** The model names that need a price: those chosen for OpenAI and DeepSeek, and the Claude ones when the app's own build loop is on. */
 function chosenModels(d: Draft): string[] {
-  const all = OTHERS.flatMap((o) => [d.models[o.id].strong.trim(), d.models[o.id].everyday.trim()]);
+  const all = [...(d.ownBuildLoop ? CLAUDE_MODELS : []), ...OTHERS.flatMap((o) => [d.models[o.id].strong.trim(), d.models[o.id].everyday.trim()])];
   return [...new Set(all.filter((m) => m !== ''))];
 }
 
@@ -212,6 +218,11 @@ export function BudgetModels({ invoke, onSaved, reload = 0 }: { invoke: Invoke; 
       <p className="hint">Where the app keeps what it learns. New here? Type an empty folder’s path and press Create: it works on this computer with no GitHub. Already have one? Type its path and press Save.</p>
 
       <h3>Models</h3>
+      <label className="rail-switch">
+        <input type="checkbox" checked={draft.ownBuildLoop} onChange={(e) => set({ ownBuildLoop: e.target.checked })} />
+        Use the app’s own build loop for Claude (experimental)
+      </label>
+      <p className="hint">Off: Claude builds through the Claude Agent SDK. On: the app runs the loop itself on the plain Claude API, so the SDK isn’t needed. Needs the prices below, so the cost limit works. Press “Save budget and models” to apply.</p>
       <p className="hint">Claude follows the fixed rule: Opus plans and reviews, Sonnet builds, Haiku reads and tests.</p>
       {OTHERS.map((o) => (
         <fieldset key={o.id}>
