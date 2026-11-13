@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { RunLog } from '@aip/memory';
-import { HINT_MAX, MAX_FILES, attachDecisions, cleanPath, emptyMap, isTestPath, mapHint, refreshMap, type ProjectMap } from '../src/project-map.ts';
+import { HINT_MAX, MAX_FILES, attachDecisions, cleanPath, mapPrediction, emptyMap, isTestPath, mapHint, refreshMap, type ProjectMap } from '../src/project-map.ts';
 import { handleLine } from '../src/protocol.ts';
 
 const NOW = new Date('2026-11-12T09:00:00Z');
@@ -194,6 +194,51 @@ describe('project map: Keep and the engine command', () => {
       const out = attachDecisions(m, { decisions: [{ id: 'DEC-1', feature: 'F-01' }, { id: 'DEC-2', feature: 'F-02' }], blockers: [] });
       expect(Object.keys(out.features)).toEqual(['F-01']);
       expect(out.features['F-01']).toMatchObject({ decisions: ['DEC-1'], blockers: [] });
+    });
+  });
+
+  describe('how well the map predicted the files', () => {
+    const settings = () => ({ dataFolder: data, codeFolders: { 'club-hr': code } });
+    const row = (id: number) => {
+      const log = RunLog.open(db);
+      try {
+        return log.get(id)!;
+      } finally {
+        log.close();
+      }
+    };
+
+    it('is not measured for a feature with no map entry, and measured on the next build', async () => {
+      const a = await built({ 'src/a.ts': 'a', 'src/b.ts': 'b', 'src/a.test.ts': 't' });
+      const first = await call('run_keep', { settings: settings(), dbPath: db, id: a });
+      expect(first.result.note).toBe('Kept F-01 in your copy on main. Nothing was pushed.');
+      expect(row(a)).toMatchObject({ mapHit: null, mapChanged: null });
+      // 4 files change; the map already knows 3 of them.
+      const b = await built({ 'src/a.ts': 'a2', 'src/b.ts': 'b2', 'src/a.test.ts': 't2', 'src/new.ts': 'n' });
+      const second = await call('run_keep', { settings: settings(), dbPath: db, id: b });
+      expect(second.result.note).toBe('Kept F-01 in your copy on main. Nothing was pushed. The map named 3 of 4 files this build changed (75%).');
+      expect(row(b)).toMatchObject({ mapHit: 0.75, mapChanged: 4 });
+      expect(second.result.run).toMatchObject({ mapHit: 0.75, mapChanged: 4 });
+      // A different feature with no entry yet is not measured, even though the project has a map.
+      const c = await built({ 'src/c.ts': 'c' }, 'F-02');
+      await call('run_keep', { settings: settings(), dbPath: db, id: c });
+      expect(row(c).mapHit).toBeNull();
+    });
+
+    it('a map problem leaves it not measured and never fails Keep', async () => {
+      const id = await built({ 'src/a.ts': 'a' });
+      const r = await call('run_keep', { settings: { codeFolders: { 'club-hr': code } }, dbPath: db, id });
+      expect(r.error).toBeUndefined();
+      expect(row(id)).toMatchObject({ status: 'kept', mapHit: null });
+    });
+
+    it('counts only storable changed files, and a build with none is not measured', async () => {
+      const entry = { title: 'x', files: ['src/a.ts'], tests: [], lastBuildId: 1, lastKeptAt: '' };
+      expect(await mapPrediction(entry, ['src\\a.ts', '.env', 'src/z.ts'])).toEqual({ hit: 0.5, named: 1, changed: 2 });
+      expect(await mapPrediction(entry, ['.env'])).toBeNull();
+      expect(await mapPrediction(entry, [])).toBeNull();
+      expect(await mapPrediction(undefined, ['src/a.ts'])).toBeNull();
+      expect(await mapPrediction({ ...entry, files: [] }, ['src/a.ts'])).toEqual({ hit: 0, named: 0, changed: 1 });
     });
   });
 });

@@ -150,7 +150,9 @@ describe('build runs', () => {
       old.exec(`INSERT INTO runs (at, slug, feature, path, branch, base, model, tests_passed, fix_attempts, summary, status) VALUES ('2026-11-11', 'club-hr', 'F-01', '/p', 'b', 'c', 'm', 1, 0, 's', 'kept')`);
       old.close();
       const log = RunLog.open(path);
-      expect(log.get(1)).toMatchObject({ status: 'kept', cause: null, error: '', endedAt: null });
+      expect(log.get(1)).toMatchObject({ status: 'kept', cause: null, error: '', endedAt: null, mapHit: null, mapChanged: null });
+      log.setMapHit(1, 0.8, 5);
+      expect(log.get(1)).toMatchObject({ mapHit: 0.8, mapChanged: 5 });
       const id = log.start({ at: AT, slug: 'club-hr', feature: 'F-02', path: '/p', branch: 'b2', base: 'c', model: 'm' });
       log.fail(id, { status: 'failed', cause: 'model', error: 'x', costUsd: null, ms: 1, at: AT });
       expect(log.get(id)).toMatchObject({ status: 'failed', cause: 'model' });

@@ -100,6 +100,9 @@ export interface BuildRun {
   status: 'running' | 'built' | 'kept' | 'undone' | 'reverted' | 'failed' | 'stopped' | 'interrupted';
   rating: number | null;
   keptInto: string;
+  /** At Keep: the share (0 to 1) of the changed files the project map already named, and how many files changed. null: not measured. */
+  mapHit?: number | null;
+  mapChanged?: number | null;
   /** Why a failed build failed; null for the rest. */
   cause?: 'model' | 'tool' | 'budget' | 'network' | 'provider' | 'setup' | 'stopped' | 'unknown' | null;
   /** The plain message of a failed, stopped or interrupted build. */
@@ -107,6 +110,13 @@ export interface BuildRun {
   /** Set once the unfinished build's copy was removed. */
   decidedAt?: string | null;
   findings: Finding[];
+}
+
+/** "The map named 4 of 5 files this build changed (80%)", or '' when it wasn't measured. */
+export function mapScoreLine(r: Pick<BuildRun, 'mapHit' | 'mapChanged'>): string {
+  if (r.mapHit == null || !r.mapChanged) return '';
+  const named = Math.round(r.mapHit * r.mapChanged);
+  return `The map named ${named} of ${r.mapChanged} file${r.mapChanged === 1 ? '' : 's'} this build changed (${Math.round(r.mapHit * 100)}%)`;
 }
 
 /** Why a build failed, in plain words (the same words as the tools' health records). */

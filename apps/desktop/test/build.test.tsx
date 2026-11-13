@@ -143,6 +143,18 @@ describe('Build screen: project map', () => {
     expect(screen.queryByRole('list', { name: 'Blockers for this feature' })).toBeNull();
   });
 
+  it('says how well the map named the files a kept build changed, and nothing when not measured', async () => {
+    const shell = fakeShell({ runs: [{ ...WAITING, status: 'kept', keptInto: 'main', mapHit: 0.8, mapChanged: 5 } as never] });
+    render(<Build invoke={shell.invoke} makeChannel={shell.makeChannel} />);
+    const builds = await screen.findByRole('region', { name: 'Builds' });
+    expect(within(builds).getByText(/The map named 4 of 5 files this build changed \(80%\)/)).toBeTruthy();
+    cleanup();
+    const none = fakeShell({ runs: [{ ...WAITING, status: 'kept', keptInto: 'main', mapHit: null, mapChanged: null } as never] });
+    render(<Build invoke={none.invoke} makeChannel={none.makeChannel} />);
+    const b2 = await screen.findByRole('region', { name: 'Builds' });
+    expect(within(b2).queryByText(/The map named/)).toBeNull();
+  });
+
   it('says New feature for a feature with no files yet', async () => {
     const shell = fakeShell({ map: { 'F-01': { title: 'Login', files: ['a.ts'], tests: [], lastBuildId: 1, lastKeptAt: 'x' } } });
     render(<Build invoke={shell.invoke} makeChannel={shell.makeChannel} />);

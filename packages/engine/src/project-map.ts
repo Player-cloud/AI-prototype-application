@@ -102,6 +102,24 @@ export async function refreshMap(
   return { version: MAP_VERSION, updatedAt: build.keptAt, features };
 }
 
+/**
+ * How well the map predicted a build: the share of the files the build changed that the feature's
+ * map entry already named. null (not measured) when the feature had no entry yet or the build changed
+ * no storable files. Call it before the map is refreshed.
+ */
+export async function mapPrediction(entry: FeatureEntry | undefined, changed: string[]): Promise<{ hit: number; named: number; changed: number } | null> {
+  if (!entry) return null;
+  const known = new Set(entry.files);
+  const files = new Set<string>();
+  for (const raw of changed) {
+    const p = await cleanPath(raw);
+    if (p) files.add(p);
+  }
+  if (files.size === 0) return null;
+  const named = [...files].filter((f) => known.has(f)).length;
+  return { hit: named / files.size, named, changed: files.size };
+}
+
 /** The map with each feature's decision and blocker IDs taken from decisions.json. Only features already in the map are touched. */
 export function attachDecisions(map: ProjectMap, d: { decisions: { id: string; feature?: string }[]; blockers: { id: string; feature?: string }[] }): ProjectMap {
   const features: Record<string, FeatureEntry> = {};
