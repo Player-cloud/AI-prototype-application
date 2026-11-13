@@ -63,7 +63,7 @@ export async function guidance(settings: AppSettings, rulesWin: boolean): Promis
   if (!rules.length && !habits.length) return '';
   return [
     '',
-    rulesWin ? 'joshua’s rules come first; follow his habits where they don’t clash.' : 'Under 30% of this month’s budget is left: where a rule and a cheaper habit clash, follow the habit.',
+    rulesWin ? 'The user’s rules come first; follow their habits where they don’t clash.' : 'Under 30% of this month’s budget is left: where a rule and a cheaper habit clash, follow the habit.',
     ...(rules.length ? ['Rules:', ...rules.map((r) => `- ${r}`)] : []),
     ...(habits.length ? ['Habits:', ...habits.map((h) => `- ${h}`)] : []),
   ].join('\n');

@@ -16,12 +16,12 @@ export const ANSWERS_FILE = 'answers.md';
 
 /** What the build prompt asks of the model. */
 export const QUESTIONS_PROMPT =
-  'If something joshua should decide isn’t in the spec, don’t stop: choose the safest option and carry on. Then, at the very end of your summary, add a line “Questions for joshua:” followed by one “- ” line per question (at most 5), each saying what you chose meanwhile.';
+  'If something the user should decide isn’t in the spec, don’t stop: choose the safest option and carry on. Then, at the very end of your summary, add a line “Questions for the user:” followed by one “- ” line per question (at most 5), each saying what you chose meanwhile.';
 
 /** The questions at the end of a summary, or none. */
 export function questionsIn(summary: string): string[] {
   const lines = summary.split(/\r?\n/);
-  const start = lines.findIndex((l) => /^\s*[#*_\s]*questions? for joshua[*_\s]*:?[*_\s]*$/i.test(l));
+  const start = lines.findIndex((l) => /^\s*[#*_\s]*questions? for (?:the user|you|joshua)[*_\s]*:?[*_\s]*$/i.test(l));
   if (start < 0) return [];
   const out: string[] = [];
   for (const l of lines.slice(start + 1)) {
@@ -50,7 +50,7 @@ export async function answersFor(settings: AppSettings, slug: string): Promise<s
   if (!settings.dataFolder) return '';
   try {
     const text = (await readFile(join(settings.dataFolder, 'projects', slug, ANSWERS_FILE), 'utf8')).trim();
-    return text ? `\n\njoshua’s answers to earlier questions on this project (follow them):\n${text}` : '';
+    return text ? `\n\nThe user’s answers to earlier questions on this project (follow them):\n${text}` : '';
   } catch {
     return '';
   }
@@ -65,7 +65,7 @@ export async function saveAnswer(settings: AppSettings, slug: string, feature: s
   try {
     before = await readFile(join(settings.dataFolder, 'projects', slug, ANSWERS_FILE), 'utf8');
   } catch {
-    before = '# joshua’s answers\n\nFrom build questions. Every later build of this project reads these first.\n';
+    before = '# Your answers\n\nFrom build questions. Every later build of this project reads these first.\n';
   }
   const line = `- ${now.toISOString().slice(0, 10)}, ${feature}: ${question.replace(/\s+/g, ' ')} **Answer:** ${answer.replace(/\s+/g, ' ')}`;
   await m.writeProjectFiles(settings.dataFolder, slug, { [ANSWERS_FILE]: `${before.trimEnd()}\n${line}\n` });
@@ -82,6 +82,6 @@ export function shortenKeepingQuestions(summary: string, max: number): string {
   if (summary.length <= max) return summary;
   const qs = questionsIn(summary);
   if (!qs.length) return summary.slice(0, max);
-  const tail = `\n\nQuestions for joshua:\n${qs.map((q) => `- ${q}`).join('\n')}`;
+  const tail = `\n\nQuestions for the user:\n${qs.map((q) => `- ${q}`).join('\n')}`;
   return `${summary.slice(0, Math.max(0, max - tail.length - 2)).trimEnd()} …${tail}`.slice(0, max);
 }

@@ -100,9 +100,9 @@ describe('Keep or Undo a build', () => {
     expect(stored).toEqual({
       check: 'dependencies',
       level: 'pass',
-      title: 'New packages: approved by joshua',
+      title: 'New packages: approved by you',
       source: 'rule',
-      detail: 'Approved by joshua on 2026-11-11: left-pad ^1.3.0 (dependencies in package.json); zod ~3.0.0 (devDependencies in package.json)',
+      detail: 'Approved by you on 2026-11-11: left-pad ^1.3.0 (dependencies in package.json); zod ~3.0.0 (devDependencies in package.json)',
     });
     // It is in the change history, and can't be "undone" there.
     const hist = (await call('history_list', { dbPath: db })).result;

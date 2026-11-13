@@ -152,5 +152,5 @@ export function decisionsHint(d: DecisionsFile): string {
   if (!d.decisions.length) return '';
   const short = (t: string) => (t.length > PROMPT_CHARS ? `${t.slice(0, PROMPT_CHARS - 1)}…` : t);
   const shown = d.decisions.slice(-PROMPT_DECISIONS);
-  return ['', 'Decisions joshua made — follow them:', ...shown.map((x) => `- ${x.id}${x.feature ? ` (${x.feature})` : ''}: ${short(x.text)}${x.why ? ` Why: ${short(x.why)}` : ''}`)].join('\n');
+  return ['', 'Decisions the user made — follow them:', ...shown.map((x) => `- ${x.id}${x.feature ? ` (${x.feature})` : ''}: ${short(x.text)}${x.why ? ` Why: ${short(x.why)}` : ''}`)].join('\n');
 }

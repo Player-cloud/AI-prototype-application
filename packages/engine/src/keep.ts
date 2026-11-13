@@ -54,8 +54,8 @@ export async function approveDeps(dbPath: string, id: number, now: Date): Promis
     const check = run.findings.find((f) => f.check === 'dependencies' && f.level === 'block');
     if (!check) throw new Error('This build has no new packages waiting for your OK.');
     const packages = (check.detail ?? '').split('\n').filter((l) => l.startsWith(NEW_PACKAGE)).map((l) => l.slice(NEW_PACKAGE.length));
-    const detail = `Approved by joshua on ${now.toISOString().slice(0, 10)}: ${packages.join('; ')}`;
-    log.setFindings(id, run.findings.map((f) => (f === check ? { check: f.check, level: 'pass' as const, title: 'New packages: approved by joshua', detail, source: f.source } : f)));
+    const detail = `Approved by you on ${now.toISOString().slice(0, 10)}: ${packages.join('; ')}`;
+    log.setFindings(id, run.findings.map((f) => (f === check ? { check: f.check, level: 'pass' as const, title: 'New packages: approved by you', detail, source: f.source } : f)));
     return { run: log.get(id)!, detail, packages };
   });
   await approvalRecorded(dbPath, `Approved new packages for ${result.run.feature}: ${result.packages.join(', ')}`, result.detail, now);

@@ -166,9 +166,9 @@ export function buildPrompt(iv: Interview, feature: string, spec: string, criter
     'You are working in a separate copy of the project’s repo; it is your current folder. Change files only here.',
     `Build it so every check in done/${feature}.md passes. Add or update tests for it, and run them.`,
     ...doneListPrompt(criteria),
-    'Keep changes small. Don’t push, deploy, install things globally or call outside services: those need joshua’s OK and will be refused.',
+    'Keep changes small. Don’t push, deploy, install things globally or call outside services: those need the user’s OK and will be refused.',
     'Never read or write key files (.env, *.pem).',
-    'The app already runs this copy’s page (next dev, vite or index.html) so joshua can watch it change. Don’t start another dev server: two in one folder clash.',
+    'The app already runs this copy’s page (next dev, vite or index.html) so the user can watch it change. Don’t start another dev server: two in one folder clash.',
     'When you’re done, reply with a short plain-words summary of what you changed and what the tests showed.',
     QUESTIONS_PROMPT,
     '',
@@ -397,10 +397,10 @@ export async function buildFeature(
         sandbox,
         onStep: (text) => add({ text }),
         async checkTool(name, input) {
-          const d = await checkStep(settings, run.path, name, input, p.dbPath ? { slug: p.slug, feature: p.feature, branch: run.branch, dbPath: p.dbPath, now: deps.now?.(), onAllowed: () => add({ text: `Allowed once by joshua: ${name}` }) } : undefined);
+          const d = await checkStep(settings, run.path, name, input, p.dbPath ? { slug: p.slug, feature: p.feature, branch: run.branch, dbPath: p.dbPath, now: deps.now?.(), onAllowed: () => add({ text: `Allowed once by you: ${name}` }) } : undefined);
           if (!d.allow) add({ text: `Refused: ${name}`, refused: d.reason });
           // The shell allow-list is on trial: allowed, but joshua can see what enforcing it would change.
-          else if (d.note) add({ text: `Would ask joshua under the new shell list: ${d.note}` });
+          else if (d.note) add({ text: `Would ask you under the new shell list: ${d.note}` });
           return d;
         },
       });

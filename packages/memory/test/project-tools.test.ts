@@ -18,7 +18,7 @@ describe('project tools and rules (CI-7)', () => {
     const path = await writeProjectTools(folder, 'club-hr', ['secretlint', 'axe-core', 'secretlint']);
     expect(path).toBe('projects/club-hr/tools.md');
     expect(await readProjectTools(folder, 'club-hr')).toEqual(['axe-core', 'secretlint']);
-    expect(await readFile(join(folder, 'projects', 'club-hr', 'tools.md'), 'utf8')).toContain('Chosen by joshua');
+    expect(await readFile(join(folder, 'projects', 'club-hr', 'tools.md'), 'utf8')).toContain('Chosen in the app');
   });
 
   it('an empty choice means no tools, not all tools', async () => {
