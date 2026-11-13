@@ -106,7 +106,27 @@ describe('sync with a real git repo', () => {
     expect(git(clone, 'log', '--oneline')).not.toContain('notes');
   });
 
-  it('explains a folder that is not a git clone', async () => {
-    await expect(syncDataRepo(tmpdir(), 'x')).rejects.toThrow('is not a git clone');
+  it('explains a folder that is not a git folder', async () => {
+    await expect(syncDataRepo(tmpdir(), 'x')).rejects.toThrow('isn’t a git folder');
+  });
+
+  it('Local only: with no GitHub remote it commits here and sends nothing', async () => {
+    const local = join(root, 'local');
+    git(root, 'init', '-q', '-b', 'main', local);
+    git(local, 'config', 'user.email', 'test@example.com');
+    git(local, 'config', 'user.name', 'Test');
+    await writeFile(join(local, 'ledger.md'), LEDGER);
+    const r = await syncDataRepo(local, 'Start');
+    expect(r).toEqual({ committed: true, pushed: false, summary: 'Saved 1 file. Kept on this computer only (GitHub sync is off).' });
+    expect(git(local, 'log', '--oneline')).toContain('Start');
+    expect(git(local, 'status', '--porcelain')).toBe('');
+    expect(await syncDataRepo(local, 'Again')).toEqual({ committed: false, pushed: false, summary: 'Nothing new to save. Kept on this computer only (GitHub sync is off).' });
+  });
+
+  it('Local only still refuses anything key-shaped', async () => {
+    const local = join(root, 'local-key');
+    git(root, 'init', '-q', '-b', 'main', local);
+    await writeFile(join(local, 'notes.md'), 'oops sk-ant-api03-abcdefghijklmnopqrstu\n');
+    await expect(syncDataRepo(local, 'notes')).rejects.toThrow('looks like a key');
   });
 });

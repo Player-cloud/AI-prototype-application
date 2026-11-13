@@ -1,5 +1,7 @@
 /**
  * Writes to the data repo and syncs it to GitHub with the computer's own git login.
+ * Local only: a data folder with no remote (GitHub sync off) is committed on this computer and
+ * nothing is sent anywhere.
  * Never forces anything: if GitHub has clashing changes, it stops and says so.
  * Before committing it looks for anything key-shaped, because keys must never reach GitHub.
  */
@@ -50,7 +52,7 @@ export async function syncDataRepo(folder: string, message: string, git: Git = r
   try {
     await git(['rev-parse', '--is-inside-work-tree'], folder);
   } catch {
-    throw new Error(`${folder} is not a git clone of ai-prototype-data, so it can't sync.`);
+    throw new Error(`${folder} isn’t a git folder, so changes can’t be saved there. Choose or create the data folder in Settings.`);
   }
 
   const changed = changedFiles(await git(['status', '--porcelain'], folder));
@@ -71,6 +73,11 @@ export async function syncDataRepo(folder: string, message: string, git: Git = r
     await git(['commit', '-q', '-m', message], folder);
   }
 
+  const what = changed.length === 0 ? 'Nothing new to save.' : `Saved ${changed.length} file${changed.length === 1 ? '' : 's'}.`;
+  if ((await git(['remote'], folder)).trim() === '') {
+    return { committed: changed.length > 0, pushed: false, summary: `${what} Kept on this computer only (GitHub sync is off).` };
+  }
+
   try {
     await git(['pull', '--rebase', '-q'], folder);
   } catch {
@@ -80,7 +87,6 @@ export async function syncDataRepo(folder: string, message: string, git: Git = r
     );
   }
   await git(['push', '-q'], folder);
-  const what = changed.length === 0 ? 'Nothing new to save.' : `Saved ${changed.length} file${changed.length === 1 ? '' : 's'}.`;
   return { committed: changed.length > 0, pushed: true, summary: `${what} Data repo is up to date on GitHub.` };
 }
 

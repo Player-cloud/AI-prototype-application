@@ -81,8 +81,8 @@ describe('tool_rate and data_sync', () => {
     );
   });
 
-  it('refuse to sync a folder that is not a git clone', async () => {
+  it('refuse to sync a folder that is not a git folder', async () => {
     // The rating is saved locally first; the sync then explains why it can't push.
-    expect((await call('tool_rate', { settings: { dataFolder: folder }, tool: 'EGM', rating: 3 })).error).toContain('is not a git clone');
+    expect((await call('tool_rate', { settings: { dataFolder: folder }, tool: 'EGM', rating: 3 })).error).toContain('isn’t a git folder');
   });
 });
