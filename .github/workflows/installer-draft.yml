@@ -2,8 +2,8 @@ name: installer-draft
 
 # Stage R5: builds UNSIGNED DRAFT Windows installers (.exe and .msi) with the engine, Node, pnpm and
 # git inside, installs the .exe on the runner, checks the installed engine, and uninstalls it.
-# The installers are kept as a workflow artifact for 7 days, visible only to people who can see this
-# private repo. Nothing is signed, published, released or sent anywhere else.
+# The installers are kept as two workflow artifacts (exe, msi) for 7 days, visible only to people who can see
+# this private repo. Nothing is signed, published, released or sent anywhere else.
 # Runs by hand (Actions > installer-draft > Run workflow), and on pull requests that change how the
 # installer is made. Windows minutes count double, so it doesn't run on every change.
 on:
@@ -90,9 +90,29 @@ jobs:
           if (Test-Path (Join-Path $env:INSTALL_DIR 'engine')) { throw 'The engine folder is still there after uninstall' }
           'Uninstalled.'
 
+      # Two separate downloads, so a person can fetch only the .exe (about 170 MB) and not the .msi
+      # (about 249 MB). The files are already compressed, so the zip stores them as they are.
+      - name: Gather each installer with its checksums
+        shell: pwsh
+        run: |
+          foreach ($kind in 'exe', 'msi') {
+            $d = New-Item -ItemType Directory -Force -Path "draft-$kind"
+            Copy-Item (Get-ChildItem draft -Filter "*.$kind" | Select-Object -First 1).FullName $d
+            Copy-Item draft/SHA256SUMS.txt, draft/README.txt $d
+          }
+
       - uses: actions/upload-artifact@v4
         with:
-          name: ai-prototype-unsigned-draft
-          path: draft/
+          name: ai-prototype-unsigned-exe
+          path: draft-exe/
           retention-days: 7
+          compression-level: 0
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ai-prototype-unsigned-msi
+          path: draft-msi/
+          retention-days: 7
+          compression-level: 0
           if-no-files-found: error
