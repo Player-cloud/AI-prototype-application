@@ -27,13 +27,13 @@
 - Deploying the apps it builds, and client handover.
 - Building with OpenAI or DeepSeek (Claude only; the others stay connection-test only).
 
-## Open questions (need joshua)
+## Answered on 13 Nov 2026 (joshua)
 
-| ID | Question | Why it matters |
-| --- | --- | --- |
-| T-1 | "Any team size": for the first evaluation, is it enough that each person installs their own copy (one seat each), with shared projects and central settings later? | Sharing projects or a company-wide budget needs a design change (today all records are per computer). Building it now would delay the evaluation. |
-| T-2 | Who is the licensor (a person or a company), and which licence type (commercial, per seat)? | Needed for the LICENSE file, the installer's publisher name and code signing. |
-| T-3 | Product name: keep "AI Prototype" and the ID `app.aiprototype.desktop`? | The name and ID go into the installer, the Windows menus and the password store. Changing them later moves where settings and keys are kept. |
+| ID | Question | Answer | What it means |
+| --- | --- | --- | --- |
+| T-1 | Is one copy per person (one seat each) enough for the first evaluation, with shared projects and central settings later? | **Yes.** | No team features for the evaluation. Each person installs their own copy. Shared projects, a company-wide budget and admin settings stay later work. |
+| T-2 | Who is the licensor? | **A person** (joshua), not a company. | The LICENSE file, the installer's publisher name and code signing are in a person's name (stage R5/R6). Legal wording still needs qualified review. |
+| T-3 | Keep the name "AI Prototype" and the ID `app.aiprototype.desktop`? | **Yes.** | No rename. Settings and keys stay where they are today. |
 
 ## What does not change because of these decisions
 
