@@ -213,7 +213,12 @@ export interface Deps {
 export const realDeps: Deps = {
   async makeAdapter(provider, apiKey, settings, maxUsd) {
     const m = await import('@aip/models');
-    if (provider === 'claude') return m.createClaudeAdapter({ apiKey, maxBudgetUsd: maxUsd });
+    if (provider === 'claude') {
+      // Off by default: the Agent SDK builds. On: the app's own loop, plain API, with the Settings prices.
+      return settings.ownBuildLoop
+        ? m.createClaudeLoopAdapter({ apiKey, maxBudgetUsd: maxUsd, prices: settings.prices })
+        : m.createClaudeAdapter({ apiKey, maxBudgetUsd: maxUsd });
+    }
     return m.createOpenAICompatibleAdapter({ provider, apiKey, prices: settings.prices });
   },
   async pickModel(provider, job, settings) {

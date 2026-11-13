@@ -19,6 +19,7 @@ const DEFAULTS: AppSettings = {
   codeFolders: {},
   maintenance: { patchUpdates: false },
   simpleView: false,
+  ownBuildLoop: false,
   gitName: '',
   gitEmail: '',
   runCapGbp: 0.8,
@@ -92,6 +93,21 @@ describe('Budget and models', () => {
       models: { ...DEFAULTS.models, deepseek: { strong: 'deepseek-reasoner', everyday: 'my-model' } },
       prices: { 'my-model': { inputPerM: 0.3, outputPerM: 1.2 } },
     });
+  });
+
+  it('the app’s own build loop is off by default; turning it on asks for the Claude prices and is saved', async () => {
+    const shell = fakeShell();
+    render(<BudgetModels invoke={shell.invoke} />);
+    const box = (await screen.findByLabelText('Use the app’s own build loop for Claude (experimental)')) as HTMLInputElement;
+    expect(box.checked).toBe(false);
+    expect(screen.queryByLabelText('claude-sonnet-5-5 input price')).toBeNull();
+    fireEvent.click(box);
+    fireEvent.change(screen.getByLabelText('claude-sonnet-5-5 input price'), { target: { value: '3' } });
+    fireEvent.change(screen.getByLabelText('claude-sonnet-5-5 output price'), { target: { value: '15' } });
+    save();
+    await waitFor(() => expect(shell.saves).toHaveLength(1));
+    expect(shell.saves[0]!.ownBuildLoop).toBe(true);
+    expect(shell.saves[0]!.prices).toEqual({ 'claude-sonnet-5-5': { inputPerM: 3, outputPerM: 15 } });
   });
 
   it('saves the data folder', async () => {

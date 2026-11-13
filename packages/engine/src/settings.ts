@@ -32,6 +32,8 @@ export interface AppSettings {
   maintenance: { patchUpdates: boolean };
   /** Simple view: the rail shows only Projects, Build and Settings (for demos and evaluators). Off by default. */
   simpleView: boolean;
+  /** Claude builds with the app's own loop (plain API) instead of the Agent SDK. Off unless turned on; needs prices for the Claude models. */
+  ownBuildLoop: boolean;
   /**
    * The name and email the app's own commits carry (data folder, new code folders, builds), set
    * for those folders only, so no `git config --global` in a terminal is needed. '' = not set.
@@ -60,6 +62,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   codeFolders: {},
   maintenance: { patchUpdates: false },
   simpleView: false,
+  ownBuildLoop: false,
   gitName: '',
   gitEmail: '',
   runCapGbp: 0.8,
@@ -204,6 +207,7 @@ export function checkSettings(raw: unknown): AppSettings {
     codeFolders: codeFolders(raw.codeFolders),
     maintenance: maintenance(raw.maintenance),
     simpleView: flag(raw.simpleView, 'Simple view'),
+    ownBuildLoop: flag(raw.ownBuildLoop, 'The app’s own build loop'),
     gitName: gitName(raw.gitName),
     gitEmail: gitEmail(raw.gitEmail),
     runCapGbp: raw.runCapGbp === undefined ? d.runCapGbp : num(raw.runCapGbp, 'Cost limit per build run (£)', 0.05, 50),
