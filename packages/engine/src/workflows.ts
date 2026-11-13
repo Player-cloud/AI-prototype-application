@@ -22,7 +22,7 @@ export const CLEARLY_BETTER = 0.2;
  *  - medium: anything else.
  * It is shown beside the advice only. It never changes which model the engine picks.
  */
-export const CONFIDENCE = { lowBelow: 3, highAt: 10, staleDays: 30, freshDays: 14 } as const;
+export const CONFIDENCE = { lowBelow: 5, highAt: 10, staleDays: 30, freshDays: 14 } as const;
 
 export type ConfidenceLevel = 'low' | 'medium' | 'high';
 
@@ -112,7 +112,11 @@ export function workflowAdvice(current: string, stats: WorkflowStats[], nameOf: 
   const name = nameOf(current);
   if (!mine || mine.finished + mine.waiting + mine.failed + mine.notCounted === 0) return [`No builds with ${name} yet, so this way of building is untested.`];
   const conf = workflowConfidence(mine, gbpPerUsd, now);
-  const prefix = `${conf.level[0]!.toUpperCase()}${conf.level.slice(1)} confidence (${plural(conf.counted, 'build')}, last ${shortDate(mine.lastAt) || 'unknown'}):`;
+  // Under the minimum, say so plainly; stale but enough builds stays "Low confidence".
+  const prefix =
+    conf.counted < CONFIDENCE.lowBelow
+      ? `Not enough builds yet (${conf.counted} of ${CONFIDENCE.lowBelow}):`
+      : `${conf.level[0]!.toUpperCase()}${conf.level.slice(1)} confidence (${plural(conf.counted, 'build')}, last ${shortDate(mine.lastAt) || 'unknown'}):`;
   const out = [`${prefix} Evidence: ${workflowText(mine, name, gbpPerUsd)}`, conf.text];
   // Confidence is shown only. The suggestion rule below never reads it.
   if (mine.finished < ENOUGH_BUILDS) return out;

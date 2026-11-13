@@ -37,14 +37,14 @@ describe('workflow comparisons feed the engine’s picks (CI-4)', () => {
   it('shows failed builds, counted only for the model’s fault, and doesn’t change the advice', () => {
     expect(workflowText(stats('a', 2, 0, { failed: 1, notCounted: 2 }), 'Sonnet 5.5', 0.79)).toContain('1 failed (the model’s or tool’s fault), 2 ended early for another reason (not counted)');
     // Only failures: it is not "untested".
-    expect(workflowAdvice('a', [stats('a', 0, 0, { failed: 1, testsFirstTime: 0, defects: 0 })], nameOf, 0.79)[0]).toMatch(/^Low confidence \(1 build, last 12 Nov\): Evidence: Sonnet 5.5: no build kept or undone yet, 1 failed/);
+    expect(workflowAdvice('a', [stats('a', 0, 0, { failed: 1, testsFirstTime: 0, defects: 0 })], nameOf, 0.79)[0]).toMatch(/^Not enough builds yet \(1 of 5\): Evidence: Sonnet 5.5: no build kept or undone yet, 1 failed/);
     expect(workflowAdvice('a', [stats('a', 1, 3, { failed: 5 }), stats('b', 4, 0)], nameOf, 0.79)).toHaveLength(3);
   });
 
   it('says plainly when a way of building is untested, or only a first look', () => {
     expect(workflowAdvice('a', [], nameOf, 0.79)).toEqual(['No builds with Sonnet 5.5 yet, so this way of building is untested.']);
     expect(workflowAdvice('a', [stats('a', 1, 0), stats('b', 5, 0)], nameOf, 0.79, NOW)).toEqual([
-      'Low confidence (1 build, last 12 Nov): Evidence: Sonnet 5.5: 1 of 1 builds kept, tests passed first time in 1 of 1, 0 problems found by the app’s checks, £0.08 ($0.10) per kept build, about 3 min each. A first look, not proof.',
+      'Not enough builds yet (1 of 5): Evidence: Sonnet 5.5: 1 of 1 builds kept, tests passed first time in 1 of 1, 0 problems found by the app’s checks, £0.08 ($0.10) per kept build, about 3 min each. A first look, not proof.',
       'Low confidence: 1 build counted, last build 12 Nov 2026, 0 failed (model or tool fault), 0 not counted, £0.08 ($0.10) per kept build (failed builds included).',
     ]);
   });
@@ -81,7 +81,7 @@ describe('workflow comparisons feed the engine’s picks (CI-4)', () => {
       log.decide(id, 'kept', new Date());
       log.close();
       const advice = await adviceFor(dbPath, 'claude-sonnet-5-5', async () => 'Sonnet 5.5', 0.79);
-      expect(advice[0]).toMatch(/^Low confidence \(1 build, last \d+ \w+\): Evidence: Sonnet 5\.5: 1 of 1 builds kept, .*£0\.16 \(\$0\.20\) per kept build, about 2 min each\. A first look, not proof\.$/);
+      expect(advice[0]).toMatch(/^Not enough builds yet \(1 of 5\): Evidence: Sonnet 5\.5: 1 of 1 builds kept, .*£0\.16 \(\$0\.20\) per kept build, about 2 min each\. A first look, not proof\.$/);
       const out = JSON.parse((await handleLine(JSON.stringify({ id: 1, method: 'workflow_compare', params: { settings: {}, dbPath } })))!);
       expect(out.result).toMatchObject([{ model: 'claude-sonnet-5-5', name: 'Sonnet 5.5', kept: 1, finished: 1 }]);
       expect(out.result[0].text).toMatch(/^Sonnet 5\.5: 1 of 1 builds kept/);
@@ -91,18 +91,19 @@ describe('workflow comparisons feed the engine’s picks (CI-4)', () => {
   });
 
   it('sets the confidence level from counted builds and age, with the edges tested', () => {
-    expect(CONFIDENCE).toEqual({ lowBelow: 3, highAt: 10, staleDays: 30, freshDays: 14 });
-    expect(confidenceLevel(2, 0)).toBe('low');
-    expect(confidenceLevel(3, 0)).toBe('medium');
-    expect(confidenceLevel(3, 30)).toBe('medium');
-    expect(confidenceLevel(3, 30.01)).toBe('low');
+    expect(CONFIDENCE).toEqual({ lowBelow: 5, highAt: 10, staleDays: 30, freshDays: 14 });
+    expect(confidenceLevel(4, 0)).toBe('low');
+    expect(confidenceLevel(5, 0)).toBe('medium');
+    expect(confidenceLevel(5, 30)).toBe('medium');
+    expect(confidenceLevel(5, 30.01)).toBe('low');
     expect(confidenceLevel(9, 1)).toBe('medium');
     expect(confidenceLevel(10, 14)).toBe('high');
     expect(confidenceLevel(10, 14.01)).toBe('medium');
     expect(confidenceLevel(50, 31)).toBe('low');
     expect(confidenceLevel(50, Number.NaN)).toBe('low');
     // Counted = finished + failed by the model's fault; not-counted and waiting builds don't add.
-    expect(workflowConfidence(stats('a', 1, 1, { failed: 1, notCounted: 9, waiting: 9, lastAt: ago(1) }), 0.79, NOW).level).toBe('medium');
+    expect(workflowConfidence(stats('a', 3, 1, { failed: 1, notCounted: 9, waiting: 9, lastAt: ago(1) }), 0.79, NOW).level).toBe('medium');
+    expect(workflowConfidence(stats('a', 1, 1, { failed: 1, notCounted: 9, waiting: 9, lastAt: ago(1) }), 0.79, NOW).level).toBe('low');
     expect(workflowConfidence(stats('a', 1, 1, { notCounted: 9, lastAt: ago(1) }), 0.79, NOW).level).toBe('low');
     expect(workflowConfidence(stats('a', 8, 2, { lastAt: ago(14) }), 0.79, NOW).level).toBe('high');
     expect(workflowConfidence(stats('a', 8, 2, { lastAt: ago(15) }), 0.79, NOW).level).toBe('medium');
@@ -110,9 +111,9 @@ describe('workflow comparisons feed the engine’s picks (CI-4)', () => {
 
   it('works out cost per kept build including failed builds, and says so when nothing is kept', () => {
     // £ and $: total $1.00 (including a failed build's cost) over 2 kept = $0.50 each.
-    const c = workflowConfidence(stats('a', 2, 0, { failed: 1, costUsd: 1, costPerKeptUsd: 0.4, lastAt: ago(2) }), 0.8, NOW);
+    const c = workflowConfidence(stats('a', 2, 2, { failed: 1, costUsd: 1, costPerKeptUsd: 0.4, lastAt: ago(2) }), 0.8, NOW);
     expect(c.costPerKeptUsd).toBe(0.5);
-    expect(c.text).toBe('Medium confidence: 3 builds counted, last build 10 Nov 2026, 1 failed (model or tool fault), 0 not counted, £0.40 ($0.50) per kept build (failed builds included).');
+    expect(c.text).toBe('Medium confidence: 5 builds counted, last build 10 Nov 2026, 1 failed (model or tool fault), 0 not counted, £0.40 ($0.50) per kept build (failed builds included).');
     const none = workflowConfidence(stats('a', 0, 2, { failed: 1, costUsd: 0.3, lastAt: ago(2) }), 0.8, NOW);
     expect(none.costPerKeptUsd).toBeNull();
     expect(none.text).toContain('no kept builds yet.');
@@ -140,7 +141,9 @@ describe('workflow comparisons feed the engine’s picks (CI-4)', () => {
     const highStats = [stats('a', 3, 9, { lastAt: ago(1) }), stats('b', 10, 0, { lastAt: ago(1) })];
     const low = workflowAdvice('a', lowStats, nameOf, 0.79, NOW);
     const high = workflowAdvice('a', highStats, nameOf, 0.79, NOW);
-    expect(low[0]).toMatch(/^Low confidence \(4 builds, last 14 Aug\):/);
+    expect(low[0]).toMatch(/^Not enough builds yet \(4 of 5\):/);
+    // Stale but at least 5 builds stays "Low confidence".
+    expect(workflowAdvice('a', [stats('a', 3, 2, { lastAt: ago(90) })], nameOf, 0.79, NOW)[0]).toMatch(/^Low confidence \(5 builds, last 14 Aug\):/);
     expect(high[0]).toMatch(/^High confidence \(12 builds, last 11 Nov\):/);
     for (const out of [low, high]) {
       expect(out.at(-1)).toMatch(/^Suggestion: Opus 5.5 kept more builds .*The app still uses Sonnet 5.5,/);
