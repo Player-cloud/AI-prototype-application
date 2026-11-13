@@ -313,7 +313,7 @@ describe('build_feature', () => {
     const r = await call('build_feature', { settings, slug: 'club-hr', feature: 'F-01', provider: 'claude', apiKey: FAKE_KEY, dbPath });
     expect(r.error).toBeUndefined(); // an open blocker never stops the engine: joshua decides in the window
     const prompt = seen.task!.prompt;
-    expect(prompt).toContain('Decisions joshua made — follow them:');
+    expect(prompt).toContain('Decisions the user made — follow them:');
     expect(prompt.split('\n').filter((l) => /^- DEC-\d+:/.test(l))).toHaveLength(10);
     expect(prompt).toContain('- DEC-12: Rule number 12');
     expect(prompt).not.toContain('Rule number 2\n');
@@ -398,7 +398,7 @@ describe('build_feature', () => {
     expect(seen.task?.prompt).toContain('Build feature F-01 (Login)');
     expect(seen.task?.prompt).toContain('=== done/F-01.md ===');
     // joshua's rules (and habits, learned ones included) go with every build (step 9d).
-    expect(seen.task?.prompt).toContain('joshua’s rules come first');
+    expect(seen.task?.prompt).toContain('The user’s rules come first');
     expect(seen.task?.prompt).toContain('Rules:\n- Ask first.');
     expect(await readFile(join(out.run.path, 'login.md'), 'utf8')).toBe('Login');
     await expect(readFile(join(code, 'hack.md'), 'utf8')).rejects.toThrow();
@@ -505,7 +505,7 @@ describe('build_feature', () => {
     expect(seen.answers.map((a) => (a as { allow: boolean }).allow)).toEqual([true, false, false, true]);
     expect(seen.answers[3]).toMatchObject({ allow: true, note: expect.stringContaining('docker') });
     const texts = r.result.steps.map((s: { text: string }) => s.text);
-    expect(texts).toContain("Would ask joshua under the new shell list: docker isn't on the list of known build commands; it needs joshua's OK");
+    expect(texts).toContain("Would ask you under the new shell list: docker isn't on the list of known build commands; it needs joshua's OK");
     // Refusals are unchanged: only the two bad steps are refused, the noted one is not.
     expect(r.result.steps.filter((s: { refused?: string }) => s.refused).map((s: { text: string }) => s.text)).toEqual(['Refused: Bash', 'Refused: Write']);
   });

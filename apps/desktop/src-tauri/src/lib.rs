@@ -35,6 +35,14 @@ async fn engine_status(state: tauri::State<'_, Engine>) -> Result<EngineStatus, 
         Ok(g) => g,
         Err(poisoned) => poisoned.into_inner(),
     };
+    // A helper that has died is started again here too, so the badge recovers on its own.
+    let alive = match guard.as_mut() {
+        Ok(h) => h.is_running(),
+        Err(_) => false,
+    };
+    if !alive {
+        *guard = EngineHelper::start(&helper_command(std::env::var("AIP_ENGINE").ok()));
+    }
     Ok(match guard.as_mut() {
         Ok(helper) => helper.status(),
         Err(reason) => EngineStatus::Stopped { reason: reason.clone() },
@@ -67,13 +75,34 @@ fn engine_provider(provider: &str) -> Result<&'static str, String> {
     }
 }
 
-/// One request to the engine helper.
+/// One request to the engine helper. If the helper has died (or never started), a new one is
+/// started first, so one crash doesn't leave every screen broken until the app is restarted.
 fn engine_call(state: &tauri::State<'_, Engine>, method: &str, params: serde_json::Value) -> Result<serde_json::Value, String> {
     let mut guard = match state.0.lock() {
         Ok(g) => g,
         Err(poisoned) => poisoned.into_inner(),
     };
-    let helper = guard.as_mut().map_err(|reason| format!("engine not running: {reason}"))?;
+    call_with_restart(&mut guard, &helper_command(std::env::var("AIP_ENGINE").ok()), method, params)
+}
+
+/// Sends one request, restarting the helper first if it isn't running. A request whose helper dies
+/// part-way is not sent again (it may have half-happened); the next request gets a fresh helper.
+fn call_with_restart(slot: &mut Result<EngineHelper, String>, cmd: &engine::HelperCommand, method: &str, params: serde_json::Value) -> Result<serde_json::Value, String> {
+    let alive = match slot.as_mut() {
+        Ok(h) => h.is_running(),
+        Err(_) => false,
+    };
+    if !alive {
+        *slot = EngineHelper::start(cmd);
+    }
+    let helper = slot.as_mut().map_err(|reason| format!("engine not running: {reason}"))?;
+    helper.request_with(method, params)
+}
+
+/// A paid call (plan ideas, plan review) can take minutes. It runs in its own helper, like a build,
+/// so the shared helper stays free and the other screens keep answering meanwhile.
+fn own_helper_call(method: &str, params: serde_json::Value) -> Result<serde_json::Value, String> {
+    let mut helper = EngineHelper::start(&helper_command(std::env::var("AIP_ENGINE").ok()))?;
     helper.request_with(method, params)
 }
 
@@ -201,7 +230,6 @@ fn key_name(engine: &str) -> Result<&'static str, String> {
 /// the engine, with the spend file so the cost counts against the budget.
 fn paid_project_call(
     app: &tauri::AppHandle,
-    state: &tauri::State<'_, Engine>,
     method: &str,
     mut params: serde_json::Map<String, serde_json::Value>,
 ) -> Result<serde_json::Value, String> {
@@ -212,7 +240,7 @@ fn paid_project_call(
     params.insert("provider".into(), provider.into());
     params.insert("apiKey".into(), key.into());
     params.insert("dbPath".into(), spend_path(app)?.into());
-    engine_call(state, method, serde_json::Value::Object(params))
+    own_helper_call(method, serde_json::Value::Object(params))
 }
 
 /// Claude's ideas for one stage of the plan interview. Costs money (the "plan" job), so the
@@ -222,20 +250,19 @@ async fn interview_suggest(
     slug: String,
     stage: String,
     app: tauri::AppHandle,
-    state: tauri::State<'_, Engine>,
 ) -> Result<serde_json::Value, String> {
     let mut params = serde_json::Map::new();
     params.insert("slug".into(), slug.into());
     params.insert("stage".into(), stage.into());
-    paid_project_call(&app, &state, "interview_suggest", params)
+    paid_project_call(&app, "interview_suggest", params)
 }
 
 /// Reviews a finished plan: one plan review, or three fresh-eyes reviewers for a big build.
 #[tauri::command]
-async fn interview_review(slug: String, app: tauri::AppHandle, state: tauri::State<'_, Engine>) -> Result<serde_json::Value, String> {
+async fn interview_review(slug: String, app: tauri::AppHandle) -> Result<serde_json::Value, String> {
     let mut params = serde_json::Map::new();
     params.insert("slug".into(), slug.into());
-    paid_project_call(&app, &state, "interview_review", params)
+    paid_project_call(&app, "interview_review", params)
 }
 
 /// Builds one feature in its own copy of the code. Each step is sent to `on_step` as it happens.
@@ -528,6 +555,37 @@ mod tests {
         for m in kept {
             assert!(engine_method(m).is_err(), "{m} must not be generic");
         }
+    }
+
+    /// A stand-in helper that answers one request and then exits, like a crash after the reply.
+    fn one_shot() -> engine::HelperCommand {
+        let script = r#"require('readline').createInterface({input:process.stdin}).once('line',l=>{const r=JSON.parse(l);process.stdout.write(JSON.stringify({id:r.id,result:{ok:true}})+'\n');setTimeout(()=>process.exit(0),10)})"#;
+        engine::HelperCommand { program: "node".into(), args: vec!["-e".into(), script.into()] }
+    }
+
+    #[test]
+    fn a_dead_engine_is_restarted_for_the_next_request() {
+        let cmd = one_shot();
+        let mut slot = EngineHelper::start(&cmd);
+        assert_eq!(call_with_restart(&mut slot, &cmd, "ping", serde_json::Value::Null).unwrap()["ok"], true);
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        // The first helper has exited; the next call starts a new one instead of failing.
+        assert_eq!(call_with_restart(&mut slot, &cmd, "ping", serde_json::Value::Null).unwrap()["ok"], true);
+    }
+
+    #[test]
+    fn an_engine_that_never_started_is_started_on_the_next_request() {
+        let cmd = one_shot();
+        let mut slot: Result<EngineHelper, String> = Err("not started".into());
+        assert_eq!(call_with_restart(&mut slot, &cmd, "ping", serde_json::Value::Null).unwrap()["ok"], true);
+    }
+
+    #[test]
+    fn a_missing_engine_program_still_gives_a_plain_reason() {
+        let cmd = engine::HelperCommand { program: "aip-no-such-program".into(), args: vec![] };
+        let mut slot: Result<EngineHelper, String> = Err("not started".into());
+        let err = call_with_restart(&mut slot, &cmd, "ping", serde_json::Value::Null).unwrap_err();
+        assert!(err.starts_with("engine not running: could not start"), "{err}");
     }
 
     #[test]

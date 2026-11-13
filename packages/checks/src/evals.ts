@@ -27,7 +27,7 @@ export const RUBRIC: Record<EvalKind, string[]> = {
   skill: ['triggers at the right time', 'clarity', 'consistency', 'token overhead', 'conflicts'],
   mod: ['source integrity', 'compatibility', 'stability', 'permissions', 'can be undone'],
   agent: ['stays in scope', 'tool-use accuracy', 'cost per task', 'hand-off quality'],
-  workflow: ['end-to-end success', 'defects', 'total cost', 'time', 'how often joshua stepped in'],
+  workflow: ['end-to-end success', 'defects', 'total cost', 'time', 'how often the user stepped in'],
 };
 
 export interface CaseResult { name: string; outcome: Outcome; detail: string }

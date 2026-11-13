@@ -20,7 +20,9 @@ describe('the model’s questions (D)', () => {
     expect(questionsIn(SUMMARY)).toEqual(['Should weeks start on Monday? I used Monday.', 'Show part-time staff? I showed them.']);
     expect(questionsIn('Added it. I had no questions for joshua.')).toEqual([]);
     expect(questionsIn(`Questions for joshua:\n${Array.from({ length: 8 }, (_, i) => `- Q${i}`).join('\n')}`)).toHaveLength(MAX_QUESTIONS);
-    expect(buildPrompt({ name: 'Club HR', features: [{ id: 'F-01', name: 'Login', what: '' }] } as never, 'F-01', 'spec')).toContain('Questions for joshua:');
+    // New summaries say "Questions for the user:"; older ones said "Questions for joshua:". Both are read.
+    expect(questionsIn('Done.\n\nQuestions for the user:\n- Dark mode? I left it out.')).toEqual(['Dark mode? I left it out.']);
+    expect(buildPrompt({ name: 'Club HR', features: [{ id: 'F-01', name: 'Login', what: '' }] } as never, 'F-01', 'spec')).toContain('Questions for the user:');
   });
 
   it('keeps the questions when a long summary is shortened', () => {
@@ -107,7 +109,7 @@ describe('answers and pictures on the data repo (D)', () => {
     expect(note).toMatch(/^Saved for the next build of this project/);
     const file = await readFile(join(data, 'projects', 'club-hr', 'answers.md'), 'utf8');
     expect(file).toContain('- 2026-11-12, F-02: Should weeks start on Monday? **Answer:** Yes, Monday.');
-    expect(await answersFor(settings, 'club-hr')).toContain('joshua’s answers to earlier questions on this project (follow them):');
+    expect(await answersFor(settings, 'club-hr')).toContain('The user’s answers to earlier questions on this project (follow them):');
     expect(await answersFor(settings, 'other')).toBe('');
     await expect(saveAnswer(settings, 'club-hr', 'F-02', 'Q', `ghp_${'a1'.repeat(18)}`, NOW)).rejects.toThrow(/looks like it has a key/);
   });

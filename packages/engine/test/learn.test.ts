@@ -65,7 +65,7 @@ describe('the app learns habits after Keep, Undo and ratings', () => {
   it('gives the build model the rules and habits, rules first while the budget allows', async () => {
     const s = checkSettings({ dataFolder: data });
     const first = await guidance(s, true);
-    expect(first).toContain('joshua’s rules come first');
+    expect(first).toContain('The user’s rules come first');
     expect(first).toContain('Rules:\n- Ask first.');
     expect(first).toContain('Habits:\n- Plain words.');
     expect(await guidance(s, false)).toContain('Under 30% of this month’s budget is left');
